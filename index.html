@@ -4130,9 +4130,18 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const orderRows=allOrderRows.filter(order=>fmEtaDate(order)===today);
     const excludedEtaOrders=allOrderRows.length-orderRows.length;
     const groups=new Map();
-    const getGroup=(id)=>{if(!groups.has(id))groups.set(id,{pickupPointId:id,orders:[],tasks:[]});return groups.get(id);};
-    orderRows.forEach(order=>{const id=fmNorm(fmPickupPointId(order));if(id)getGroup(id).orders.push(order);else getGroup(`__order_without_point_${groups.size}`).orders.push(order);});
+    const getGroup=(id)=>{if(!groups.has(id))groups.set(id,{pickupPointId:id,orders:[],eligibleOrders:[],tasks:[]});return groups.get(id);};
+    // Today's ETA-eligible orders remain the only orders used for daily totals and sheet copy.
+    orderRows.forEach(order=>{const id=fmNorm(fmPickupPointId(order));const group=id?getGroup(id):getGroup(`__order_without_point_${groups.size}`);group.orders.push(order);group.eligibleOrders.push(order);});
     tasksRows.forEach(task=>{const id=fmNorm(fmPickupPointId(task));if(id)getGroup(id).tasks.push(task);else getGroup(`__task_without_point_${groups.size}`).tasks.push(task);});
+    // Also attach older Order IDs to an existing task row by Pickup Point ID.
+    // Historical orders are display-only: they do not enter today's eligible count or Copy for Sheet.
+    let historicalTaskOrders=0;
+    allOrderRows.filter(order=>fmEtaDate(order)!==today).forEach(order=>{
+      const id=fmNorm(fmPickupPointId(order));
+      const group=id?groups.get(id):null;
+      if(group&&group.tasks.length){group.orders.push(order);historicalTaskOrders++;}
+    });
     firstMileCombinedRows=[...groups.values()];
     // Sort pickup-point rows by Assigned Rider A–Z. Names within each group are
     // already alphabetized by fmAssignedRiderDisplay(); groups without a rider go last.
@@ -4148,11 +4157,11 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       if(!nameB)return -1;
       return riderCollator.compare(nameA,nameB);
     });
-    const matchedGroups=firstMileCombinedRows.filter(g=>g.pickupPointId&&!g.pickupPointId.startsWith("__")&&g.orders.length&&g.tasks.length);
-    const matchedOrders=matchedGroups.reduce((n,g)=>n+g.orders.length,0);
+    const matchedGroups=firstMileCombinedRows.filter(g=>g.pickupPointId&&!g.pickupPointId.startsWith("__")&&g.eligibleOrders.length&&g.tasks.length);
+    const matchedOrders=matchedGroups.reduce((n,g)=>n+g.eligibleOrders.length,0);
     const unmatchedOrders=orderRows.length-matchedOrders;
     if(stats)stats.innerHTML=[[orderRows.length,"Orders · ETA today"],[matchedGroups.length,"Matched pickup points"],[unmatchedOrders,"Today's orders without task"],[tasksRows.length,"Tasks"],[excludedEtaOrders,"Excluded · ETA not today"]].map(([n,l])=>`<div><strong>${Number(n).toLocaleString()}</strong><span>${l}</span></div>`).join("");
-    if(meta)meta.textContent=`ETA filter: ${today} (Asia/Manila) · Match by Pickup Point ID only · ${firstMileCombinedRows.length.toLocaleString()} pickup-point groups · ${matchedGroups.length.toLocaleString()} matched points · ${matchedOrders.toLocaleString()} eligible orders linked · ${unmatchedOrders.toLocaleString()} eligible orders waiting for a task · ${excludedEtaOrders.toLocaleString()} orders excluded`;
+    if(meta)meta.textContent=`ETA filter: ${today} (Asia/Manila) · Match by Pickup Point ID only · ${firstMileCombinedRows.length.toLocaleString()} pickup-point groups · ${matchedGroups.length.toLocaleString()} matched points · ${matchedOrders.toLocaleString()} eligible orders linked · ${unmatchedOrders.toLocaleString()} eligible orders waiting for a task · ${excludedEtaOrders.toLocaleString()} orders excluded · ${historicalTaskOrders.toLocaleString()} historical Order IDs shown on linked task rows (display only)`;
     if(downloadBtn)downloadBtn.disabled=!firstMileCombinedRows.length;
     const search=fmNorm($("firstMileCombinedSearch")?.value||"");
     const selectedTaskStatus=$("firstMileTaskStatusFilter")?.value||"all";
@@ -4189,7 +4198,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     });
     firstMileVisibleRows=filtered;
     const copyBtn=$("copyFirstMileForSheet");
-    const copyOrderCount=filtered.reduce((sum,g)=>sum+(g.orders||[]).length,0);
+    const copyOrderCount=filtered.reduce((sum,g)=>sum+(g.eligibleOrders||[]).length,0);
     if(copyBtn){copyBtn.disabled=copyOrderCount===0;copyBtn.textContent=copyOrderCount?`Copy for Sheet (${copyOrderCount})`:"Copy for Sheet";}
     const columns=[
       ["Order ID",g=>orderDetails(g,"",["Order ID","Order No","Order Number","Pickup Order ID","order_id","order_sn","order_number"])],
@@ -4218,7 +4227,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit"
     }).format(new Date());
     for(const group of groups){
-      const orders=group.orders||[];
+      const orders=group.eligibleOrders||[];
       if(!orders.length)continue;
       const pointId=fmPickupPointId(orders[0])||fmPickupPointId((group.tasks||[])[0]||{});
       const assignedRider=fmAssignedRiderDisplay(group)==="—"?"":fmAssignedRiderDisplay(group);
