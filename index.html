@@ -8164,18 +8164,23 @@ window.updateOperationProgress=function(){
   // does not accidentally stop the rest of the eligible batch from being added.
   const cfr1RecoveringEmptyLedger = cfr1Now>=cfr1Seven &&
     Object.keys(cfr1Ledger.records).length===0;
+  // If a frozen ledger was shortened by an incomplete cloud merge, reconcile
+  // it against the original pre-7 AM upload batches. This can restore omitted
+  // members, but never admits a batch uploaded after the daily freeze.
+  const cfr1RestoringFrozenLedger = cfr1Now>=cfr1Seven &&
+    Object.keys(cfr1Ledger.records).length>0;
 
-  // First pass: discover eligible CFR1 parcels only while the daily ledger
-  // is not frozen. After 7:00 AM, later uploads cannot add new parcel IDs.
-  // Rule A uses the existing received-time cutoff without a same-day restriction.
-  // Rule B uses the uploaded status/station fields and requires the upload batch
-  // timestamp to be at or before 4:00 AM because no received timestamp exists.
-  // Export received-time label is "Transported before 4AM". No separate Rule C exists.
+  // First pass: build eligibility before 7 AM. After 7 AM, a missing/partial
+  // ledger can only be recovered from batches already present by 7:00 AM.
+  // Rule A keeps its existing received-time cutoff without a same-day restriction.
+  // Rule B keeps its existing SOC_LHTransported / CAGAYAN DC / BADOC HUB rule
+  // and the strict upload-by-4:00-AM cutoff. No separate Rule C exists.
   cfr1Rows.forEach(x=>{
-    // Before 7 AM, build the daily list normally. After 7 AM, only an empty
-    // ledger may recover from currently available batches; once populated it
-    // freezes and cannot accept later additions.
-    if(cfr1Ledger.frozen===true || (cfr1Now>=cfr1Seven && !cfr1RecoveringEmptyLedger))return;
+    const batchTime=Number(x.btime||0);
+    // Never add membership from a file uploaded after the 7:00 AM freeze.
+    if(cfr1Now>=cfr1Seven && (!batchTime || batchTime>cfr1Seven.getTime()))return;
+    if(cfr1Ledger.frozen===true && !cfr1RestoringFrozenLedger)return;
+    if(cfr1Now>=cfr1Seven && !cfr1RecoveringEmptyLedger && !cfr1RestoringFrozenLedger)return;
     const r=x.r,key=cfr1Key(r); if(!key || cfr1IsExempt(r))return;
     const stationRaw=r?.["Current Station"] ?? r?.["Current station"] ?? r?.["CURRENT STATION"] ?? Object.entries(r||{}).find(([k,v])=>/^(current\s*station)$/i.test(String(k).trim())&&String(v??"").trim()!=="")?.[1] ?? "";
     const station=norm(stationRaw);
