@@ -1189,10 +1189,11 @@ html[data-theme="light"] #firstMile .fm-task-other{color:#475467!important;backg
         </div>
         <div class="parcel-spx-sync">
           <button class="btn" id="syncParcelInboundFromSPX" type="button" title="Import Received, Transported, Transporting, SOC_LHPacked, and SOC_LHPacking statuses from SPX into BADOC HUB">↻ Import Received / Transported / Transporting / LH Packed &amp; Packing</button>
-          <div class="parcel-status-sync-buttons" aria-label="Parcel delivery status exports">
-            <button class="btn" id="syncParcelDeliveringFromSPX" data-status-id="2" data-status-name="Delivering" type="button">↻ Delivering</button>
-            <button class="btn" id="syncParcelDeliveredFromSPX" data-status-id="4" data-status-name="Delivered" type="button">↻ Delivered</button>
-            <button class="btn" id="syncParcelOnHoldFromSPX" data-status-id="5" data-status-name="OnHold" type="button">↻ OnHold</button>
+          <button class="btn" id="syncParcelDeliveryAllFromSPX" type="button" style="grid-column:1 / -1" title="Sync Delivering, Delivered, and OnHold from SPX one at a time">↻ Sync Delivering / Delivered / OnHold</button>
+          <div class="parcel-status-sync-buttons" aria-label="Internal parcel delivery status controls" hidden aria-hidden="true">
+            <button class="btn" id="syncParcelDeliveringFromSPX" data-status-id="2" data-status-name="Delivering" type="button" tabindex="-1">↻ Delivering</button>
+            <button class="btn" id="syncParcelDeliveredFromSPX" data-status-id="4" data-status-name="Delivered" type="button" tabindex="-1">↻ Delivered</button>
+            <button class="btn" id="syncParcelOnHoldFromSPX" data-status-id="5" data-status-name="OnHold" type="button" tabindex="-1">↻ OnHold</button>
           </div>
           <button class="btn" id="syncParcelDeliveryFromSPX" type="button" hidden aria-hidden="true" tabindex="-1">Legacy combined sync</button>
           <span id="parcelDeliveringStatus" class="parcel-status-sync-status" aria-live="polite"></span>
@@ -5819,6 +5820,57 @@ async function beginIndividualParcelDeliverySync(statusId){
 Object.entries(BADOC_DELIVERY_STATUS_BUTTONS).forEach(([statusId,cfg])=>{
   $(cfg.button)?.addEventListener("click",()=>beginIndividualParcelDeliverySync(statusId));
 });
+
+function setCombinedDeliverySyncStatus(message,state=""){
+  const el=$("parcelDeliverySpxSyncStatus");
+  if(!el)return;
+  el.textContent=message||"";
+  el.classList.remove("is-working","is-success","is-error");
+  if(state)el.classList.add("is-"+state);
+}
+async function beginCombinedParcelDeliverySync(){
+  const combinedBtn=$("syncParcelDeliveryAllFromSPX");
+  if(!combinedBtn||combinedBtn.dataset.busy==="1")return;
+  combinedBtn.dataset.busy="1";
+  combinedBtn.disabled=true;
+  const completed=[];
+  const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+  try{
+    setCombinedDeliverySyncStatus("Connecting to SPX before delivery-status exports…","working");
+    if(!(await window.__badocEnsureSpxBridge?.()))throw new Error("Badoc Hub Extension is not connected. Reconnect the extension, then retry.");
+    for(const statusId of ["2","4","5"]){
+      const cfg=BADOC_DELIVERY_STATUS_BUTTONS[statusId];
+      const statusBtn=cfg&&$(cfg.button);
+      const statusEl=cfg&&$(cfg.status);
+      if(!cfg||!statusBtn)throw new Error((cfg?.name||"Delivery status")+" sync control is missing.");
+      if(statusBtn.disabled||statusBtn.dataset.busy==="1")throw new Error(cfg.name+" sync is already running.");
+      setCombinedDeliverySyncStatus("Syncing "+cfg.name+" from SPX…","working");
+      await beginIndividualParcelDeliverySync(statusId);
+      if(!statusBtn.disabled||statusBtn.dataset.busy!=="1"){
+        const note=String(statusEl?.textContent||"").trim();
+        throw new Error(note||cfg.name+" export did not start. Check the SPX extension connection.");
+      }
+      const deadline=Date.now()+6*60*1000;
+      while(Date.now()<deadline&&(statusBtn.disabled||statusBtn.dataset.busy==="1"))await delay(200);
+      if(statusBtn.disabled||statusBtn.dataset.busy==="1")throw new Error(cfg.name+" export timed out after 6 minutes.");
+      const note=String(statusEl?.textContent||"").trim();
+      if(statusEl?.classList.contains("is-error"))throw new Error(cfg.name+" failed: "+(note||"SPX export/import failed."));
+      completed.push(cfg.name);
+      setCombinedDeliverySyncStatus(completed.join(" ✓  ")+" ✓","working");
+    }
+    setCombinedDeliverySyncStatus("All three statuses synced: Delivering, Delivered, and OnHold.","success");
+  }catch(error){
+    const message=String(error?.message||error);
+    setCombinedDeliverySyncStatus((completed.length?completed.join(" ✓ ")+" ✓ · ":"")+"Stopped: "+message,"error");
+    console.error("Combined delivery-status sync failed:",error);
+    window.__badocOperationModalFinish?.("Combined Delivery Sync Stopped",message,[["Completed statuses",completed.join(", ")||"None"],["Next action","Check the failed status and retry the combined sync."]],"error");
+  }finally{
+    combinedBtn.disabled=false;
+    combinedBtn.dataset.busy="0";
+  }
+}
+$("syncParcelDeliveryAllFromSPX")?.addEventListener("click",beginCombinedParcelDeliverySync);
+
 // Retain the old combined button as a compatibility trigger for existing Sync All workflows.
 async function beginParcelDeliverySpxBridgeSync(){
   for(const statusId of ["2","4","5"]){
@@ -11730,28 +11782,22 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
 
   async function deliveryStatusesStep(){
     if(!(await ensureBridgeForSyncAll()))return skip(bridgeHelp());
-    for(const statusId of ["2","4","5"]){
-      if(cancelled)return skip("Stopped");
-      const cfg=BADOC_DELIVERY_STATUS_BUTTONS[String(statusId)];
-      if(!cfg)return fail("Delivery status "+statusId+" is not configured.");
-      const btn=$(cfg.button);
-      if(!btn)return fail(cfg.name+" sync button is missing.");
-      if(btn.disabled||btn.dataset.busy==="1")return fail(cfg.name+" sync is already running.");
-      btn.click();
-      const started=await waitFor(()=>btn.disabled||btn.dataset.busy==="1",15000,100);
-      if(!started){
-        const status=$(cfg.status);
-        const message=((status&&status.textContent)||"").trim();
-        return fail(message||cfg.name+" sync did not start.");
-      }
-      const done=await waitFor(()=>!btn.disabled&&btn.dataset.busy!=="1",6*60*1000,250);
-      if(cancelled)return skip("Stopped");
-      if(!done)return fail("Timed out waiting for "+cfg.name+" export.");
-      const status=$(cfg.status);
-      const message=((status&&status.textContent)||"").trim();
-      if(status&&status.classList.contains("is-error"))return fail(message||cfg.name+" export failed.");
+    if(cancelled)return skip("Stopped");
+    const btn=$("syncParcelDeliveryAllFromSPX");
+    if(!btn)return fail("Combined Delivering / Delivered / OnHold button is missing.");
+    if(btn.disabled||btn.dataset.busy==="1")return fail("Combined delivery sync is already running.");
+    btn.click();
+    const started=await waitFor(()=>btn.disabled||btn.dataset.busy==="1",15000,100);
+    if(!started){
+      const status=$("parcelDeliverySpxSyncStatus");
+      return fail(((status&&status.textContent)||"").trim()||"Combined delivery sync did not start.");
     }
-    return ok("Delivering, Delivered, and OnHold exports imported.");
+    const done=await waitFor(()=>!btn.disabled&&btn.dataset.busy!=="1",19*60*1000,250);
+    if(cancelled)return skip("Stopped");
+    if(!done)return fail("Timed out waiting for Delivering / Delivered / OnHold exports.");
+    const status=$("parcelDeliverySpxSyncStatus"),message=((status&&status.textContent)||"").trim();
+    if(status&&status.classList.contains("is-error"))return fail(message||"Combined delivery sync failed.");
+    return ok(message||"Delivering, Delivered, and OnHold exports imported.");
   }
 
   const STEPS=[
