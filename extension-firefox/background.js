@@ -94,7 +94,8 @@ const badocPorts = new Set();
 const activeJobs = new Map();
 const PARALLEL_JOB_ALLOWLIST = {
   "parcel-inbound": new Set(["parcel-delivery"]),
-  "parcel-delivery": new Set(["parcel-inbound", "linehaul"]),
+  "parcel-delivery": new Set(["parcel-inbound", "parcel-secondary", "linehaul"]),
+  "parcel-secondary": new Set(["parcel-delivery"]),
   "linehaul": new Set(["parcel-delivery"])
 };
 
@@ -1770,6 +1771,10 @@ extApi.runtime.onConnect.addListener(port => {
     if (type === "BADOC_START_PARCEL_SECONDARY_SYNC") {
       const job = reserveActiveJob("parcel-secondary", port);
       if (!job) { failBusy("parcel-secondary"); return; }
+      sendToPort(port, "BADOC_SPX_COMMAND_ACCEPTED", {
+        kind: "parcel-secondary",
+        message: "Extension background accepted Received / Transported export. Preparing SPX requests…"
+      });
       void runParcelSecondaryJob(job);
       return;
     }
