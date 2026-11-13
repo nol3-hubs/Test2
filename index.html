@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v62">
+<meta name="badoc-app-version" content="v63">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -5835,53 +5835,39 @@ async function beginCombinedParcelDeliverySync(){
   if(!combinedBtn||combinedBtn.dataset.busy==="1")return;
   combinedBtn.dataset.busy="1";
   combinedBtn.disabled=true;
-  const completed=[];
-  const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   try{
-    setCombinedDeliverySyncStatus("Connecting to SPX before delivery-status exports…","working");
+    setCombinedDeliverySyncStatus("Connecting to SPX…","working");
     if(!(await window.__badocEnsureSpxBridge?.()))throw new Error("Badoc Hub Extension is not connected. Reconnect the extension, then retry.");
-    for(const statusId of ["2","4","5"]){
-      const cfg=BADOC_DELIVERY_STATUS_BUTTONS[statusId];
-      const statusBtn=cfg&&$(cfg.button);
-      const statusEl=cfg&&$(cfg.status);
-      if(!cfg||!statusBtn)throw new Error((cfg?.name||"Delivery status")+" sync control is missing.");
-      if(statusBtn.disabled||statusBtn.dataset.busy==="1")throw new Error(cfg.name+" sync is already running.");
-      setCombinedDeliverySyncStatus("Syncing "+cfg.name+" from SPX…","working");
-      const started=await beginIndividualParcelDeliverySync(statusId,{bridgeReady:true});
-      if(!started||!statusBtn.disabled||statusBtn.dataset.busy!=="1"){
-        const note=String(statusEl?.textContent||"").trim();
-        throw new Error(note||cfg.name+" export did not start. Check the SPX extension connection.");
-      }
-      const deadline=Date.now()+6*60*1000;
-      while(Date.now()<deadline&&(statusBtn.disabled||statusBtn.dataset.busy==="1"))await delay(200);
-      if(statusBtn.disabled||statusBtn.dataset.busy==="1")throw new Error(cfg.name+" export timed out after 6 minutes.");
-      const note=String(statusEl?.textContent||"").trim();
-      if(statusEl?.classList.contains("is-error"))throw new Error(cfg.name+" failed: "+(note||"SPX export/import failed."));
-      completed.push(cfg.name);
-      setCombinedDeliverySyncStatus(completed.join(" ✓  ")+" ✓","working");
-    }
-    setCombinedDeliverySyncStatus("All three statuses synced: Delivering, Delivered, and OnHold.","success");
+    if(badocActiveDeliveryStatus)throw new Error("Another delivery-status export is already running.");
+
+    const day=getBadocManilaDayBounds();
+    const statusIds=["2","4","5"];
+    const statusName="Delivering / Delivered / OnHold";
+    // One native SPX export request containing all three status IDs.
+    badocActiveDeliveryStatus=statusIds.join(",");
+    window.__badocOperationModalStart?.("Sync Delivering / Delivered / OnHold",`Requesting one SPX export for all three statuses. Assigned Time: ${day.assignedLabel}`);
+    setCombinedDeliverySyncStatus("Requesting one SPX export for Delivering, Delivered, and OnHold…","working");
+    armBadocSyncWatchdog("delivery",statusIds.join(","));
+    postBadocSpxMessage("BADOC_START_PARCEL_DELIVERY_SYNC",{
+      trackingStatus:statusIds.join(","),
+      statusName,
+      bulkyType:"1,0,2",
+      assignedStartUnix:day.assignedStartUnix,
+      assignedEndUnix:day.assignedEndUnix,
+      assignedStart:day.assignedStart,
+      assignedEnd:day.assignedEnd,
+      assignedLabel:day.assignedLabel
+    });
   }catch(error){
+    badocActiveDeliveryStatus="";
     const message=String(error?.message||error);
-    setCombinedDeliverySyncStatus((completed.length?completed.join(" ✓ ")+" ✓ · ":"")+"Stopped: "+message,"error");
-    console.error("Combined delivery-status sync failed:",error);
-    window.__badocOperationModalFinish?.("Combined Delivery Sync Stopped",message,[["Completed statuses",completed.join(", ")||"None"],["Next action","Check the failed status and retry the combined sync."]],"error");
-  }finally{
+    setCombinedDeliverySyncStatus("Combined export did not start: "+message,"error");
+    window.__badocOperationModalFinish?.("Combined Delivery Sync Failed",message,[],"error");
     combinedBtn.disabled=false;
     combinedBtn.dataset.busy="0";
   }
 }
 $("syncParcelDeliveryAllFromSPX")?.addEventListener("click",beginCombinedParcelDeliverySync);
-
-// Retain the old combined button as a compatibility trigger for existing Sync All workflows.
-async function beginParcelDeliverySpxBridgeSync(){
-  for(const statusId of ["2","4","5"]){
-    await beginIndividualParcelDeliverySync(statusId);
-    // Each individual export completes asynchronously through the bridge.
-    // The legacy button is intentionally not used by the new UI.
-    break;
-  }
-}
 
 function setLinehaulSpxSyncStatus(message,state=""){
   const el=$("linehaulSpxSyncStatus");
@@ -5915,13 +5901,20 @@ function armBadocSyncWatchdog(kind,statusId){
       setParcelInboundSpxSyncStatus(message,"error");
       window.__badocOperationModalFinish?.("Received Sync Timed Out",message,[],"error");
     }else if(kind==="delivery"){
-      const cfg=BADOC_DELIVERY_STATUS_BUTTONS[String(statusId||badocActiveDeliveryStatus)];
-      const btn=cfg&&$(cfg.button);
-      if(btn){btn.disabled=false;btn.dataset.busy="0";}
-      if(statusId||badocActiveDeliveryStatus)setIndividualDeliveryStatus(String(statusId||badocActiveDeliveryStatus),message,"error");
-      else setParcelDeliverySpxSyncStatus(message,"error");
+      const combined=String(statusId||badocActiveDeliveryStatus)==="2,4,5";
+      if(combined){
+        const btn=$("syncParcelDeliveryAllFromSPX");
+        if(btn){btn.disabled=false;btn.dataset.busy="0";}
+        setCombinedDeliverySyncStatus(message,"error");
+      }else{
+        const cfg=BADOC_DELIVERY_STATUS_BUTTONS[String(statusId||badocActiveDeliveryStatus)];
+        const btn=cfg&&$(cfg.button);
+        if(btn){btn.disabled=false;btn.dataset.busy="0";}
+        if(statusId||badocActiveDeliveryStatus)setIndividualDeliveryStatus(String(statusId||badocActiveDeliveryStatus),message,"error");
+        else setParcelDeliverySpxSyncStatus(message,"error");
+      }
       badocActiveDeliveryStatus="";
-      window.__badocOperationModalFinish?.("Delivery Sync Timed Out",message,[],"error");
+      window.__badocOperationModalFinish?.(combined?"Combined Delivery Sync Timed Out":"Delivery Sync Timed Out",message,[],"error");
     }else if(kind==="linehaul"){
       const btn=$("syncLinehaulFromSPX");
       if(btn){btn.disabled=false;btn.dataset.busy="0";}
@@ -6249,7 +6242,12 @@ window.addEventListener("message",async event=>{
     }else if(kind==="parcel-inbound" || phase.startsWith("parcel-" ) && !phase.startsWith("parcel-delivery")){
       setParcelInboundSpxSyncStatus(data.message||"Syncing Received / Transported from SPX…","working");
     }else if(kind==="parcel-delivery" || phase.startsWith("parcel-delivery")){
-      setIndividualDeliveryStatus(String(data.trackingStatus||badocActiveDeliveryStatus||""),data.message||"Syncing selected delivery status…","working");
+      const progressStatus=String(data.trackingStatus||badocActiveDeliveryStatus||"");
+      if(progressStatus==="2,4,5"||progressStatus.split(",").filter(Boolean).length>1){
+        setCombinedDeliverySyncStatus(data.message||"Syncing combined delivery-status export…","working");
+      }else{
+        setIndividualDeliveryStatus(progressStatus,data.message||"Syncing selected delivery status…","working");
+      }
     }else{
       setLinehaulSpxSyncStatus(data.message||"Syncing Incoming Linehaul from SPX…","working");
     }
@@ -6259,26 +6257,35 @@ window.addEventListener("message",async event=>{
   if(data.type==="BADOC_SPX_PARCEL_DELIVERY_CSV"){
     clearBadocSyncWatchdog("delivery");
     const statusId=String(data.trackingStatus||data.statusId||badocActiveDeliveryStatus||"");
+    const isCombined=statusId.split(",").map(x=>x.trim()).filter(Boolean).length>1;
     const cfg=BADOC_DELIVERY_STATUS_BUTTONS[statusId]||BADOC_DELIVERY_STATUS_BUTTONS[badocActiveDeliveryStatus];
-    const btn=cfg?$(cfg.button):$("syncParcelDeliveryFromSPX");
+    const btn=isCombined?$("syncParcelDeliveryAllFromSPX"):(cfg?$(cfg.button):$("syncParcelDeliveryFromSPX"));
     try{
-      const statusName=cfg?.name||data.statusName||"Delivery status";
-      setIndividualDeliveryStatus(statusId,`Importing ${statusName} export ${data.taskId||""}…`,"working");
+      const statusName=isCombined?(data.statusName||"Delivering / Delivered / OnHold"):(cfg?.name||data.statusName||"Delivery status");
+      if(isCombined)setCombinedDeliverySyncStatus(`Importing combined ${statusName} export ${data.taskId||""}…`,"working");
+      else setIndividualDeliveryStatus(statusId,`Importing ${statusName} export ${data.taskId||""}…`,"working");
       if(!data.csvText)throw Error(`The bridge returned an empty ${statusName} CSV payload.`);
-      const result=await importParcelCsvText(data.csvText,data.fileName||`export_${statusName.toLowerCase()}_today.csv`,"spx-delivery");
+      const result=await importParcelCsvText(data.csvText,data.fileName||`export_${statusName.toLowerCase().replace(/[^a-z0-9]+/g,"_")}_today.csv`,"spx-delivery");
       const syncNote=!result.persisted
         ? `Imported ${result.total.toLocaleString()} rows · ${statusName}; local storage warning — keep this tab open.`
         : result.warnings?.length
           ? `Imported ${result.total.toLocaleString()} rows · ${statusName}; dashboard refresh warning.`
-          : `Synced ${result.total.toLocaleString()} rows · ${statusName} only`;
-      setIndividualDeliveryStatus(statusId,syncNote,"success");
-      window.__badocOperationModalFinish?.(`${statusName} Import Complete`,result.warnings?.length? "Parcel rows were imported. See warnings below.":`${statusName}-only data loaded locally.`,[
-        ["Status",statusName],["Rows",result.total.toLocaleString()],["New tracking numbers",result.added.toLocaleString()],["Updated tracking numbers",result.updated.toLocaleString()],["Local storage",result.persisted?"Saved":"Session only · save not confirmed"],["Warnings",result.warnings?.join(" | ")||"None"],["Cloud sync","Disabled · local only"]
+          : `Synced ${result.total.toLocaleString()} rows · ${statusName}`;
+      if(isCombined){
+        setCombinedDeliverySyncStatus(syncNote,result.persisted?"success":"error");
+        if(result.persisted)setParcelDeliverySpxSyncStatus(badocParcelSyncStatusText("delivery",true),"success");
+      }else{
+        setIndividualDeliveryStatus(statusId,syncNote,"success");
+      }
+      window.__badocOperationModalFinish?.(isCombined?"Combined Delivery Import Complete":`${statusName} Import Complete`,result.warnings?.length?"Parcel rows were imported. See warnings below.":`${statusName} data loaded locally.`,[
+        ["Statuses",statusName],["Rows",result.total.toLocaleString()],["New tracking numbers",result.added.toLocaleString()],["Updated tracking numbers",result.updated.toLocaleString()],["Local storage",result.persisted?"Saved":"Session only · save not confirmed"],["Warnings",result.warnings?.join(" | ")||"None"],["Cloud sync","Disabled · local only"]
       ],result.persisted?"success":"error");
     }catch(err){
       console.error("SPX delivery-status CSV import failed before commit:",err);
-      setIndividualDeliveryStatus(statusId,`Import failed before commit — existing Parcel Count data kept.`,"error");
-      window.__badocOperationModalFinish?.("Delivery Status Import Failed","The new export was not committed to Parcel Count. Existing data was kept.",[["Error",err.message||"Unknown error"]],"error");
+      const failure=`Import failed before commit — existing Parcel Count data kept.`;
+      if(isCombined)setCombinedDeliverySyncStatus(failure,"error");
+      else setIndividualDeliveryStatus(statusId,failure,"error");
+      window.__badocOperationModalFinish?.(isCombined?"Combined Delivery Import Failed":"Delivery Status Import Failed","The new export was not committed to Parcel Count. Existing data was kept.",[["Error",err.message||"Unknown error"]],"error");
     }finally{
       if(btn){btn.disabled=false;btn.dataset.busy="0";}
       badocActiveDeliveryStatus="";
@@ -6388,13 +6395,20 @@ window.addEventListener("message",async event=>{
       setDeliveringBatchReconcileStatus("Batch Search reconciliation failed — existing parcel statuses kept.","error");
       window.__badocOperationModalFinish?.("Batch Search Failed","Existing parcel statuses were kept.",[["Error",data.message||"Unknown error"]],"error");
     }else if(data.kind==="parcel-delivery"){
-      const cfg=BADOC_DELIVERY_STATUS_BUTTONS[badocActiveDeliveryStatus];
-      const btn=cfg?$(cfg.button):$("syncParcelDeliveryFromSPX");
-      if(btn){btn.disabled=false;btn.dataset.busy="0";}
-      if(badocActiveDeliveryStatus)setIndividualDeliveryStatus(badocActiveDeliveryStatus,"Sync failed — existing Parcel Count data kept.","error");
-      else setParcelDeliverySpxSyncStatus("Sync failed — existing Parcel Count data kept.","error");
+      const combined=badocActiveDeliveryStatus==="2,4,5";
+      if(combined){
+        const btn=$("syncParcelDeliveryAllFromSPX");
+        if(btn){btn.disabled=false;btn.dataset.busy="0";}
+        setCombinedDeliverySyncStatus("Combined sync failed — existing Parcel Count data kept.","error");
+      }else{
+        const cfg=BADOC_DELIVERY_STATUS_BUTTONS[badocActiveDeliveryStatus];
+        const btn=cfg?$(cfg.button):$("syncParcelDeliveryFromSPX");
+        if(btn){btn.disabled=false;btn.dataset.busy="0";}
+        if(badocActiveDeliveryStatus)setIndividualDeliveryStatus(badocActiveDeliveryStatus,"Sync failed — existing Parcel Count data kept.","error");
+        else setParcelDeliverySpxSyncStatus("Sync failed — existing Parcel Count data kept.","error");
+      }
       badocActiveDeliveryStatus="";
-      window.__badocOperationModalFinish?.("Delivery Status Sync Failed","Your existing Parcel Count data was not cleared.",[["Error",data.message||"Unknown error"]],"error");
+      window.__badocOperationModalFinish?.(combined?"Combined Delivery Sync Failed":"Delivery Status Sync Failed","Your existing Parcel Count data was not cleared.",[["Error",data.message||"Unknown error"]],"error");
     }else if(data.kind==="parcel-inbound"){
       clearBadocBridgeCommandWatchdog("parcel-inbound");
       setBadocInboundSyncButtonsBusy(false);
