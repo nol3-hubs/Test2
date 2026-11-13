@@ -840,6 +840,7 @@ html[data-theme="dark"] #firstMile.page{color:#e7f0fb}
 #firstMile .first-mile-combined-table td,#firstMile .first-mile-combined-table th{padding:10px 11px;border-bottom:1px solid #1d3148}
 #firstMile .first-mile-combined-table td{color:#bfd0e2;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #firstMile .first-mile-combined-table tr:hover td{background:#10243a}
+#firstMile .fm-order-id-item{display:block;line-height:1.65;white-space:normal}
 #firstMile .fm-order-link{color:#7fc0ff;text-decoration:underline;text-decoration-color:rgba(127,192,255,.5);text-underline-offset:2px;font-weight:700;cursor:pointer}
 #firstMile .fm-order-link:hover{color:#b7dcff;text-decoration-color:currentColor}
 #firstMile .fm-order-link:focus-visible{outline:2px solid #7fc0ff;outline-offset:2px;border-radius:3px}
@@ -4051,9 +4052,9 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     if(!ids.length)return "—";
     const linkFor=id=>{
       const href=`https://spx.shopee.ph/#/orderDetail/${encodeURIComponent(id)}/pickup_info?originUrl=%2FpickupTask%2Fdetail%3FtaskId%3DPT20261112IF1DX`;
-      return `<a class="fm-order-link" href="${fmEsc(href)}" target="_blank" rel="noopener noreferrer" title="Open Order ${fmEsc(id)} in SPX">${fmEsc(id)}</a>`;
+      return `<div class="fm-order-id-item"><a class="fm-order-link" href="${fmEsc(href)}" target="_blank" rel="noopener noreferrer" title="Open Order ${fmEsc(id)} in SPX">${fmEsc(id)}</a></div>`;
     };
-    return ids.map(linkFor).join('<span class="fm-order-link-sep">|</span>');
+    return ids.map(linkFor).join("");
   }
   function fmEtaDate(row){
     const raw=fmValue(row,["ETA","Estimated Time of Arrival","Estimated Arrival Time","Pickup ETA","Pickup Estimated Time","eta_date","eta_time","estimated_arrival_time"],/^eta(date|time)?$/i);
