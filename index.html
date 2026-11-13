@@ -10479,7 +10479,23 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
 <script id="badoc-spx-bridge-installer-v3">
 (function(){
   const BRIDGE_VERSION="1";
-  const BRIDGE_CHECK_TIMEOUT=900;
+  const BRIDGE_CHECK_TIMEOUT=1200;
+  const REQUIRED_CHROME_VERSION="1.0.3";
+  const REQUIRED_FIREFOX_VERSION="69.2.7";
+  let installedPackageVersion="";
+  const isFirefox=/Firefox\//i.test(navigator.userAgent);
+  const requiredPackageVersion=isFirefox?REQUIRED_FIREFOX_VERSION:REQUIRED_CHROME_VERSION;
+  function compareVersions(a,b){
+    const aa=String(a||"").split(/[.+-]/).map(x=>/^\\d+$/.test(x)?Number(x):x);
+    const bb=String(b||"").split(/[.+-]/).map(x=>/^\\d+$/.test(x)?Number(x):x);
+    for(let i=0;i<Math.max(aa.length,bb.length);i++){
+      const x=aa[i]??0,y=bb[i]??0;
+      if(x===y)continue;
+      if(typeof x==="number"&&typeof y==="number")return x>y?1:-1;
+      return String(x)>String(y)?1:-1;
+    }
+    return 0;
+  }
   const BADOC_SPX_BRIDGE_SOURCE=window.BADOC_SPX_BRIDGE_SOURCE||"BADOC_SPX_BRIDGE";
   const BADOC_PAGE_SOURCE=window.BADOC_PAGE_SOURCE||"BADOC_PAGE";
   let bridgeCheckInFlight=null;
@@ -10607,6 +10623,11 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         clearTimeout(timer);
         window.removeEventListener("message",onMessage);
         bridgeReady=!!ready;
+        if(!ready){
+          setBridgeDownloadStatus("Extension not ready or outdated. Install the required extension package.");
+        } else {
+          setBridgeDownloadStatus("Extension connected · v"+installedPackageVersion+" (minimum v"+requiredPackageVersion+").");
+        }
         resolve(!!ready);
         bridgeCheckInFlight=null;
       };
@@ -10616,6 +10637,17 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         if(data.source!==BADOC_SPX_BRIDGE_SOURCE)return;
         if(data.type!=="BADOC_BRIDGE_READY")return;
         if(String(data.version||"").trim()!==BRIDGE_VERSION)return;
+        installedPackageVersion=String(data.packageVersion||"").trim();
+        if(!installedPackageVersion){
+          setBridgeDownloadStatus("Detected an older extension without package-version reporting. Update the extension.");
+          finish(false);
+          return;
+        }
+        if(compareVersions(installedPackageVersion,requiredPackageVersion)<0){
+          setBridgeDownloadStatus("Extension v"+installedPackageVersion+" is outdated. Required: v"+requiredPackageVersion+".");
+          finish(false);
+          return;
+        }
         finish(true);
       };
       const timer=setTimeout(()=>finish(false),timeout);
