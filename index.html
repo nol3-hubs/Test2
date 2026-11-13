@@ -6294,7 +6294,8 @@ window.addEventListener("message",async event=>{
   }
   if(data.type==="BADOC_SPX_PARCEL_DELIVERY_PROGRESS"){
     const sid=String(data.trackingStatus||data.statusId||badocActiveDeliveryStatus||"");
-    if(sid)setIndividualDeliveryStatus(sid,data.message||"Syncing status export…","working");
+    if(sid==="2,4,5"||sid.split(",").filter(Boolean).length>1)setCombinedDeliverySyncStatus(data.message||"Syncing combined delivery-status export…","working");
+    else if(sid)setIndividualDeliveryStatus(sid,data.message||"Syncing status export…","working");
     return;
   }
 
