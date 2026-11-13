@@ -852,6 +852,7 @@ html[data-theme="dark"] #firstMile.page{color:#e7f0fb}
 #firstMile .fm-task-cancelled{color:#ff9292;background:rgba(239,68,68,.15);border-color:rgba(248,113,113,.38)}
 #firstMile .fm-task-onhold{color:#ffc36b;background:rgba(249,115,22,.16);border-color:rgba(251,146,60,.4)}
 #firstMile .fm-task-inbounded{color:#77e3a6;background:rgba(34,197,94,.15);border-color:rgba(74,222,128,.38)}
+#firstMile .fm-task-unassigned{color:#c4d2e2;background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.35)}
 #firstMile .fm-task-other{color:#c4d2e2;background:rgba(148,163,184,.12);border-color:rgba(148,163,184,.25)}
 #firstMile .first-mile-combined-empty{padding:24px;text-align:center;color:#8da4bd;font-size:12px}
 @media(max-width:700px){#firstMile .first-mile-combined-stats{grid-template-columns:repeat(2,minmax(0,1fr))}#firstMile .first-mile-combined-head{align-items:stretch}}
@@ -1292,6 +1293,7 @@ html[data-theme="light"] #firstMile .fm-task-other{color:#475467!important;backg
               <option value="onhold">Onhold</option>
               <option value="inbounded">Inbounded</option>
               <option value="done">Done</option>
+              <option value="unassigned">Unassigned</option>
               <option value="other">Other statuses</option>
               <option value="no-task">No task</option>
             </select>
@@ -4012,12 +4014,12 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   function fmTaskStatusLabel(value){
     const key=fmNorm(value);
     const labels={pickupnoorder:"Onhold",accepted:"Assigned",disabled:"Cancelled",inbounded:"Inbounded"};
-    return labels[key]||String(value??"").trim();
+    return labels[key]||(key?String(value??"").trim():"Unassigned");
   }
   function fmTaskStatusBadgesHtml(group){
     const tasks=group?.tasks||[];
     const statuses=tasks.map(t=>fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"]))).filter(Boolean);
-    if(!statuses.length)return "—";
+    if(!statuses.length)return '<span class="fm-task-pill fm-task-unassigned">Unassigned</span>';
     return statuses.map(label=>{
       const key=fmNorm(label);
       const tone=({assigned:"assigned",cancelled:"cancelled",onhold:"onhold",inbounded:"inbounded"})[key]||"other";
@@ -4144,7 +4146,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     if(downloadBtn)downloadBtn.disabled=!firstMileCombinedRows.length;
     const search=fmNorm($("firstMileCombinedSearch")?.value||"");
     const selectedTaskStatus=$("firstMileTaskStatusFilter")?.value||"all";
-    const knownTaskStatuses=["assigned","cancelled","onhold","inbounded","done"];
+    const knownTaskStatuses=["assigned","cancelled","onhold","inbounded","done","unassigned"];
     const taskStatusKeys=g=>(g.tasks||[]).map(t=>fmNorm(fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"])))).filter(Boolean);
     const searchMatchedRows=firstMileCombinedRows.filter(g=>!search||[g.pickupPointId,...g.orders.flatMap(o=>Object.values(o)),...g.tasks.flatMap(t=>Object.values(t))].some(v=>fmNorm(v).includes(search)));
     // Counts represent pickup-point groups (table rows), not individual task records.
@@ -4155,11 +4157,12 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       onhold:searchMatchedRows.filter(g=>taskStatusKeys(g).includes("onhold")).length,
       inbounded:searchMatchedRows.filter(g=>taskStatusKeys(g).includes("inbounded")).length,
       done:searchMatchedRows.filter(g=>taskStatusKeys(g).includes("done")).length,
+      unassigned:searchMatchedRows.filter(g=>!g.tasks.length||taskStatusKeys(g).includes("unassigned")).length,
       other:searchMatchedRows.filter(g=>g.tasks.length>0&&(!taskStatusKeys(g).length||taskStatusKeys(g).some(k=>!knownTaskStatuses.includes(k)))).length,
       "no-task":searchMatchedRows.filter(g=>!g.tasks.length).length
     };
     const statusFilter=$("firstMileTaskStatusFilter");
-    const statusLabels={all:"All task statuses",assigned:"Assigned",cancelled:"Cancelled",onhold:"Onhold",inbounded:"Inbounded",done:"Done",other:"Other statuses","no-task":"No task"};
+    const statusLabels={all:"All task statuses",assigned:"Assigned",cancelled:"Cancelled",onhold:"Onhold",inbounded:"Inbounded",done:"Done",unassigned:"Unassigned",other:"Other statuses","no-task":"No task"};
     if(statusFilter)Array.from(statusFilter.options).forEach(option=>{
       const label=statusLabels[option.value];
       if(label!==undefined)option.textContent=`${label} (${Number(statusCounts[option.value]||0).toLocaleString()})`;
@@ -4170,6 +4173,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       if(selectedTaskStatus==="all")return true;
       if(selectedTaskStatus==="no-task")return !g.tasks.length;
       const keys=taskStatusKeys(g);
+      if(selectedTaskStatus==="unassigned")return !g.tasks.length||keys.includes("unassigned");
       if(selectedTaskStatus==="other")return g.tasks.length>0&&(!keys.length||keys.some(k=>!knownTaskStatuses.includes(k)));
       return keys.includes(selectedTaskStatus);
     });
@@ -4183,7 +4187,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       ["Pickup Point Name",g=>fmPickupNameDisplay(g)],
       ["ETA",g=>[...new Set(g.orders.map(o=>fmValue(o,["ETA","Estimated Time of Arrival","Estimated Arrival Time","Pickup ETA","eta_date","eta_time"])) .filter(Boolean))].join(" | ")||"—"],
       ["Assigned Rider",g=>fmAssignedRiderDisplay(g)],
-      ["Task Status",g=>g.tasks.map(t=>fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"]))).filter(Boolean).join(" | ")||"—"]
+      ["Task Status",g=>g.tasks.map(t=>fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"]))).filter(Boolean).join(" | ")||"Unassigned"]
     ];
     if(table){
       if(!filtered.length)table.innerHTML='<div class="first-mile-combined-empty">No combined pickup groups match this search.</div>';
