@@ -8177,20 +8177,20 @@ window.updateOperationProgress=function(){
   // and the strict upload-by-4:00-AM cutoff. No separate Rule C exists.
   cfr1Rows.forEach(x=>{
     const batchTime=Number(x.btime||0);
-    // Never add membership from a file uploaded after the 7:00 AM freeze.
-    if(cfr1Now>=cfr1Seven && (!batchTime || batchTime>cfr1Seven.getTime()))return;
     if(cfr1Ledger.frozen===true && !cfr1RestoringFrozenLedger)return;
     if(cfr1Now>=cfr1Seven && !cfr1RecoveringEmptyLedger && !cfr1RestoringFrozenLedger)return;
     const r=x.r,key=cfr1Key(r); if(!key || cfr1IsExempt(r))return;
     const stationRaw=r?.["Current Station"] ?? r?.["Current station"] ?? r?.["CURRENT STATION"] ?? Object.entries(r||{}).find(([k,v])=>/^(current\s*station)$/i.test(String(k).trim())&&String(v??"").trim()!=="")?.[1] ?? "";
     const station=norm(stationRaw);
     const status=cfr1Status(r);
+    // Rule B has no received timestamp, so its 4:00 AM upload-time cutoff
+    // remains mandatory even during post-7 AM recovery.
     const isRuleB=
       status==="SOC LHTRANSPORTED" &&
       station==="CAGAYAN DC" &&
       destination(r)==="BADOC HUB" &&
-      x.btime>0 &&
-      x.btime<=cfr1Four.getTime();
+      batchTime>0 &&
+      batchTime<=cfr1Four.getTime();
     const cfr1Town=cfr1TownOf(r);
     const townEligible=!!cfr1Town && cfr1AllowedTowns.has(cfr1Town);
     let rt=null;
@@ -8203,6 +8203,9 @@ window.updateOperationProgress=function(){
       // Keep the original cutoff behavior; do not require the date to be today.
       if(station!=="BADOC HUB" || !townEligible)return;
       rt=cfr1ReceivedTime(r);
+      // Rule A is timestamp-based, not upload-time-based. A late cloud pull
+      // may materialize the source batch after 7 AM; the parcel is still
+      // eligible when its Current Station Received Time is at/before 4 AM.
       if(!rt || rt>cfr1Four)return;
     }
     const prev=cfr1Ledger.records[key];
