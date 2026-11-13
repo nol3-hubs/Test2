@@ -1940,9 +1940,9 @@ async function loadBatches(){
   }catch(e){console.error(e); batches=[]; current=null; memoryOnlyStorage=true;}
 }
 async function saveBatches(){
-  const db=await openDB();
-  if(!db){ memoryOnlyStorage=true; return false; }
   try{
+    const db=await openDB();
+    if(!db){ memoryOnlyStorage=true; return false; }
     const tx=db.transaction(STORE,"readwrite"), st=tx.objectStore(STORE);
     await new Promise((resolve,reject)=>{
       st.clear();
