@@ -3,12 +3,13 @@
 Independent test repository merged from the newer `nol3-hubs/test` project while retaining Test2's extension-version validation and GitHub Actions workflows.
 
 ## Included
-- BADOC Hub dashboard v60
+- BADOC Hub dashboard v61
 - Chrome extension v1.1.4, including First Mile Orders and Tasks
 - Firefox extension v69.3.1
 - First Mile XLSX-to-CSV support
 - Integrated POD/POOH checker
 - Built-in Chrome extension installer and generated ZIP package
+- One-button sequential Delivering / Delivered / OnHold sync
 - CFR1 frozen-membership recovery and late cloud-load handling
 - Test2 GitHub Actions workflows and supporting tools
 
