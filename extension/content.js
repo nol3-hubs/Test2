@@ -33,6 +33,7 @@
   const PAGE_SOURCE = "BADOC_SPX_BRIDGE";
   const BADOC_SOURCE = "BADOC_PAGE";
   const VERSION = "1";
+  const PACKAGE_VERSION = chrome.runtime.getManifest().version;
   let port = null;
   let reconnectTimer = null;
   let shuttingDown = false;
@@ -54,7 +55,7 @@
         emit("BADOC_BRIDGE_DISCONNECTED", { message: reason });
         scheduleReconnect();
       });
-      emit("BADOC_BRIDGE_READY", { version: VERSION });
+      emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION });
     } catch (error) {
       port = null;
       emit("BADOC_BRIDGE_DISCONNECTED", { message: error?.message || String(error) });
@@ -68,7 +69,7 @@
     if (data.source !== BADOC_SOURCE) return;
 
     if (data.type === "BADOC_BRIDGE_HELLO") {
-      emit("BADOC_BRIDGE_READY", { version: VERSION });
+      emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION });
       return;
     }
 
