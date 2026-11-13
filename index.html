@@ -2019,8 +2019,17 @@ function parseCSV(text){
 function spxTN(r){return badocRowMeta(r).tn}
 
 async function importParcelCsvText(text,fileName="export_forward_order.csv",source="file") {
-  const rows=parseCSV(String(text||""));
-  if(!rows.length)throw Error("No parcel rows were found in the SPX export.");
+  const csvText=String(text||"").replace(/^\\uFEFF/,"").trim();
+  if(!csvText)throw Error("The SPX export file was empty.");
+  if(/^([\\{\\[]|<!doctype|<html)/i.test(csvText))throw Error("SPX returned a JSON or HTML response instead of a CSV export.");
+  const rows=parseCSV(csvText);
+  if(!rows.length){
+    const header=csvText.split(/\\r?\\n/,1)[0]||"";
+    if(!/SPX|Tracking|Order|Status/i.test(header))throw Error("The SPX export contains no parcel rows and its CSV header could not be recognized.");
+    // A header-only CSV is a valid zero-result export (common for OnHold).
+    // Keep the existing parcel batches unchanged and report a successful no-op.
+    return {total:0,added:0,updated:0,duplicates:0,name:fileName,persisted:true,warnings:["SPX returned no matching parcel rows; existing Parcel Count data was left unchanged."]};
+  }
 
   const existingByKey=new Map();
   (Array.isArray(batches)?batches:[]).forEach(b=>(Array.isArray(b?.rows)?b.rows:[]).forEach(r=>{
@@ -2063,7 +2072,7 @@ async function importParcelCsvText(text,fileName="export_forward_order.csv",sour
     try{showPage("dashboard");}catch(error){warnings.push("Navigation refresh failed: "+String(error?.message||error));console.error("Parcel import committed; navigation refresh failed:",error);}
   }
   if(!persisted)warnings.push("The import is available in this session, but IndexedDB could not confirm a local save. Keep this tab open and retry storage before closing it.");
-  return {total:uniqueRows.length,added,updated,duplicates,name:fileName,persisted,warnings};
+  return {total:uniqueRows.length,added,updated,duplicates:dupes,name:fileName,persisted,warnings};
 }
 
 const EXCEPTION_TN_KEY="badoc_exception_tracking_numbers_v1";
@@ -11207,7 +11216,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
 <script id="badoc-spx-bridge-installer-v3">
 (function(){
   const BRIDGE_VERSION="1";
-  const BRIDGE_CHECK_TIMEOUT=1200;
+  const BRIDGE_CHECK_TIMEOUT=5000;
   const REQUIRED_CHROME_VERSION="1.1.4";
   const REQUIRED_FIREFOX_VERSION="69.3.1";
   let installedPackageVersion="";
