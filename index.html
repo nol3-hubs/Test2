@@ -1941,19 +1941,22 @@ async function loadBatches(){
 }
 async function saveBatches(){
   const db=await openDB();
-  if(!db){ return; }
+  if(!db){ memoryOnlyStorage=true; return false; }
   try{
     const tx=db.transaction(STORE,"readwrite"), st=tx.objectStore(STORE);
     await new Promise((resolve,reject)=>{
       st.clear();
       tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
+      tx.onabort=()=>reject(tx.error||new Error("Parcel Count storage transaction was aborted."));
       // The store uses an auto-increment key. Do not supply an undefined key.
       batches.forEach(b=>{
         const copy={name:b.name,time:b.time,rows:b.rows,valid:b.valid,mis:b.mis};
         st.add(copy);
       });
     });
-  }catch(e){ console.warn("IndexedDB save failed; continuing in session memory.",e); memoryOnlyStorage=true; }
+    memoryOnlyStorage=false;
+    return true;
+  }catch(e){ console.warn("IndexedDB save failed; continuing in session memory.",e); memoryOnlyStorage=true; return false; }
 }
 function saveTownSettings(){ensureRequiredBadocTowns();localStorage.setItem("pr_towns",JSON.stringify(towns))}
 function norm(s){return String(s??"").trim().replace(/\s+/g," ").toUpperCase()}
@@ -2041,18 +2044,26 @@ async function importParcelCsvText(text,fileName="export_forward_order.csv",sour
   });
 
   if(!uniqueRows.length)throw Error("The SPX export contained no rows with a usable SPX TN.");
+  // Validate the local settings write before mutating the parcel batches. Once the
+  // batch is committed below, later UI refresh errors must never be reported as
+  // an import failure: the parcel data has already changed.
+  saveTownSettings();
   const newBatch={name:fileName,time:Date.now(),rows:uniqueRows,duplicates:dupes,updated,uploadedBy:role,source};
   batches.unshift(newBatch);
   undoBatch={batch:newBatch,index:0};
   current=mergeAllBatches();
-  saveTownSettings();
-  await saveBatches();
-  render();
-  window.__badocRenderForecastBoard?.();
+  const persisted=await saveBatches();
+
+  const warnings=[];
+  try{render();}catch(error){warnings.push("Parcel data was imported, but the dashboard view could not refresh: "+String(error?.message||error));console.error("Parcel import committed; dashboard render failed:",error);}
+  try{window.__badocRenderForecastBoard?.();}catch(error){warnings.push("Forecast board refresh failed: "+String(error?.message||error));console.error("Parcel import committed; forecast render failed:",error);}
   // Keep the user's current section selected after automatic SPX imports.
   // Manual/file imports retain the original behavior of returning to Planning Board.
-  if(!/^spx-(?:inbound|delivery)$/i.test(String(source||"")))showPage("dashboard");
-  return {total:uniqueRows.length,added,updated,duplicates:dupes,name:fileName};
+  if(!/^spx-(?:inbound|delivery)$/i.test(String(source||""))){
+    try{showPage("dashboard");}catch(error){warnings.push("Navigation refresh failed: "+String(error?.message||error));console.error("Parcel import committed; navigation refresh failed:",error);}
+  }
+  if(!persisted)warnings.push("The import is available in this session, but IndexedDB could not confirm a local save. Keep this tab open and retry storage before closing it.");
+  return {total:uniqueRows.length,added,updated,duplicates,name:fileName,persisted,warnings};
 }
 
 const EXCEPTION_TN_KEY="badoc_exception_tracking_numbers_v1";
@@ -6192,14 +6203,19 @@ window.addEventListener("message",async event=>{
       setIndividualDeliveryStatus(statusId,`Importing ${statusName} export ${data.taskId||""}…`,"working");
       if(!data.csvText)throw Error(`The bridge returned an empty ${statusName} CSV payload.`);
       const result=await importParcelCsvText(data.csvText,data.fileName||`export_${statusName.toLowerCase()}_today.csv`,"spx-delivery");
-      setIndividualDeliveryStatus(statusId,`Synced ${result.total.toLocaleString()} rows · ${statusName} only`,"success");
-      window.__badocOperationModalFinish?.(`${statusName} Sync Complete`,`${statusName}-only data loaded locally.`,[
-        ["Status",statusName],["Rows",result.total.toLocaleString()],["New tracking numbers",result.added.toLocaleString()],["Updated tracking numbers",result.updated.toLocaleString()],["Cloud sync","Disabled · local only"]
-      ],"success");
+      const syncNote=!result.persisted
+        ? `Imported ${result.total.toLocaleString()} rows · ${statusName}; local storage warning — keep this tab open.`
+        : result.warnings?.length
+          ? `Imported ${result.total.toLocaleString()} rows · ${statusName}; dashboard refresh warning.`
+          : `Synced ${result.total.toLocaleString()} rows · ${statusName} only`;
+      setIndividualDeliveryStatus(statusId,syncNote,"success");
+      window.__badocOperationModalFinish?.(`${statusName} Import Complete`,result.warnings?.length? "Parcel rows were imported. See warnings below.":`${statusName}-only data loaded locally.`,[
+        ["Status",statusName],["Rows",result.total.toLocaleString()],["New tracking numbers",result.added.toLocaleString()],["Updated tracking numbers",result.updated.toLocaleString()],["Local storage",result.persisted?"Saved":"Session only · save not confirmed"],["Warnings",result.warnings?.join(" | ")||"None"],["Cloud sync","Disabled · local only"]
+      ],result.persisted?"success":"error");
     }catch(err){
-      console.error("SPX delivery-status CSV import failed:",err);
-      setIndividualDeliveryStatus(statusId,`Sync failed — existing Parcel Count data kept.`,"error");
-      window.__badocOperationModalFinish?.("Delivery Status Sync Failed","The existing Parcel Count data was kept unchanged.",[["Error",err.message||"Unknown error"]],"error");
+      console.error("SPX delivery-status CSV import failed before commit:",err);
+      setIndividualDeliveryStatus(statusId,`Import failed before commit — existing Parcel Count data kept.`,"error");
+      window.__badocOperationModalFinish?.("Delivery Status Import Failed","The new export was not committed to Parcel Count. Existing data was kept.",[["Error",err.message||"Unknown error"]],"error");
     }finally{
       if(btn){btn.disabled=false;btn.dataset.busy="0";}
       badocActiveDeliveryStatus="";
