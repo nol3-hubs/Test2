@@ -6595,6 +6595,35 @@ window.DASHBOARD_V2_READY = true;
       return JSON.stringify(snapshot);
     }catch(_){return ""}
   }
+  // A same-day CFR1 ledger is already an eligibility snapshot. Do not re-filter
+  // its members by receivedMs: Rule A permits prior-date received timestamps
+  // and Rule B deliberately has no received timestamp. Union membership by key
+  // and retain the freeze if either copy has already frozen.
+  function mergeSameDayLedgers(cloud,local){
+    const cloudRecords=cloud?.records&&typeof cloud.records==="object"?cloud.records:{};
+    const localRecords=local?.records&&typeof local.records==="object"?local.records:{};
+    const records={...cloudRecords};
+    Object.entries(localRecords).forEach(([key,localRec])=>{
+      const cloudRec=records[key];
+      if(!cloudRec){records[key]=localRec;return;}
+      const localTime=Number(localRec?.latestBatchTime||localRec?.latestRowTime||0);
+      const cloudTime=Number(cloudRec?.latestBatchTime||cloudRec?.latestRowTime||0);
+      records[key]=localTime>=cloudTime?{...cloudRec,...localRec}:{...localRec,...cloudRec};
+    });
+    const frozen=cloud?.frozen===true||local?.frozen===true;
+    const cloudFrozenAt=Number(cloud?.frozenAt||0),localFrozenAt=Number(local?.frozenAt||0);
+    const frozenAt=cloudFrozenAt&&localFrozenAt?Math.min(cloudFrozenAt,localFrozenAt):(cloudFrozenAt||localFrozenAt||0);
+    return {
+      ...cloud,
+      ...local,
+      date:String(local?.date||cloud?.date||""),
+      cutoff:Number(local?.cutoff||cloud?.cutoff||0),
+      records,
+      frozen,
+      ...(frozenAt?{frozenAt}:{}),
+      _cloudUpdatedAt:Number(cloud?._cloudUpdatedAt||local?._cloudUpdatedAt||0)
+    };
+  }
   function getClient(){
     const cfg=window.BADOC_SHARED_CONFIG||{};
     if(!window.BadocCloud||!cfg.url||!cfg.key)throw Error("Cloud sync configuration unavailable");
@@ -6635,21 +6664,10 @@ window.DASHBOARD_V2_READY = true;
       // Keep the current operational day. For the same day, merge by parcel
       // key so one device's live status updates do not erase other members.
       if(cloud&&cloudToday===today&&cloud.records&&ledger.records){
-        // Only merge cloud membership that still passes today's hard cutoff.
-        // Otherwise an old cloud record removed by local eligibility cleanup
-        // would be reintroduced on every publish and could poison recovery.
-        const cutoff=Number(ledger.cutoff)||__badocTime.manilaDate().setHours(4,0,0,0);
-        const day=today;
-        const validForToday=rec=>{
-          const ms=Number(rec?.receivedMs);
-          if(!Number.isFinite(ms)||ms<=0||ms>cutoff)return false;
-          const d=new Date(ms);
-          const key=[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
-          return key===day;
-        };
-        const cloudRecords=Object.fromEntries(Object.entries(cloud.records||{}).filter(([,rec])=>validForToday(rec)));
-        const localRecords=Object.fromEntries(Object.entries(ledger.records||{}).filter(([,rec])=>validForToday(rec)));
-        const merged={...cloud,...ledger,records:{...cloudRecords,...localRecords}};
+        // The daily ledger is the frozen membership record. Never re-check its
+        // members against receivedMs here: prior-date Rule A rows and Rule B
+        // transported rows with blank receivedMs are both valid CFR1 members.
+        const merged=mergeSameDayLedgers(cloud,ledger);
         await uploadLedger(merged);
         lastPublishedSourceSignature=sourceSig;
       }else{
@@ -6666,28 +6684,47 @@ window.DASHBOARD_V2_READY = true;
     }finally{busy=false}
   }
   async function poll(){
-    if(busy)return;
+    if(busy)return false;
     busy=true;
+    let loaded=false;
     try{
       const cloud=await downloadLedger();
-      if(!cloud||!cloud.date)return;
+      if(!cloud||!cloud.date)return true;
       const memory=window.__badocCfr1LedgerMemory||null;
       const cloudStamp=String(cloud._cloudUpdatedAt||"");
-      if(cloudStamp&&cloudStamp!==lastCloudStamp){
-        lastCloudStamp=cloudStamp;
-        if(!memory||memory.date!==cloud.date||
-          Number(cloud._cloudUpdatedAt||0)>Number(memory._cloudUpdatedAt||0)){
-          window.__badocCfr1LedgerMemory=cloud;
-          // Refresh the CFR1 view when the shared ledger changes for today's date.
-          if(cloud.date===__badocTime.dayKey()){
-            // Do not reload the entire dashboard during background CFR1 polling.
-            // The existing periodic refresh/recalculation handles the visible state.
-            window.dispatchEvent(new CustomEvent("badoc-cfr1-cloud-ledger-updated",{detail:{date:cloud.date}}));
-          }
+      if(!memory||memory.date!==cloud.date){
+        window.__badocCfr1LedgerMemory=cloud;
+        loaded=true;
+      }else if(cloudStamp&&cloudStamp!==lastCloudStamp&&
+        Number(cloud._cloudUpdatedAt||0)>Number(memory._cloudUpdatedAt||0)){
+        // A cloud refresh and a local refresh can overlap. Merge both same-day
+        // snapshots by membership so neither device can shrink a frozen list.
+        const merged=mergeSameDayLedgers(cloud,memory);
+        window.__badocCfr1LedgerMemory=merged;
+        loaded=true;
+        if(sourceSignature(merged)!==sourceSignature(cloud)){
+          // Restore cloud members if another device previously published a
+          // partial list. This also recovers records from an already-open tab.
+          await uploadLedger(merged);
         }
       }
-    }catch(e){console.warn("CFR1 cloud poll failed:",e)}
-    finally{busy=false}
+      if(cloudStamp)lastCloudStamp=String((window.__badocCfr1LedgerMemory||cloud)._cloudUpdatedAt||cloudStamp);
+      if(loaded&&cloud.date===__badocTime.dayKey()){
+        window.dispatchEvent(new CustomEvent("badoc-cfr1-cloud-ledger-updated",{detail:{date:cloud.date}}));
+      }
+      return true;
+    }catch(e){
+      console.warn("CFR1 cloud poll failed:",e);
+      const status=document.getElementById("cfr1CloudSyncStatus");
+      if(status)status.textContent="CFR1 cloud sync failed — cloud not updated";
+      return false;
+    }finally{busy=false}
+  }
+  async function ensureLoaded(timeoutMs=12000){
+    const until=Date.now()+Math.max(1000,Number(timeoutMs)||12000);
+    while(busy&&Date.now()<until)await new Promise(resolve=>setTimeout(resolve,100));
+    if(busy)return false;
+    return await poll();
   }
   async function resetCloud(){
     // Serialize reset with any in-flight poll/publish so an older ledger is not
@@ -6707,7 +6744,7 @@ window.DASHBOARD_V2_READY = true;
       throw e;
     }finally{busy=false}
   }
-  window.__badocCfr1CloudSync={publish,resetCloud};
+  window.__badocCfr1CloudSync={publish,resetCloud,ensureLoaded};
   window.addEventListener("load",()=>{poll();setInterval(poll,15000)});
 })();
 </script>
@@ -11769,6 +11806,17 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     setBtn("■ Stop",false,"run");
     let parcelCloudBufferStarted=false;
     try{
+      // Load the authoritative shared CFR1 membership before Sync All imports
+      // new SPX statuses. If cloud is temporarily unavailable, keep syncing
+      // SPX data but never let a partial ledger replace the shared snapshot.
+      try{
+        const cfr1Cloud=window.__badocCfr1CloudSync;
+        if(cfr1Cloud&&typeof cfr1Cloud.ensureLoaded==="function"){
+          const ready=await cfr1Cloud.ensureLoaded(12000);
+          if(!ready)console.warn("Sync All: CFR1 cloud ledger could not be verified before SPX sync.");
+          window.updateOperationProgress?.();
+        }
+      }catch(error){console.warn("Sync All: CFR1 cloud preflight failed:",error)}
       await runStep(0,states,last);
       if(!cancelled&&typeof window.__badocBeginSyncAllParcelCloudBuffer==="function"){
         window.__badocBeginSyncAllParcelCloudBuffer();
