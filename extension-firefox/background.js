@@ -94,8 +94,18 @@ const badocPorts = new Set();
 const activeJobs = new Map();
 const PARALLEL_JOB_ALLOWLIST = {
   "parcel-inbound": new Set(["parcel-delivery"]),
-  "parcel-delivery": new Set(["parcel-inbound", "parcel-secondary", "linehaul"]),
-  "parcel-secondary": new Set(["parcel-delivery"]),
+  "parcel-delivery": new Set([
+    "parcel-inbound", "parcel-secondary", "first-mile-orders", "first-mile-tasks", "linehaul"
+  ]),
+  "parcel-secondary": new Set([
+    "parcel-delivery", "first-mile-orders", "first-mile-tasks"
+  ]),
+  "first-mile-orders": new Set([
+    "parcel-delivery", "parcel-secondary", "first-mile-tasks"
+  ]),
+  "first-mile-tasks": new Set([
+    "parcel-delivery", "parcel-secondary", "first-mile-orders"
+  ]),
   "linehaul": new Set(["parcel-delivery"])
 };
 
