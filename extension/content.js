@@ -48,14 +48,16 @@
     if (shuttingDown || port) return;
     try {
       port = chrome.runtime.connect({ name: "BADOC_PAGE" });
-      port.onMessage.addListener(msg => emit(msg.type, msg));
+      port.onMessage.addListener(msg => {
+        if (msg?.type === "BADOC_BRIDGE_READY") emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION });
+        else emit(msg.type, msg);
+      });
       port.onDisconnect.addListener(() => {
         const reason = chrome.runtime.lastError?.message || "Bridge connection closed.";
         port = null;
         emit("BADOC_BRIDGE_DISCONNECTED", { message: reason });
         scheduleReconnect();
       });
-      emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION });
     } catch (error) {
       port = null;
       emit("BADOC_BRIDGE_DISCONNECTED", { message: error?.message || String(error) });
@@ -69,7 +71,11 @@
     if (data.source !== BADOC_SOURCE) return;
 
     if (data.type === "BADOC_BRIDGE_HELLO") {
-      emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION });
+      if (port) emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION });
+      else {
+        emit("BADOC_BRIDGE_DISCONNECTED", { message: "Extension background connection is not ready yet. Reconnecting…" });
+        scheduleReconnect();
+      }
       return;
     }
 
@@ -131,12 +137,15 @@
       "BADOC_START_PARCEL_INBOUND_SYNC",
       "BADOC_START_RECEIVED_CHECKING_INBOUND_SYNC",
       "BADOC_START_PARCEL_SECONDARY_SYNC",
-      "BADOC_ABORT_SYNC"
-    ]);
+      "BADOC_START_FIRST_MILE_ORDERS_SYNC",
+      "BADOC_START_FIRST_MILE_TASKS_SYNC",
+      "BADOC_ABORT_SYNC",    ]);
     if (!supported.has(data.type)) return;
     if (!port) {
-      const errorKind = data.type === "BADOC_START_DELIVERING_RECONCILE" ? "delivering-reconcile" :
+      const errorKind =         data.type === "BADOC_START_DELIVERING_RECONCILE" ? "delivering-reconcile" :
         data.type === "BADOC_START_PARCEL_SECONDARY_SYNC" ? "parcel-secondary" :
+        data.type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" ? "first-mile-orders" :
+        data.type === "BADOC_START_FIRST_MILE_TASKS_SYNC" ? "first-mile-tasks" :
         data.type === "BADOC_START_PARCEL_DELIVERY_SYNC" ? "parcel-delivery" :
         data.type === "BADOC_START_LINEHAUL_SYNC" ? "linehaul" :
         data.type === "BADOC_START_RIDER_SYNC" ? "rider" : "parcel-inbound";
@@ -149,6 +158,9 @@
     try {
       const payload = { type: data.type };
       if (data.type === "BADOC_START_DELIVERING_RECONCILE") payload.trackingNumbers = Array.isArray(data.trackingNumbers) ? data.trackingNumbers.map(v => String(v || "").trim()).filter(Boolean) : [];
+      if (data.type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" || data.type === "BADOC_START_FIRST_MILE_TASKS_SYNC") {
+        if (data.selectedDate !== undefined) payload.selectedDate = String(data.selectedDate || "");
+      }
       if (data.type === "BADOC_START_RIDER_SYNC") {
         payload.hubId = Number(data.hubId || 0) || 0;
         payload.hubName = String(data.hubName || "").trim();
@@ -160,6 +172,17 @@
         }
       }
       port.postMessage(payload);
+      if (data.type === "BADOC_START_PARCEL_INBOUND_SYNC") {
+        emit("BADOC_SPX_COMMAND_FORWARDED", {
+          kind: "parcel-inbound",
+          message: "Received sync command forwarded to the extension background."
+        });
+      } else if (data.type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" || data.type === "BADOC_START_FIRST_MILE_TASKS_SYNC") {
+        emit("BADOC_SPX_COMMAND_FORWARDED", {
+          kind: data.type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" ? "first-mile-orders" : "first-mile-tasks",
+          message: "First Mile command forwarded to the extension background."
+        });
+      }
     } catch (error) {
       emit("BADOC_SPX_ERROR", { message: error?.message || String(error) });
     }

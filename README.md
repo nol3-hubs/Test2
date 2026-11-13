@@ -1,23 +1,27 @@
 # BADOC Hub Dashboard — Test2
 
-This repository is a test copy of `nol3-hubs/badoc-hub`.
+Independent test repository merged from the newer `nol3-hubs/test` project while retaining Test2's extension-version validation and GitHub Actions workflows.
 
 ## Included
-- BADOC Hub dashboard
-- Chrome extension
-- Firefox extension
+- BADOC Hub dashboard v57
+- Chrome extension v1.1.4, including First Mile Orders and Tasks
+- Firefox extension v69.3.1
+- First Mile XLSX-to-CSV support
 - Integrated POD/POOH checker
-- GitHub Actions workflows and supporting tools
+- Built-in Chrome extension installer and generated ZIP package
+- Test2 GitHub Actions workflows and supporting tools
 
 ## Extension version validation
-The dashboard now checks the extension package version separately from the bridge protocol version.
+The dashboard checks the installed extension package version separately from the bridge protocol version.
 
-Minimum package versions currently configured:
-- Chrome: `1.0.3`
-- Firefox: `69.2.7`
+Minimum versions:
+- Chrome: `1.1.4`
+- Firefox: `69.3.1`
 
-The extension sends its installed package version during the bridge handshake. The dashboard identifies missing or outdated package-version reporting and prevents SPX bridge-dependent actions until a compatible extension is detected.
+Both extension bridge scripts report their package version during the handshake. Missing or older package versions are rejected by the dashboard.
 
-## Notes
-- This is the independent Test2 copy; the production `badoc-hub` repository was not changed.
-- Keep Chrome and Firefox extension package versions in sync with the minimum versions configured in the dashboard installer.
+## Repository boundaries
+- This is the independent Test2 test repository.
+- `nol3-hubs/test` was used as the source and was not changed.
+- Production `nol3-hubs/badoc-hub` was not changed.
+- Test2's existing GitHub Actions workflows are retained.
