@@ -11969,10 +11969,18 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       if(cancelled){
         for(let index=1;index<STEPS.length;index++){states[index]=skip("Stopped");renderSteps(states)}
       }else{
-        // Start all independent SPX groups together. Pickup preserves its
-        // internal Orders -> Tasks dependency inside its own sequence.
-        last.textContent="Starting all SPX sync groups simultaneously…";
-        await Promise.all([1,2,3,4].map(index=>runStep(index,states,last)));
+        // Received / Transported must finish before Incoming Linehaul starts.
+        // Delivery statuses and Pickup can run alongside Received / Transported.
+        last.textContent="Syncing Received / Transported first…";
+        const parallelSteps = [runStep(2,states,last),runStep(4,states,last)];
+        await Promise.all([runStep(1,states,last), ...parallelSteps]);
+        if(!cancelled){
+          last.textContent="Received / Transported finished. Starting Incoming Linehaul…";
+          await runStep(3,states,last);
+        }else{
+          states[3]=skip("Stopped before Incoming Linehaul");
+          renderSteps(states);
+        }
 
         // Publish the parcel exports only after Received and delivery exports
         // both finish, so delivery status continues to take precedence.
