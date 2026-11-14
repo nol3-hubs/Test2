@@ -4,8 +4,8 @@ Independent test repository merged from the newer `nol3-hubs/test` project while
 
 ## Included
 - BADOC Hub dashboard v63
-- Chrome extension v1.1.4, including First Mile Orders and Tasks
-- Firefox extension v69.3.1
+- Chrome extension v1.1.8, including First Mile Orders and Tasks
+- Firefox extension v69.3.5
 - First Mile XLSX-to-CSV support
 - Integrated POD/POOH checker
 - Built-in Chrome extension installer and generated ZIP package
@@ -17,8 +17,8 @@ Independent test repository merged from the newer `nol3-hubs/test` project while
 The dashboard checks the installed extension package version separately from the bridge protocol version.
 
 Minimum versions:
-- Chrome: `1.1.4`
-- Firefox: `69.3.1`
+- Chrome: `1.1.8`
+- Firefox: `69.3.5`
 
 Both extension bridge scripts report their package version during the handshake. Missing or older package versions are rejected by the dashboard.
 
