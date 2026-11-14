@@ -11524,6 +11524,17 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     el.style.background=pair[0]+"22";
     el.style.borderColor=pair[1]+"88";
     el.style.color=pair[1];
+    let spinner=el.querySelector(".badoc-extension-check-spinner");
+    if(state==="checking"){
+      if(!spinner){
+        spinner=document.createElement("span");
+        spinner.className="badoc-extension-check-spinner";
+        spinner.setAttribute("aria-hidden","true");
+        spinner.textContent="◌";
+        spinner.style.cssText="display:inline-block;flex:0 0 auto;font-size:15px;line-height:1;animation:badocExtensionCheckSpin .8s linear infinite";
+        el.insertBefore(spinner,el.firstChild);
+      }
+    }else if(spinner){spinner.remove();}
     const fullMessage=String(message||"").startsWith("Extension")?String(message):"Extension "+String(message||"");
     let track=el.querySelector(".badoc-extension-status-track");
     if(!track){
@@ -11551,7 +11562,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     if(!document.getElementById("badocExtensionStatusMarqueeStyle")){
       const style=document.createElement("style");
       style.id="badocExtensionStatusMarqueeStyle";
-      style.textContent="@keyframes badocExtensionStatusMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}#badocExtensionVersionStatus:hover .badoc-extension-status-track{animation-play-state:paused!important}";
+      style.textContent="@keyframes badocExtensionStatusMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}@keyframes badocExtensionCheckSpin{to{transform:rotate(360deg)}}#badocExtensionVersionStatus:hover .badoc-extension-status-track{animation-play-state:paused!important}";
       document.head.appendChild(style);
     }
     el.title="Detected extension version: "+(installedPackageVersion||"unknown")+" · Required: "+requiredPackageVersion+" · Hover to pause";
