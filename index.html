@@ -1301,6 +1301,11 @@ html[data-theme="light"] #firstMile .fm-task-other{color:#475467!important;backg
             <button class="btn primary" id="syncFirstMileAll" type="button">↻ Sync First Mile</button>
           </div>
           <span id="firstMileCombinedMeta">Sync Orders and Tasks to build the combined pickup list.</span>
+          <div id="firstMileAutoAlertControls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            <button class="btn" id="enableFirstMileAlarm" type="button">Enable Unassigned Alarm</button>
+            <button class="btn" id="ackFirstMileAlarm" type="button" hidden>Acknowledge Alarm</button>
+            <span id="firstMileAutoAlertStatus" class="hint" aria-live="polite">Automatic First Mile sync: 10:00 AM–4:00 PM · Alarm not enabled</span>
+          </div>
         </div>
         <div id="firstMileCombinedTable" class="first-mile-combined-table"><div class="first-mile-combined-empty">Combined pickup information will appear here after both exports are saved.</div></div>
       </article>
@@ -4298,6 +4303,78 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     }
   }
   window.__badocRenderFirstMileCombined=renderFirstMileCombined;
+  // Scheduled First Mile button clicks and new-unassigned alarm (Philippine time).
+  (function(){
+    const schedule=new Set(["10:00","11:00","12:00","13:00","14:00","15:00","15:30","15:40","15:50","15:57","15:59","16:00"]);
+    const statusEl=()=>document.getElementById("firstMileAutoAlertStatus");
+    const manilaParts=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).reduce((o,p)=>(o[p.type]=p.value,o),{});
+    let lastAutoRun="",alarmEnabled=false,alarmActive=false,audioCtx=null,alarmTimer=null,knownUnassigned=null;
+    const orderKey=g=>[String(g.pickupPointId||""),...(g.orders||[]).map(o=>String(fmValue(o,["Order ID","Order No","Order Number","Pickup Order ID","order_id","order_sn","order_number"])||"")).filter(Boolean).sort()].join("|");
+    function currentUnassigned(){
+      return new Set((firstMileCombinedRows||[]).filter(g=>!(g.tasks||[]).length||((g.tasks||[]).some(t=>fmNorm(fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"])))==="unassigned"))).map(orderKey));
+    }
+    function beep(){
+      if(!alarmEnabled||!alarmActive||!audioCtx)return;
+      try{
+        const now=audioCtx.currentTime;
+        [0,0.22,0.44].forEach(offset=>{
+          const osc=audioCtx.createOscillator(),gain=audioCtx.createGain();
+          osc.type="square";osc.frequency.value=880;
+          gain.gain.setValueAtTime(0.0001,now+offset);
+          gain.gain.exponentialRampToValueAtTime(0.22,now+offset+0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001,now+offset+0.13);
+          osc.connect(gain);gain.connect(audioCtx.destination);
+          osc.start(now+offset);osc.stop(now+offset+0.15);
+        });
+      }catch(e){console.warn("Pickup alarm audio:",e);}
+    }
+    function startAlarm(count){
+      if(!alarmEnabled||alarmActive)return;
+      alarmActive=true;
+      const ack=document.getElementById("ackFirstMileAlarm");if(ack)ack.hidden=false;
+      const el=statusEl();if(el)el.textContent=count+" new unassigned pickup group(s) detected — alarm active.";
+      beep();alarmTimer=setInterval(beep,5000);
+      if("Notification" in window&&Notification.permission==="granted"){
+        try{new Notification("New Unassigned Pickup Detected!",{body:count+" new unassigned pickup group(s) appeared in Pickup.",tag:"badoc-first-mile-unassigned"});}catch(e){}
+      }
+    }
+    function acknowledge(){
+      alarmActive=false;if(alarmTimer)clearInterval(alarmTimer);alarmTimer=null;
+      const ack=document.getElementById("ackFirstMileAlarm");if(ack)ack.hidden=true;
+      const el=statusEl();if(el)el.textContent="Alarm acknowledged. Automatic First Mile sync remains active.";
+    }
+    document.getElementById("enableFirstMileAlarm")?.addEventListener("click",async()=>{
+      try{
+        const AC=window.AudioContext||window.webkitAudioContext;
+        if(AC){audioCtx=audioCtx||new AC();if(audioCtx.state==="suspended")await audioCtx.resume();}
+        if("Notification" in window&&Notification.permission==="default")await Notification.requestPermission();
+        alarmEnabled=true;
+        const b=document.getElementById("enableFirstMileAlarm");if(b){b.textContent="Alarm Enabled";b.disabled=true;}
+        const el=statusEl();if(el)el.textContent="Automatic First Mile sync active · Unassigned alarm enabled.";
+        if(knownUnassigned===null)knownUnassigned=currentUnassigned();
+      }catch(e){const el=statusEl();if(el)el.textContent="Could not enable alarm: "+(e.message||e);}
+    });
+    document.getElementById("ackFirstMileAlarm")?.addEventListener("click",acknowledge);
+    const originalRender=renderFirstMileCombined;
+    window.__badocRenderFirstMileCombined=function(){
+      originalRender();
+      const now=currentUnassigned();
+      if(knownUnassigned===null){knownUnassigned=now;return;}
+      let added=0;now.forEach(k=>{if(!knownUnassigned.has(k))added++;});
+      knownUnassigned=now;
+      if(added)startAlarm(added);
+    };
+    // Check frequently so background-tab timer throttling does not create duplicate clicks.
+    setInterval(()=>{
+      const p=manilaParts(),hm=p.hour+":"+p.minute,key=p.year+"-"+p.month+"-"+p.day+" "+hm;
+      if(!schedule.has(hm)||lastAutoRun===key)return;
+      const btn=document.getElementById("syncFirstMileAll");
+      if(!btn||btn.disabled||btn.dataset.busy==="1")return;
+      lastAutoRun=key;
+      try{btn.click();const el=statusEl();if(el)el.textContent="Automatic Sync First Mile triggered at "+hm+" (Philippine time).";}
+      catch(e){console.error("Scheduled First Mile click failed:",e);lastAutoRun="";}
+    },15000);
+  })();
   $("firstMileCombinedSearch")?.addEventListener("input",renderFirstMileCombined);
   $("firstMileTaskStatusFilter")?.addEventListener("change",renderFirstMileCombined);
   $("copyFirstMileForSheet")?.addEventListener("click",async()=>{
