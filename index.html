@@ -4646,7 +4646,7 @@ $("resetClearFloorRate").onclick=()=>{
   alert("Today's Clear Floor Rate has been reset to 0%.");
 };
 $("clearData").onclick=async()=>{
-  if(!confirm("Clear all uploaded data?\\n\\nThis removes Upload Exported and Linehaul Task data, all Exemptions, and the saved Pickup Orders and Tasks exports from this device. Exemptions are also cleared from shared cloud storage. Your town/station settings will be kept."))return;
+  if(!confirm("Clear all uploaded data?\\n\\nThis removes Upload Exported and Linehaul Task data, all Exemptions, and Pickup Orders/Tasks from this device and shared cloud storage. The saved Pickup Point Name directory is also cleared. Your town/station settings will be kept."))return;
   const clearBtn=$("clearData");
   if(clearBtn)clearBtn.disabled=true;
   try{
@@ -12908,13 +12908,14 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     const version=Date.now();
     for(const kind of kinds){
       pending.add(kind);
-      await storage().remove([PATHS[kind]]);
+      const removed=await storage().remove([PATHS[kind]]);
+      if(removed.error)throw Error(removed.error.message||"Pickup cloud delete failed.");
       patch[FIELDS[kind]+"_exists"]=false;
       patch[FIELDS[kind]+"_version"]=version+({orders:0,tasks:1,names:2}[kind]);
       try{localStorage.removeItem(DIRTY_KEYS[kind])}catch(e){}
     }
     await writeState(patch);
-    kinds.forEach(kind=>{seen[kind]=Number(patch[FIELDS[kind]+"_version"]||version);clearLocalKind(kind);pending.delete(kind)});
+    kinds.forEach(kind=>{seen[kind]=Number(patch[FIELDS[kind]+"_version"]||version);clearLocalKind(kind)});
     await announce("clear");
     status("Pickup exports cleared from shared cloud","ok");
     return true;
