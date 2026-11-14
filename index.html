@@ -4047,20 +4047,74 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     }).join("");
   }
   function fmPickupPointId(row){return fmValue(row,["Pickup Point ID","Pickup Point Id","Pickup Point","pickup_point_id","pickupPointId","service_point_id"],/^(pickup)?point(id)?$/i);}
-  function fmPickupPointName(row){return fmValue(row,["Pickup Point Name","To Pickup Point Name","From Pickup Point Name","Pickup Point","Service Point Name","pickup_point_name","to_pickup_point_name","from_pickup_point_name","service_point_name"],/^(from|to)?pickuppointname$|^servicepointname$/i);}
-  function fmUniquePickupNames(rows){
+  function fmPickupPointName(row){return fmValue(row,["Pickup Point Name","To Pickup Point Name","From Pickup Point Name","Pickup Point","Service Point Name","pickup_point_name","to_pickup_point_name","from_pickup_point_name","service_point_name","pickupPointName","toPickupPointName","fromPickupPointName"],/^(from|to)?pickuppointname$|^servicepointname$/i);}
+  function fmSellerName(row){
+    return fmValue(row,[
+      "Seller Name","Seller Display Name","Seller Nickname",
+      "Shop Name","Shop Display Name","Merchant Name","Store Name",
+      "Pickup Shop Name","Pickup Seller Name",
+      "seller_name","sellerName","seller_display_name","seller_nickname",
+      "shop_name","shopName","shop_display_name","merchant_name","merchantName",
+      "store_name","storeName","pickup_shop_name","pickup_seller_name","order_seller_name"
+    ],/^(seller|shop|merchant|store)(display|nickname)?name$|^pickup(shop|seller)name$|^ordersellername$/i);
+  }
+  function fmUniquePickupNames(rows,readName=fmPickupPointName){
     const names=new Map();
     for(const row of rows||[]){
-      const value=fmPickupPointName(row);
+      const value=String(readName(row)||"").trim();
       const key=fmNorm(value);
       if(key&&!names.has(key))names.set(key,value);
     }
     return names;
   }
+
+  // Keep point names learned from task exports. The daily reset clears task/order
+  // exports, but this small ID->name directory is reference data and survives it.
+  const FM_POINT_NAME_MAP_KEY="badoc_first_mile_point_names_v1";
+  let fmPointNameMap=null;
+  function fmGetPointNameMap(){
+    if(fmPointNameMap)return fmPointNameMap;
+    try{
+      const saved=JSON.parse(localStorage.getItem(FM_POINT_NAME_MAP_KEY)||"{}");
+      fmPointNameMap=saved&&typeof saved==="object"&&!Array.isArray(saved)?saved:{};
+    }catch(_){fmPointNameMap={};}
+    return fmPointNameMap;
+  }
+  function fmRememberPickupPointNames(rows){
+    const map=fmGetPointNameMap();
+    let changed=false;
+    for(const row of rows||[]){
+      const id=fmNorm(fmPickupPointId(row));
+      if(!id)continue;
+      const name=fmPickupPointName(row)||fmSellerName(row);
+      if(name&&String(name).trim()&&map[id]!==String(name).trim()){
+        map[id]=String(name).trim();
+        changed=true;
+      }
+    }
+    if(changed){
+      try{localStorage.setItem(FM_POINT_NAME_MAP_KEY,JSON.stringify(map));}catch(e){console.warn("Pickup point-name cache save failed:",e)}
+    }
+  }
   function fmPickupNameDisplay(group){
     const taskNames=fmUniquePickupNames(group?.tasks||[]);
     const orderNames=fmUniquePickupNames(group?.orders||[]);
-    return [...taskNames.values(),...orderNames.values()].join(" | ")||"—";
+    const direct=[...taskNames.values(),...orderNames.values()];
+    if(direct.length)return [...new Set(direct)].join(" | ");
+
+    // If today's task has not been assigned yet, resolve its ID using names
+    // learned from earlier task exports.
+    const sourceRow=(group?.orders||[])[0]||(group?.tasks||[])[0]||{};
+    const pointId=fmNorm(fmPickupPointId(sourceRow));
+    const mapped=pointId?fmGetPointNameMap()[pointId]:"";
+    if(mapped)return mapped;
+
+    // Last-resort display fallback: use seller/shop name supplied by the order.
+    const sellerNames=[
+      ...fmUniquePickupNames(group?.orders||[],fmSellerName).values(),
+      ...fmUniquePickupNames(group?.tasks||[],fmSellerName).values()
+    ];
+    return [...new Set(sellerNames)].join(" | ")||"—";
   }
   function fmAssignedRiderDisplay(group){
     const names=(group?.tasks||[]).map(t=>fmValue(t,["Driver Name","Rider Name","Pickup Driver Name","driver_name","rider_name"]).trim()).filter(Boolean);
@@ -4145,6 +4199,9 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       return;
     }
     const allOrderRows=ordersData.rows,tasksRows=tasksData.rows;
+    // Learn/refresh ID->name reference data from both exports before rendering.
+    fmRememberPickupPointNames(tasksRows);
+    fmRememberPickupPointNames(allOrderRows);
     const today=getBadocManilaDayBounds().date;
     // Only pickup orders whose ETA falls on today's Manila date are eligible for matching.
     const orderRows=allOrderRows.filter(order=>fmEtaDate(order)===today);
@@ -4603,6 +4660,9 @@ $("clearData").onclick=async()=>{
       ["badoc_first_mile_orders_csv_local_v1","badoc_first_mile_tasks_csv_local_v1"].forEach(k=>localStorage.removeItem(k));
       window.__badocRenderFirstMileCombined?.();
     }
+    // Settings > Clear all data also clears the saved Pickup Point ID/name directory.
+    localStorage.removeItem("badoc_first_mile_point_names_v1");
+    window.__badocRenderFirstMileCombined?.();
 
     /* Linehaul Task uses localStorage, not the parcel IndexedDB store. */
     ["badoc_linehaul_tasks_town_v1","badoc_linehaul_packed_rows_v1","badoc_linehaul_blank_packed_rows_v1","badoc_linehaul_export_total_v1","badoc_linehaul_export_unique_v1"].forEach(k=>localStorage.removeItem(k));
