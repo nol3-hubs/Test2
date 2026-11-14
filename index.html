@@ -12040,10 +12040,30 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
   function init(){
     const button=$("syncAllBtn");if(!button||button.dataset.bound)return;
     button.dataset.bound="1";
-    button.addEventListener("click",run);
+    button.addEventListener("click",()=>{autoStartClaimed=true;run();});
     button.title="Sync shared cloud data, Received / Transported, all delivery statuses, Incoming Linehaul, and Pickup (First Mile Orders and Tasks).";
     const last=$("syncAllLast");if(last)last.textContent=lastText();
+    // Automatically run Sync All once each time the dashboard is opened,
+    // but wait for the extension bridge before starting SPX exports.
+    const waitForExtension=()=>{
+      if(autoStartClaimed)return;
+      if(bridgeReady()){
+        autoStartClaimed=true;
+        if(last)last.textContent="Extension connected · starting automatic Sync All…";
+        setTimeout(()=>{if(!running)run();},700);
+        return;
+      }
+      if(!autoStartWaitUntil)autoStartWaitUntil=Date.now()+2*60*1000;
+      if(Date.now()<autoStartWaitUntil){
+        if(last)last.textContent="Waiting for extension connection to start automatic Sync All…";
+        setTimeout(waitForExtension,500);
+      }else if(last){
+        last.textContent="Automatic Sync All not started · extension connection unavailable. Use Sync SPX Data to retry.";
+      }
+    };
+    waitForExtension();
   }
+  let autoStartClaimed=false,autoStartWaitUntil=0;
   window.__badocSyncAll=run;
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
 })();
