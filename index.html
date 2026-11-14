@@ -12927,7 +12927,14 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     }
     const localSnapshot=pickupLocalRecordFromCloud(kind,record);
     updateLocalRecord(kind,localSnapshot);
-    if(kind!=="names"&&typeof record?.csvText==="string")await upload(kind,localSnapshot);
+    if(kind!=="names"&&typeof record?.csvText==="string"){
+      const migrated=await upload(kind,localSnapshot);
+      if(migrated){
+        const migratedState=await readState();
+        seen[kind]=Number(migratedState?.[field+"_version"]||version);
+        return;
+      }
+    }
     seen[kind]=version;
   }
   function hasCloudField(state,kind){
