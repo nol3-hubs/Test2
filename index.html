@@ -1305,7 +1305,7 @@ html[data-theme="light"] #firstMile .fm-task-other{color:#475467!important;backg
         <div id="firstMileCombinedTable" class="first-mile-combined-table"><div class="first-mile-combined-empty">Combined pickup information will appear here after both exports are saved.</div></div>
       </article>
     </div>
-    <div class="hint first-mile-local-note">Both exports are saved in this browser's local storage. No Firebase or cloud upload is performed.</div>
+    <div class="hint first-mile-local-note">Pickup Orders and Tasks are cached on this device and synced to shared cloud storage for all dashboard devices.</div>
   </div>
 </section>
 
@@ -12681,7 +12681,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     tasks:"badoc_pickup_tasks_cloud_dirty_v1",
     names:"badoc_pickup_names_cloud_dirty_v1"
   };
-  let client=null,channel=null,started=false,pulling=false;
+  let client=null,channel=null,started=false,pulling=false,refreshQueued=false;
   let pollTimer=null;
   const pending=new Set();
   const seen={orders:0,tasks:0,names:0};
@@ -12801,12 +12801,22 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       try{window.__badocRenderFirstMileCombined?.();}catch(e){}
     }
   }
-  async function upload(kind,record){
+  const uploadQueues={orders:Promise.resolve(),tasks:Promise.resolve(),names:Promise.resolve()};
+  function upload(kind,record){
+    if(!uploadQueues[kind])uploadQueues[kind]=Promise.resolve();
+    const run=()=>uploadNow(kind,record);
+    const next=uploadQueues[kind].catch(()=>{}).then(run);
+    uploadQueues[kind]=next.catch(()=>{});
+    return next;
+  }
+  async function uploadNow(kind,record){
     const field=FIELDS[kind],path=PATHS[kind],version=Date.now();
     if(!started)throw Error("Pickup cloud is still connecting.");
     pending.add(kind);
     try{
-      const payload=kind==="names"?record:(record||localRecord(kind));
+      // Queued sync/retry calls may run after a newer export has arrived.
+      // Always publish the newest local snapshot, not a stale queued argument.
+      const payload=localRecord(kind)||record;
       if(!payload)throw Error("No locally saved Pickup "+kind+" data to upload.");
       const blob=new Blob([JSON.stringify(payload)],{type:"application/json"});
       const up=await storage().upload(path,blob,{contentType:"application/json",upsert:true,cacheControl:"0"});
@@ -12833,19 +12843,39 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     }
     return JSON.parse(await r.data.text());
   }
+  function sameCloudKindState(a,b,kind){
+    const field=FIELDS[kind];
+    return (a?.[field+"_exists"]===true)===(b?.[field+"_exists"]===true) &&
+      Number(a?.[field+"_version"]||0)===Number(b?.[field+"_version"]||0);
+  }
   async function applyCloud(kind,state){
-    const field=FIELDS[kind],version=Number(state[field+"_version"]||0);
+    const field=FIELDS[kind];
+    // Never apply a state snapshot captured before the latest upload completed.
+    // Re-read the authoritative row immediately before touching local storage.
     if(pending.has(kind)||localStorage.getItem(DIRTY_KEYS[kind])==="1")return;
-    if(state[field+"_exists"]===false){
+    const fresh=await readState();
+    if(!fresh||!hasCloudField(fresh,kind))return;
+    if(pending.has(kind)||localStorage.getItem(DIRTY_KEYS[kind])==="1")return;
+    if(!sameCloudKindState(state,fresh,kind)){
+      // The state changed while this refresh was in flight. A later refresh
+      // will use the newest version; do not apply the old snapshot.
+      refreshQueued=true;
+      return;
+    }
+    const version=Number(fresh[field+"_version"]||0);
+    if(fresh[field+"_exists"]!==true){
       clearLocalKind(kind);
       seen[kind]=version;
       return;
     }
     const record=await download(kind);
-    if(!record){
-      if(state[field+"_exists"]===true)throw Error("Shared Pickup "+kind+" file is missing from cloud storage.");
-      return;
-    }
+    // Downloads may take seconds. Re-check both the cloud version and local
+    // dirty marker before applying so an older download cannot erase a newer
+    // SPX export that arrived while the download was in progress.
+    const afterDownload=await readState();
+    if(!afterDownload||!sameCloudKindState(fresh,afterDownload,kind))return;
+    if(pending.has(kind)||localStorage.getItem(DIRTY_KEYS[kind])==="1")return;
+    if(!record)throw Error("Shared Pickup "+kind+" file is missing from cloud storage.");
     if(kind==="names"){
       if(record&&typeof record==="object"&&!Array.isArray(record)){
         updateLocalRecord(kind,record);
@@ -12870,7 +12900,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     return await upload(kind,local);
   }
   async function refresh(){
-    if(pulling)return;
+    if(pulling){refreshQueued=true;return;}
     pulling=true;
     try{
       const state=await readState();
@@ -12882,17 +12912,21 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         }
         const version=Number(state[FIELDS[kind]+"_version"]||0);
         const dirty=localStorage.getItem(DIRTY_KEYS[kind])==="1";
-        if(dirty)continue;
-        if(version!==seen[kind]){
-          await applyCloud(kind,state);
-        }
+        if(dirty||pending.has(kind))continue;
+        if(version!==seen[kind])await applyCloud(kind,state);
       }
       const localOrders=localRecord("orders"),localTasks=localRecord("tasks");
       status(localOrders||localTasks?"Pickup cloud connected · shared data loaded":"Pickup cloud connected · waiting for Orders and Tasks","ok");
     }catch(e){
       status("Pickup cloud reconnecting · "+String(e?.message||e),"pending");
       console.warn("Pickup cloud refresh failed:",e);
-    }finally{pulling=false}
+    }finally{
+      pulling=false;
+      if(refreshQueued){
+        refreshQueued=false;
+        Promise.resolve().then(()=>refresh());
+      }
+    }
   }
   async function retryDirty(){
     for(const kind of ["orders","tasks","names"]){
