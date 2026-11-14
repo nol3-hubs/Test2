@@ -11357,8 +11357,8 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
   function bridgeModal(){return document.getElementById("badocSpxBridgeInstallModal");}
   function openBridgeInstaller(){bridgeModal()?.classList.add("is-open");}
   function closeBridgeInstaller(){
-    // Close only. Do not reload the dashboard or immediately reopen the prompt.
-    bridgeModal()?.classList.remove("is-open");
+    // Closing the installer refreshes the dashboard and rechecks the extension bridge.
+    window.location.reload();
   }
 
   function setBridgeDownloadStatus(message){
