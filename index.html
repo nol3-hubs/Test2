@@ -9507,12 +9507,12 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
 <script id="badoc-daily-operational-reset">
 /*
   BADOC daily operational reset
-  - Regular Clear Floor Rate: clears its saved daily peak at 2:00 AM local time.
-  - Uploaded Parcel + Linehaul working data: resets at 2:00 AM local time.
-  - CFR1 cloud ledger: reset at 2:00 AM local time after Daily History is captured.
+  - Regular Clear Floor Rate: clears its saved daily peak at 2:30 AM local time.
+  - Uploaded Parcel + Linehaul working data: resets at 2:30 AM local time.
+  - CFR1 cloud ledger: reset at 2:30 AM local time after Daily History is captured.
     CFR1 then rebuilds from newly available parcel data using the existing rules.
 
-  The reset marker is stored in the shared Storage bucket so the 2:00 AM reset
+  The reset marker is stored in the shared Storage bucket so the 2:30 AM reset
   can still happen when the app was closed at the exact time. Local data is
   cleared only after the shared cloud reset succeeds.
 */
@@ -9533,10 +9533,10 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
   function dayKey(d=__badocTime.manilaDate()){
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   }
-  function twoAmReached(d=__badocTime.manilaDate()){
-    return d.getHours()>2 || (d.getHours()===2 && d.getMinutes()>=0);
+  function twoThirtyAmReached(d=__badocTime.manilaDate()){
+    return d.getHours()>2 || (d.getHours()===2 && d.getMinutes()>=30);
   }
-  function clearRegularCfrAt2AM(){
+  function clearRegularCfrAt230AM(){
     try{
       localStorage.removeItem(CLEAR_FLOOR_KEY);
       localStorage.setItem(CLEAR_FLOOR_DATE_KEY,dayKey());
@@ -9564,6 +9564,35 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     if(r.error)throw Error(r.error.message||"Daily reset marker upload failed");
   }
 
+
+  // First Mile Pickup exports are stored separately from the main parcel database.
+  // Clear both local exports as part of the daily reset, including on devices
+  // that discover another device has already completed the shared reset.
+  function clearLocalPickupData(){
+    const keys=[
+      "badoc_first_mile_orders_csv_local_v1",
+      "badoc_first_mile_tasks_csv_local_v1"
+    ];
+    let hadStoredData=false;
+    keys.forEach(key=>{
+      try{
+        if(localStorage.getItem(key)!==null)hadStoredData=true;
+        localStorage.removeItem(key);
+      }catch(e){}
+    });
+    if(!hadStoredData)return false;
+    [
+      ["firstMileOrdersStatus","Not synced yet"],
+      ["firstMileOrdersResult","No export stored on this device."],
+      ["firstMileTasksStatus","Not synced yet"],
+      ["firstMileTasksResult","No export stored on this device."]
+    ].forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.textContent=value;});
+    ["downloadFirstMileOrders","downloadFirstMileTasks"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+    try{window.__badocRenderFirstMileCombined?.();}catch(e){console.warn("Pickup reset render:",e)}
+    console.log("BADOC daily reset cleared local Pickup Orders and Tasks exports.");
+    return true;
+  }
+
   async function clearLocalWorkingData(){
     try{
       if(typeof openDB==="function"){
@@ -9574,15 +9603,16 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
           tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("aborted"));
         });
       }
-    }catch(e){console.warn("2 AM parcel reset:",e)}
+    }catch(e){console.warn("2:30 AM parcel reset:",e)}
     if(typeof batches!=="undefined")batches=[];
     if(typeof current!=="undefined")current=null;
     if(typeof linehaulTasks!=="undefined")linehaulTasks=[];
+    clearLocalPickupData();
     ["batches","currentBatch","current",
      "badoc_linehaul_tasks_town_v1","badoc_linehaul_packed_rows_v1",
      "badoc_linehaul_blank_packed_rows_v1","badoc_linehaul_export_total_v1",
      "badoc_linehaul_export_unique_v1"].forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
-    // Clear exception/exemption tracking numbers at the 2:00 AM daily reset too.
+    // Clear exception/exemption tracking numbers at the 2:30 AM daily reset too.
     try{
       if(typeof exceptionTrackingNumbers!=="undefined"){
         exceptionTrackingNumbers=[];
@@ -9590,7 +9620,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         if(typeof cloudExceptionWrite==="function")await cloudExceptionWrite("clear","");
         if(typeof renderExceptionTracking==="function")renderExceptionTracking();
       }
-    }catch(e){console.warn("2 AM exception reset:",e)}
+    }catch(e){console.warn("2:30 AM exception reset:",e)}
     const f=document.getElementById("csvFile");if(f)f.value="";
     const lf=document.getElementById("linehaulCsvFile");if(lf)lf.value="";
     if(typeof renderLinehaul==="function")renderLinehaul();
@@ -9598,10 +9628,10 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     if(typeof render==="function")render();
   }
 
-  async function resetAt2AM(force){
+  async function resetAt230AM(force){
     if(busy)return;
     const now=__badocTime.manilaDate(),today=dayKey(now);
-    if(!twoAmReached(now))return;
+    if(!twoThirtyAmReached(now))return;
     busy=true;
     try{
       const localMarker=localStorage.getItem(RESET_MARKER_LOCAL)||"";
@@ -9622,8 +9652,9 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         if(localMarker!==today)try{localStorage.setItem(RESET_MARKER_LOCAL,today)}catch(e){}
         // Reset this device's regular CFR and in-memory CFR1 even when another
         // device already completed the shared cloud reset.
-        clearRegularCfrAt2AM();
+        clearRegularCfrAt230AM();
         window.__badocCfr1LedgerMemory=null;
+        clearLocalPickupData();
         // Reload once on this device so the CFR1 closure is rebuilt from the
         // now-empty cloud ledger and cleared working dataset.
         setResetStatus("already-done");
@@ -9634,7 +9665,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       if(!force && window.BadocCloud && typeof window.BadocCloud.claim==="function"){
         let won=true;
         try{won=await window.BadocCloud.claim("daily-reset-"+today,resetOwner(),10*60*1000)}catch(e){won=true}
-        if(!won){ console.warn("2 AM reset: another device is already running it."); setResetStatus("other-device"); return; }
+        if(!won){ console.warn("2:30 AM reset: another device is already running it."); setResetStatus("other-device"); return; }
       }
       setResetStatus("running");
       // v206: capture the exact live projected dashboard state BEFORE any reset.
@@ -9668,7 +9699,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         if(up.error)throw Error(up.error.message||"Shared state reset failed");
       }
       // Clear Clear Floor Rate and CFR1 after Daily History is safely captured.
-      clearRegularCfrAt2AM();
+      clearRegularCfrAt230AM();
       if(window.__badocCfr1CloudSync && typeof window.__badocCfr1CloudSync.resetCloud==="function"){
         await window.__badocCfr1CloudSync.resetCloud();
       }
@@ -9684,23 +9715,23 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         }
       }catch(e){console.warn("Daily reset marker:",e)}
       try{localStorage.setItem(RESET_MARKER_LOCAL,today)}catch(e){}
-      console.log("BADOC 2:00 AM daily upload/exemption/CFR/CFR1 reset completed for",today);
+      console.log("BADOC 2:30 AM daily upload/exemption/CFR/CFR1 reset completed for",today);
       setResetStatus("done");
       // Reinitialize CFR1's in-memory closure after its shared cloud ledger is cleared.
       try{window.location.reload()}catch(e){}
     }catch(e){
-      console.warn("BADOC 2:00 AM daily reset failed; will retry:",e);
+      console.warn("BADOC 2:30 AM daily reset failed; will retry:",e);
       setResetStatus("failed",{reason:String(e&&e.message||e)});
     }finally{busy=false;}
   }
 
   // GitHub Actions holds this timer until shared-cloud refresh and capture succeed.
-  window.__badocRunDailyReset = function(){ return resetAt2AM(false); };
+  window.__badocRunDailyReset = function(){ return resetAt230AM(false); };
   function tick(){
     if(window.__BADOC_GITHUB_AUTOMATION_HOLD_RESET===true)return;
-    resetAt2AM(false);
+    resetAt230AM(false);
   }
-  // Check immediately and then frequently enough to catch 12:00 AM / 2:00 AM
+  // Check immediately and then frequently enough to catch 12:30 AM / 2:30 AM
   // even when the app is left running.
   setTimeout(tick,1500);
   setInterval(tick,30000);
