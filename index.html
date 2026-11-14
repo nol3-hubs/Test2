@@ -4581,7 +4581,58 @@ $("resetClearFloorRate").onclick=()=>{
   try{window.updateOperationProgress?.();}catch(e){}
   alert("Today's Clear Floor Rate has been reset to 0%.");
 };
-$("clearData").onclick=async()=>{if(confirm("Clear all uploaded data?\n\nThis will remove Upload Exported and Linehaul Task data from the cloud and this device. Your town/station settings will be kept.")){try{const db=await openDB();if(db)await new Promise((resolve,reject)=>{const tx=db.transaction(STORE,"readwrite");tx.objectStore(STORE).clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error("aborted"))});batches=[];current=null;exceptionTrackingNumbers=[];saveExceptionTrackingNumbers();if(typeof cloudExceptionWrite==="function")await cloudExceptionWrite("clear","");renderExceptionTracking();/* Linehaul Task uses localStorage, not the parcel IndexedDB store. */["badoc_linehaul_tasks_town_v1","badoc_linehaul_packed_rows_v1","badoc_linehaul_blank_packed_rows_v1","badoc_linehaul_export_total_v1","badoc_linehaul_export_unique_v1"].forEach(k=>localStorage.removeItem(k));if(typeof linehaulTasks!=="undefined")linehaulTasks=[];const lhFile=document.getElementById("linehaulCsvFile");if(lhFile)lhFile.value="";const lhBody=document.getElementById("linehaulBody");if(lhBody)lhBody.innerHTML='<tr><td colspan="5" class="empty">No linehaul task and town data.</td></tr>';const lhStatus=document.getElementById("linehaulStatus");if(lhStatus)lhStatus.textContent="0 tasks";const lhTotal=document.getElementById("lhKpiTotal");if(lhTotal)lhTotal.textContent="0";const lhDoid=document.getElementById("lhKpiDoid");if(lhDoid)lhDoid.textContent="0";if(typeof renderLinehaul==="function")renderLinehaul();if(typeof window.__badocClearAllSharedData==="function")await window.__badocClearAllSharedData();render();alert("All uploaded files/data cleared from Upload Exported and Linehaul Task.")}catch(err){console.error("Clear local data failed:",err);alert("Could not clear all uploaded data.")}}};
+$("clearData").onclick=async()=>{
+  if(!confirm("Clear all uploaded data?\\n\\nThis removes Upload Exported and Linehaul Task data, all Exemptions, and the saved Pickup Orders and Tasks exports from this device. Exemptions are also cleared from shared cloud storage. Your town/station settings will be kept."))return;
+  const clearBtn=$("clearData");
+  if(clearBtn)clearBtn.disabled=true;
+  try{
+    const db=await openDB();
+    if(db)await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,"readwrite");
+      tx.objectStore(STORE).clear();
+      tx.oncomplete=resolve;
+      tx.onerror=()=>reject(tx.error);
+      tx.onabort=()=>reject(tx.error||new Error("aborted"));
+    });
+    batches=[];
+    current=null;
+
+    // Remove the Pickup menu's separately stored Orders and Tasks exports.
+    if(typeof window.__badocClearLocalPickupData==="function")window.__badocClearLocalPickupData();
+    else{
+      ["badoc_first_mile_orders_csv_local_v1","badoc_first_mile_tasks_csv_local_v1"].forEach(k=>localStorage.removeItem(k));
+      window.__badocRenderFirstMileCombined?.();
+    }
+
+    /* Linehaul Task uses localStorage, not the parcel IndexedDB store. */
+    ["badoc_linehaul_tasks_town_v1","badoc_linehaul_packed_rows_v1","badoc_linehaul_blank_packed_rows_v1","badoc_linehaul_export_total_v1","badoc_linehaul_export_unique_v1"].forEach(k=>localStorage.removeItem(k));
+    if(typeof linehaulTasks!=="undefined")linehaulTasks=[];
+    const lhFile=document.getElementById("linehaulCsvFile");if(lhFile)lhFile.value="";
+    const lhBody=document.getElementById("linehaulBody");if(lhBody)lhBody.innerHTML='<tr><td colspan="5" class="empty">No linehaul task and town data.</td></tr>';
+    const lhStatus=document.getElementById("linehaulStatus");if(lhStatus)lhStatus.textContent="0 tasks";
+    const lhTotal=document.getElementById("lhKpiTotal");if(lhTotal)lhTotal.textContent="0";
+    const lhDoid=document.getElementById("lhKpiDoid");if(lhDoid)lhDoid.textContent="0";
+    if(typeof renderLinehaul==="function")renderLinehaul();
+
+    // Clear exemption local state and synchronize the empty list to Dispatch/cloud.
+    exceptionTrackingNumbers=[];
+    saveExceptionTrackingNumbers();
+    renderExceptionTracking();
+    syncExemptionsToReceivedChecking();
+    if(typeof window.updateOperationProgress==="function")window.updateOperationProgress();
+    if(typeof updateRecordExportButton==="function")updateRecordExportButton();
+
+    if(typeof window.__badocClearAllSharedData==="function")await window.__badocClearAllSharedData();
+    if(typeof cloudExceptionWrite==="function")await cloudExceptionWrite("clear","");
+    render();
+    alert("All uploaded parcel and linehaul data, Exemptions, and saved Pickup Orders/Tasks have been cleared. Town/station settings were kept.");
+  }catch(err){
+    console.error("Clear local data failed:",err);
+    alert("Some data could not be cleared completely. Check the console, reconnect shared cloud storage, and try again.");
+  }finally{
+    if(clearBtn)clearBtn.disabled=false;
+  }
+};
 
 /*
  V1.10 KPI CONNECTION
@@ -9573,14 +9624,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       "badoc_first_mile_orders_csv_local_v1",
       "badoc_first_mile_tasks_csv_local_v1"
     ];
-    let hadStoredData=false;
-    keys.forEach(key=>{
-      try{
-        if(localStorage.getItem(key)!==null)hadStoredData=true;
-        localStorage.removeItem(key);
-      }catch(e){}
-    });
-    if(!hadStoredData)return false;
+    keys.forEach(key=>{try{localStorage.removeItem(key)}catch(e){}});
     [
       ["firstMileOrdersStatus","Not synced yet"],
       ["firstMileOrdersResult","No export stored on this device."],
@@ -9588,8 +9632,25 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       ["firstMileTasksResult","No export stored on this device."]
     ].forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.textContent=value;});
     ["downloadFirstMileOrders","downloadFirstMileTasks"].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=true;});
+    const search=document.getElementById("firstMileCombinedSearch");if(search)search.value="";
+    const status=document.getElementById("firstMileTaskStatusFilter");if(status)status.value="all";
+    const overall=document.getElementById("firstMileOverallStatus");if(overall)overall.textContent="Ready to sync. Orders will run before Tasks.";
     try{window.__badocRenderFirstMileCombined?.();}catch(e){console.warn("Pickup reset render:",e)}
-    console.log("BADOC daily reset cleared local Pickup Orders and Tasks exports.");
+    return true;
+  }
+  window.__badocClearLocalPickupData=clearLocalPickupData;
+
+  async function clearLocalExemptions(){
+    if(typeof exceptionTrackingNumbers!=="undefined")exceptionTrackingNumbers=[];
+    try{
+      if(typeof saveExceptionTrackingNumbers==="function")saveExceptionTrackingNumbers();
+      else localStorage.setItem("badoc_exception_tracking_numbers_v1","[]");
+    }catch(e){console.warn("Could not save cleared exemptions locally:",e)}
+    if(typeof renderExceptionTracking==="function")renderExceptionTracking();
+    if(typeof syncExemptionsToReceivedChecking==="function")syncExemptionsToReceivedChecking();
+    if(typeof window.updateOperationProgress==="function")window.updateOperationProgress();
+    if(typeof updateRecordExportButton==="function")updateRecordExportButton();
+    if(typeof cloudExceptionWrite==="function")await cloudExceptionWrite("clear","");
     return true;
   }
 
@@ -9612,15 +9673,8 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
      "badoc_linehaul_tasks_town_v1","badoc_linehaul_packed_rows_v1",
      "badoc_linehaul_blank_packed_rows_v1","badoc_linehaul_export_total_v1",
      "badoc_linehaul_export_unique_v1"].forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
-    // Clear exception/exemption tracking numbers at the 2:30 AM daily reset too.
-    try{
-      if(typeof exceptionTrackingNumbers!=="undefined"){
-        exceptionTrackingNumbers=[];
-        if(typeof saveExceptionTrackingNumbers==="function")saveExceptionTrackingNumbers();
-        if(typeof cloudExceptionWrite==="function")await cloudExceptionWrite("clear","");
-        if(typeof renderExceptionTracking==="function")renderExceptionTracking();
-      }
-    }catch(e){console.warn("2:30 AM exception reset:",e)}
+    // Clear exemptions in local storage, shared cloud storage, and Dispatch.
+    try{await clearLocalExemptions();}catch(e){console.warn("2:30 AM exemption reset:",e)}
     const f=document.getElementById("csvFile");if(f)f.value="";
     const lf=document.getElementById("linehaulCsvFile");if(lf)lf.value="";
     if(typeof renderLinehaul==="function")renderLinehaul();
@@ -9655,6 +9709,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         clearRegularCfrAt230AM();
         window.__badocCfr1LedgerMemory=null;
         clearLocalPickupData();
+        try{await clearLocalExemptions();}catch(e){console.warn("2:30 AM already-done exemption reset:",e)}
         // Reload once on this device so the CFR1 closure is rebuilt from the
         // now-empty cloud ledger and cleared working dataset.
         setResetStatus("already-done");
