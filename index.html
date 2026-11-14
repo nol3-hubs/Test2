@@ -11530,8 +11530,8 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         spinner=document.createElement("span");
         spinner.className="badoc-extension-check-spinner";
         spinner.setAttribute("aria-hidden","true");
-        spinner.textContent="◌";
-        spinner.style.cssText="display:inline-block;flex:0 0 auto;font-size:15px;line-height:1;animation:badocExtensionCheckSpin .8s linear infinite";
+        spinner.textContent="";
+        spinner.style.cssText="display:inline-block;width:12px;height:12px;flex:0 0 12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;box-sizing:border-box;animation:badocExtensionCheckSpin .65s linear infinite";
         el.insertBefore(spinner,el.firstChild);
       }
     }else if(spinner){spinner.remove();}
