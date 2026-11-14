@@ -11512,7 +11512,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       el=document.createElement("div");
       el.id="badocExtensionVersionStatus";
       el.setAttribute("role","status");
-      el.style.cssText="display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:5px 9px;border:1px solid var(--line,#334155);border-radius:999px;font-size:11px;font-weight:700;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle";
+      el.style.cssText="display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:7px 11px;border:1px solid var(--line,#334155);border-radius:10px;font-size:11px;font-weight:700;line-height:1.4;width:min(460px,42vw);max-width:460px;min-width:180px;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;vertical-align:middle;flex:0 1 auto;box-sizing:border-box";
       const anchor=document.getElementById("top-header-info")||document.querySelector(".top .top-header-info");
       if(anchor)anchor.appendChild(el);
       else document.body.appendChild(el);
@@ -11522,7 +11522,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     el.style.background=pair[0]+"22";
     el.style.borderColor=pair[1]+"88";
     el.style.color=pair[1];
-    el.textContent="Extension "+message;
+    el.textContent=String(message||"").startsWith("Extension")?String(message):"Extension "+String(message||"");
     el.title="Detected extension version: "+(installedPackageVersion||"unknown")+" · Required: "+requiredPackageVersion;
   }
   function checkBridgeInstalled(timeout=BRIDGE_CHECK_TIMEOUT){
