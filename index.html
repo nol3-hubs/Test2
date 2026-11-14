@@ -6989,10 +6989,9 @@ window.DASHBOARD_V2_READY = true;
 
   function status(t){
     const e=document.getElementById("sharedStatus"),s=e?.querySelector(".top-sync-text");
-    if(String(t||"")==="Pickup Orders and Tasks synced to shared cloud"){
-      if(e){e.hidden=true;e.setAttribute("aria-hidden","true");}
-      return;
-    }
+    // Pickup upload success is shown in the Pickup import panel. Do not hide or
+    // rewrite the persistent connection indicator when an upload completes.
+    if(String(t||"")==="Pickup Orders and Tasks synced to shared cloud")return;
     if(e){e.hidden=false;e.removeAttribute("aria-hidden");e.className="top-sync-status connected";}
     if(s)s.textContent=t;
     // Keep a compact, user-visible record of the last successful cloud sync.
@@ -12954,7 +12953,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     pulling=true;
     try{
       const state=await readState();
-      if(!state){status("Pickup cloud connected · waiting for first shared upload","info");return;}
+      if(!state)return; // Connection state is owned by the realtime subscription indicator.
       for(const kind of ["orders","tasks","names"]){
         if(!hasCloudField(state,kind)){
           await seedLocalIfNeeded(state,kind);
@@ -12965,8 +12964,8 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         if(dirty||pending.has(kind))continue;
         if(version!==seen[kind])await applyCloud(kind,state);
       }
-      const localOrders=localRecord("orders"),localTasks=localRecord("tasks");
-      status(localOrders||localTasks?"Pickup cloud connected · shared data loaded":"Pickup cloud connected · waiting for Orders and Tasks","ok");
+      // Keep successful background pulls silent. The realtime subscription owns
+      // the connection indicator; upload results remain in their dedicated UI.
     }catch(e){
       status("Pickup cloud reconnecting · "+String(e?.message||e),"pending");
       console.warn("Pickup cloud refresh failed:",e);
