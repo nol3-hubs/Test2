@@ -4355,15 +4355,17 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       }catch(e){const el=statusEl();if(el)el.textContent="Could not enable alarm: "+(e.message||e);}
     });
     document.getElementById("ackFirstMileAlarm")?.addEventListener("click",acknowledge);
-    const originalRender=renderFirstMileCombined;
-    window.__badocRenderFirstMileCombined=function(){
-      originalRender();
+    function checkForNewUnassigned(){
       const now=currentUnassigned();
       if(knownUnassigned===null){knownUnassigned=now;return;}
       let added=0;now.forEach(k=>{if(!knownUnassigned.has(k))added++;});
       knownUnassigned=now;
       if(added)startAlarm(added);
-    };
+    }
+    const pickupTable=document.getElementById("firstMileCombinedTable");
+    if(pickupTable&&typeof MutationObserver!=="undefined"){
+      new MutationObserver(()=>checkForNewUnassigned()).observe(pickupTable,{childList:true,subtree:true});
+    }
     // Check frequently so background-tab timer throttling does not create duplicate clicks.
     setInterval(()=>{
       const p=manilaParts(),hm=p.hour+":"+p.minute,key=p.year+"-"+p.month+"-"+p.day+" "+hm;
