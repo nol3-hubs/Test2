@@ -11896,18 +11896,19 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       if(cancelled){
         for(let index=1;index<STEPS.length;index++){states[index]=skip("Stopped");renderSteps(states)}
       }else{
-        await runStep(1,states,last);
-        if(!cancelled)await runStep(2,states,last);
+        // Start all independent SPX groups together. Pickup preserves its
+        // internal Orders -> Tasks dependency inside its own sequence.
+        last.textContent="Starting all SPX sync groups simultaneously…";
+        await Promise.all([1,2,3,4].map(index=>runStep(index,states,last)));
 
-        // Keep both parcel exports in one buffer. The cloud adapter publishes
-        // inbound first and delivery-status exports second, so the latest
-        // delivery status wins if a tracking number appears in both datasets.
+        // Publish the parcel exports only after Received and delivery exports
+        // both finish, so delivery status continues to take precedence.
         if(parcelCloudBufferStarted&&typeof window.__badocFlushSyncAllParcelCloudBuffer==="function"){
           try{
             const flushed=await window.__badocFlushSyncAllParcelCloudBuffer();
             parcelCloudBufferStarted=false;
             if(flushed&&flushed.uploaded){
-              const prior=states[0]?.note||"Latest shared cloud data loaded";
+              const prior=states[0]?.note||"Latest shared data loaded";
               states[0]={state:states[0]?.state||"ok",note:prior+`; ${flushed.uploaded} parcel exports saved to shared cloud`};
               renderSteps(states);
             }
@@ -11917,8 +11918,6 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
             renderSteps(states);
           }
         }
-        if(!cancelled)await runStep(3,states,last);
-        if(!cancelled)await runStep(4,states,last);
         if(cancelled){
           for(let index=1;index<STEPS.length;index++){
             if(states[index].state==="wait")states[index]=skip("Stopped");
