@@ -11512,7 +11512,9 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       el=document.createElement("div");
       el.id="badocExtensionVersionStatus";
       el.setAttribute("role","status");
-      el.style.cssText="display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:7px 11px;border:1px solid var(--line,#334155);border-radius:10px;font-size:11px;font-weight:700;line-height:1.4;width:min(460px,42vw);max-width:460px;min-width:180px;white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;vertical-align:middle;flex:0 1 auto;box-sizing:border-box";
+      el.style.cssText="display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:7px 11px;border:1px solid var(--line,#334155);border-radius:10px;font-size:11px;font-weight:700;line-height:1.4;width:min(460px,42vw);max-width:460px;min-width:180px;white-space:nowrap;overflow:hidden;text-overflow:clip;vertical-align:middle;flex:0 1 auto;box-sizing:border-box";
+      el.addEventListener("mouseenter",()=>{const track=el.querySelector(".badoc-extension-status-track");if(track)track.style.animationPlayState="paused";});
+      el.addEventListener("mouseleave",()=>{const track=el.querySelector(".badoc-extension-status-track");if(track)track.style.animationPlayState="running";});
       const anchor=document.getElementById("top-header-info")||document.querySelector(".top .top-header-info");
       if(anchor)anchor.appendChild(el);
       else document.body.appendChild(el);
@@ -11522,8 +11524,37 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     el.style.background=pair[0]+"22";
     el.style.borderColor=pair[1]+"88";
     el.style.color=pair[1];
-    el.textContent=String(message||"").startsWith("Extension")?String(message):"Extension "+String(message||"");
-    el.title="Detected extension version: "+(installedPackageVersion||"unknown")+" · Required: "+requiredPackageVersion;
+    const fullMessage=String(message||"").startsWith("Extension")?String(message):"Extension "+String(message||"");
+    let track=el.querySelector(".badoc-extension-status-track");
+    if(!track){
+      track=document.createElement("span");
+      track.className="badoc-extension-status-track";
+      track.style.cssText="display:inline-block;white-space:nowrap;will-change:transform";
+      el.textContent="";
+      el.appendChild(track);
+    }
+    track.style.animation="none";
+    track.textContent=fullMessage;
+    requestAnimationFrame(()=>{
+      const available=Math.max(0,el.clientWidth-22);
+      const textWidth=track.scrollWidth;
+      if(textWidth>available){
+        track.textContent=fullMessage+"　 •　 "+fullMessage+"　 •　 ";
+        const duration=Math.max(9,Math.min(28,(textWidth*2)/42));
+        track.style.animation="badocExtensionStatusMarquee "+duration+"s linear infinite";
+      }else{
+        track.textContent=fullMessage;
+        track.style.animation="none";
+        track.style.transform="none";
+      }
+    });
+    if(!document.getElementById("badocExtensionStatusMarqueeStyle")){
+      const style=document.createElement("style");
+      style.id="badocExtensionStatusMarqueeStyle";
+      style.textContent="@keyframes badocExtensionStatusMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}#badocExtensionVersionStatus:hover .badoc-extension-status-track{animation-play-state:paused!important}";
+      document.head.appendChild(style);
+    }
+    el.title="Detected extension version: "+(installedPackageVersion||"unknown")+" · Required: "+requiredPackageVersion+" · Hover to pause";
   }
   function checkBridgeInstalled(timeout=BRIDGE_CHECK_TIMEOUT){
     if(bridgeCheckInFlight)return bridgeCheckInFlight;
