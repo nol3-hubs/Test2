@@ -94,20 +94,12 @@ const badocPorts = new Set();
 // Other SPX jobs remain mutually exclusive to avoid tab/API collisions.
 const activeJobs = new Map();
 const PARALLEL_JOB_ALLOWLIST = {
-  "parcel-inbound": new Set(["parcel-delivery"]),
-  "parcel-delivery": new Set([
-    "parcel-inbound", "parcel-secondary", "first-mile-orders", "first-mile-tasks", "linehaul"
-  ]),
-  "parcel-secondary": new Set([
-    "parcel-delivery", "first-mile-orders", "first-mile-tasks"
-  ]),
-  "first-mile-orders": new Set([
-    "parcel-delivery", "parcel-secondary", "first-mile-tasks"
-  ]),
-  "first-mile-tasks": new Set([
-    "parcel-delivery", "parcel-secondary", "first-mile-orders"
-  ]),
-  "linehaul": new Set(["parcel-delivery"])
+  "parcel-inbound": new Set(["parcel-delivery", "parcel-secondary", "first-mile-orders", "first-mile-tasks", "linehaul"]),
+  "parcel-delivery": new Set(["parcel-inbound", "parcel-secondary", "first-mile-orders", "first-mile-tasks", "linehaul"]),
+  "parcel-secondary": new Set(["parcel-inbound", "parcel-delivery", "first-mile-orders", "first-mile-tasks", "linehaul"]),
+  "first-mile-orders": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-tasks", "linehaul"]),
+  "first-mile-tasks": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-orders", "linehaul"]),
+  "linehaul": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-orders", "first-mile-tasks"])
 };
 
 function sendToPort(port, type, data = {}) {
