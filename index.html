@@ -6384,20 +6384,34 @@ window.addEventListener("message",async event=>{
       else setIndividualDeliveryStatus(statusId,`Importing ${statusName} export ${data.taskId||""}…`,"working");
       if(!data.csvText)throw Error(`The bridge returned an empty ${statusName} CSV payload.`);
       const result=await importParcelCsvText(data.csvText,data.fileName||`export_${statusName.toLowerCase().replace(/[^a-z0-9]+/g,"_")}_today.csv`,"spx-delivery");
-      const syncNote=!result.persisted
-        ? `Imported ${result.total.toLocaleString()} rows · ${statusName}; local storage warning — keep this tab open.`
-        : result.warnings?.length
-          ? `Imported ${result.total.toLocaleString()} rows · ${statusName}; dashboard refresh warning.`
-          : `Synced ${result.total.toLocaleString()} rows · ${statusName}`;
-      if(isCombined){
-        setCombinedDeliverySyncStatus(syncNote,result.persisted?"success":"error");
-        if(result.persisted)setParcelDeliverySpxSyncStatus(badocParcelSyncStatusText("delivery",true),"success");
-      }else{
-        setIndividualDeliveryStatus(statusId,syncNote,"success");
+      let cloudState="Failed",cloudError="";
+      try{
+        if(typeof window.__badocCloudUploadParcelText!=="function")throw Error("Shared cloud sync is not available in this app session.");
+        const cloudResult=await window.__badocCloudUploadParcelText(data.csvText,data.fileName||`export_${statusName.toLowerCase().replace(/[^a-z0-9]+/g,"_")}_today.csv`,"spx-delivery");
+        cloudState=cloudResult?.queued?"Queued for Sync All cloud upload":"Synced";
+        if(cloudState==="Synced"){
+          try{localStorage.setItem(BADOC_PARCEL_SYNC_STAMPS.delivery.key,String(Date.now()))}catch(_){}
+        }
+      }catch(syncErr){
+        cloudError=String(syncErr?.message||syncErr||"Unknown cloud sync error").slice(0,300);
+        console.error("SPX delivery-status cloud sync failed; local data was retained:",syncErr);
       }
-      window.__badocOperationModalFinish?.(isCombined?"Combined Delivery Import Complete":`${statusName} Import Complete`,result.warnings?.length?"Parcel rows were imported. See warnings below.":`${statusName} data loaded locally.`,[
-        ["Statuses",statusName],["Rows",result.total.toLocaleString()],["New tracking numbers",result.added.toLocaleString()],["Updated tracking numbers",result.updated.toLocaleString()],["Local storage",result.persisted?"Saved":"Session only · save not confirmed"],["Warnings",result.warnings?.join(" | ")||"None"],["Cloud sync","Disabled · local only"]
-      ],result.persisted?"success":"error");
+      const syncNote=!result.persisted
+        ? `Imported ${result.total.toLocaleString()} rows · ${statusName}; local storage warning — keep this tab open. Cloud: ${cloudState.toLowerCase()}.`
+        : result.warnings?.length
+          ? `Imported ${result.total.toLocaleString()} rows · ${statusName}; dashboard refresh warning. Cloud: ${cloudState.toLowerCase()}.`
+          : `${cloudState==="Synced"?"Synced":"Imported"} ${result.total.toLocaleString()} rows · ${statusName}; cloud: ${cloudState.toLowerCase()}`;
+      if(isCombined){
+        setCombinedDeliverySyncStatus(syncNote,cloudState==="Failed"||!result.persisted?"error":"success");
+        if(cloudState==="Synced")setParcelDeliverySpxSyncStatus(badocParcelSyncStatusText("delivery",false),"success");
+      }else{
+        setIndividualDeliveryStatus(statusId,syncNote,cloudState==="Failed"?"error":"success");
+      }
+      const modalWarnings=[...(result.warnings||[])];
+      if(cloudError)modalWarnings.push("Cloud sync failed: "+cloudError);
+      window.__badocOperationModalFinish?.(isCombined?"Combined Delivery Import Complete":`${statusName} Import Complete`,cloudState==="Failed"?"Parcel data was imported locally, but shared cloud sync failed.":cloudState==="Queued for Sync All cloud upload"?"Parcel data was imported locally and queued for the Sync All cloud upload.":`${statusName} data was imported locally and synced to shared cloud data.`,[
+        ["Statuses",statusName],["Rows",result.total.toLocaleString()],["New tracking numbers",result.added.toLocaleString()],["Updated tracking numbers",result.updated.toLocaleString()],["Local storage",result.persisted?"Saved":"Session only · save not confirmed"],["Cloud sync",cloudState],["Warnings",modalWarnings.join(" | ")||"None"]
+      ],cloudState==="Failed"||!result.persisted?"error":"success");
     }catch(err){
       console.error("SPX delivery-status CSV import failed before commit:",err);
       const failure=`Import failed before commit — existing Parcel Count data kept.`;
