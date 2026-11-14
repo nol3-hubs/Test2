@@ -11641,7 +11641,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     bridgeModal()?.addEventListener("click",e=>{if(e.target===bridgeModal())closeBridgeInstaller();});
     window.addEventListener("keydown",e=>{if(e.key==="Escape")closeBridgeInstaller();});
     checkBridgeInstalled(BRIDGE_CHECK_TIMEOUT);
-    setInterval(()=>{if(!document.hidden&&!bridgeCheckInFlight)checkBridgeInstalled(BRIDGE_CHECK_TIMEOUT);},60000);
+    setInterval(()=>{if(!document.hidden&&!bridgeCheckInFlight&&!bridgeReady)checkBridgeInstalled(BRIDGE_CHECK_TIMEOUT);},10000);
   });
 })();
 </script>
