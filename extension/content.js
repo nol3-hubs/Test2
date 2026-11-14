@@ -71,9 +71,10 @@
     if (data.source !== BADOC_SOURCE) return;
 
     if (data.type === "BADOC_BRIDGE_HELLO") {
-      if (port) emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION });
+      if (port) emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION, connected: true });
       else {
-        emit("BADOC_BRIDGE_DISCONNECTED", { message: "Extension background connection is not ready yet. Reconnecting…" });
+        emit("BADOC_BRIDGE_READY", { version: VERSION, packageVersion: PACKAGE_VERSION, connected: false });
+        emit("BADOC_BRIDGE_DISCONNECTED", { message: "Extension version detected; background service is reconnecting…" });
         scheduleReconnect();
       }
       return;
