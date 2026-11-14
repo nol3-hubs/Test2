@@ -9764,8 +9764,18 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     busy=true;
     try{
       const localMarker=localStorage.getItem(RESET_MARKER_LOCAL)||"";
+      // Once this device has recorded today's reset, subsequent 30-second
+      // checks must be non-destructive. Without this guard they would keep
+      // clearing newly synced Pickup exports and exemptions all day.
+      if(!force && localMarker===today){
+        setResetStatus("already-done");
+        return;
+      }
       const cloudMarker=await getCloudResetDate();
-      if(!force && (cloudMarker===today || localMarker===today)){
+      // A cloud marker without a local marker means another device completed
+      // the reset. Perform the one-time local cleanup, then store the marker
+      // and reload this device. Later ticks exit through the guard above.
+      if(!force && cloudMarker===today){
         // Another device may already have completed the reset. Do not run the
         // destructive reset again, but make a best-effort check that
         // yesterday's Daily History file exists. If it does not and the
