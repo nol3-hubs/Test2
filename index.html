@@ -11506,8 +11506,29 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
   function downloadBadocExtensionZip(){
     try{const bytes=window.buildBadocExtensionZipBytes();const blob=new Blob([bytes],{type:"application/zip"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="Badoc Hub Extension.zip";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);setBridgeDownloadStatus("Downloaded Badoc Hub Extension.zip. Extract it, then load the Badoc Hub Extension folder in chrome://extensions.");}catch(err){setBridgeDownloadStatus("Could not create ZIP download: "+(err?.message||String(err)));}
   }
+  function updateVersionIndicator(state,message){
+    let el=document.getElementById("badocExtensionVersionStatus");
+    if(!el){
+      el=document.createElement("div");
+      el.id="badocExtensionVersionStatus";
+      el.setAttribute("role","status");
+      el.style.cssText="display:inline-flex;align-items:center;gap:7px;margin-left:10px;padding:5px 9px;border:1px solid var(--line,#334155);border-radius:999px;font-size:11px;font-weight:700;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle";
+      const anchor=document.querySelector(".top .right,.top .top-right,.top .actions,.top");
+      if(anchor)anchor.appendChild(el);
+      else document.body.appendChild(el);
+    }
+    const colors={checking:["#64748b","#94a3b8"],ok:["#065f46","#34d399"],outdated:["#7f1d1d","#f87171"],missing:["#7c2d12","#fb923c"]};
+    const pair=colors[state]||colors.missing;
+    el.style.background=pair[0]+"22";
+    el.style.borderColor=pair[1]+"88";
+    el.style.color=pair[1];
+    el.textContent="Extension "+message;
+    el.title="Detected extension version: "+(installedPackageVersion||"unknown")+" · Required: "+requiredPackageVersion;
+  }
   function checkBridgeInstalled(timeout=BRIDGE_CHECK_TIMEOUT){
     if(bridgeCheckInFlight)return bridgeCheckInFlight;
+    bridgeReady=false;
+    updateVersionIndicator("checking","Checking extension version…");
     bridgeCheckInFlight=new Promise(resolve=>{
       let settled=false;
       const finish=ready=>{
@@ -11516,8 +11537,17 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         clearTimeout(timer);
         window.removeEventListener("message",onMessage);
         bridgeReady=!!ready;
-        if(!ready)setBridgeDownloadStatus("Extension not ready or outdated. Install the required extension package.");
-        else setBridgeDownloadStatus("Extension connected · v"+installedPackageVersion+" (minimum v"+requiredPackageVersion+").");
+        if(!ready){
+          const detail=installedPackageVersion
+            ? "Extension v"+installedPackageVersion+" is outdated. Required: v"+requiredPackageVersion+"."
+            : "Extension not detected or version could not be read. Required: v"+requiredPackageVersion+".";
+          setBridgeDownloadStatus(detail);
+          updateVersionIndicator(installedPackageVersion?"outdated":"missing",detail);
+        }else{
+          const detail="Connected · v"+installedPackageVersion+" (required v"+requiredPackageVersion+").";
+          setBridgeDownloadStatus("Extension "+detail);
+          updateVersionIndicator("ok",detail);
+        }
         resolve(!!ready);
         bridgeCheckInFlight=null;
       };
@@ -11568,7 +11598,8 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
   });
     bridgeModal()?.addEventListener("click",e=>{if(e.target===bridgeModal())closeBridgeInstaller();});
     window.addEventListener("keydown",e=>{if(e.key==="Escape")closeBridgeInstaller();});
-    setTimeout(()=>{checkBridgeInstalled(1800);},700); /* quiet check only: the installer opens when someone taps an SPX feature */
+    checkBridgeInstalled(5000);
+    setInterval(()=>{if(!bridgeCheckInFlight)checkBridgeInstalled(5000);},30000);
   });
 })();
 </script>
