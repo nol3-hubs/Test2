@@ -11331,8 +11331,8 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
 (function(){
   const BRIDGE_VERSION="1";
   const BRIDGE_CHECK_TIMEOUT=5000;
-  const REQUIRED_CHROME_VERSION="1.1.4";
-  const REQUIRED_FIREFOX_VERSION="69.3.1";
+  const REQUIRED_CHROME_VERSION="1.1.6";
+  const REQUIRED_FIREFOX_VERSION="69.3.3";
   let installedPackageVersion="";
   const isFirefox=/Firefox\//i.test(navigator.userAgent);
   const requiredPackageVersion=isFirefox?REQUIRED_FIREFOX_VERSION:REQUIRED_CHROME_VERSION;
@@ -12520,7 +12520,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     });
   }
   async function rpc(method,args=[],timeout=20000){
-    if(!await waitForBridge())throw new Error("Badoc Hub Extension v1.1.4 is not connected. Install or reload the extension, then refresh Badoc Hub.");
+    if(!await waitForBridge())throw new Error("Badoc Hub Extension v"+requiredPackageVersion+" is required but is not connected. Install or reload the extension, then refresh Badoc Hub.");
     const rpcId=`pod-${Date.now()}-${nextId++}`;
     return new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>{pending.delete(rpcId);reject(new Error("The extension did not respond. Reload Badoc Hub Extension in chrome://extensions and refresh this page."));},timeout);
