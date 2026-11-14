@@ -11587,9 +11587,11 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
             ? "Extension v"+installedPackageVersion+" detected; background bridge is disconnected."
             : installedPackageVersion
               ? "Extension v"+installedPackageVersion+" is outdated. Required: v"+requiredPackageVersion+"."
-              : "Extension not detected or version could not be read. Required: v"+requiredPackageVersion+".";
-          setBridgeDownloadStatus(detail);
-          updateVersionIndicator(isCurrent?"disconnected":(installedPackageVersion?"outdated":"missing"),detail);
+              : "Waiting for extension · checking again…";
+          setBridgeDownloadStatus(isCurrent||installedPackageVersion?detail:"Extension not detected yet. Retrying connection check…");
+          // Keep the loading treatment visible while the dashboard retries
+          // the bridge handshake in the background every 10 seconds.
+          updateVersionIndicator(isCurrent?"disconnected":(installedPackageVersion?"outdated":"checking"),detail);
         }else{
           const detail="Connected · v"+installedPackageVersion+" (required v"+requiredPackageVersion+").";
           setBridgeDownloadStatus("Extension "+detail);
