@@ -7118,11 +7118,14 @@ window.DASHBOARD_V2_READY = true;
     const b=await get(P.upload);
     if(!b)return;
     if(typeof parseCSV!=="function"||typeof classify!=="function"||typeof saveBatches!=="function")return;
-    const rows=parseCSV(await b.text()),z=classify(rows);
-    const batch={name:"cloud-uploaded.csv",time:Date.now(),rows,valid:z.valid,mis:z.mis,duplicates:0};
-    batches=[batch,...(Array.isArray(batches)?batches:[]).filter(x=>x&&x.name!=="cloud-uploaded.csv")];
+    const raw=await b.text();let rows=[];
+    try{const parsed=JSON.parse(raw);rows=parsed?.schemaVersion===1&&Array.isArray(parsed.rows)?parsed.rows:parseCSV(raw)}catch(_){rows=parseCSV(raw)}
+    const z=classify(rows);
+    const batch={name:"cloud-processed-parcels",time:Date.now(),rows,valid:z.valid,mis:z.mis,duplicates:0};
+    batches=[batch,...(Array.isArray(batches)?batches:[]).filter(x=>x&&x.name!=="cloud-uploaded.csv"&&x.name!=="cloud-processed-parcels")];
     current=batch;await saveBatches();
     if(typeof render==="function")render();
+    if(!raw.trim().startsWith("{"))await uploadShared("upload",new Blob([JSON.stringify({schemaVersion:1,recordType:"parcel-records",rows,recordCount:rows.length,savedAt:Date.now()})],{type:"application/json"}));
   }
   async function applyLinehaul(){
     const b=await get(P.linehaul);
@@ -7314,7 +7317,9 @@ window.DASHBOARD_V2_READY = true;
   let parcelCloudWriteQueue=Promise.resolve();
   let syncAllParcelCloudBuffer=null;
   function queueParcelCloudWrite(text,fileName){
-    const blob=new Blob([String(text||"")],{type:"text/csv"});
+    const rows=typeof parseCSV==="function"?parseCSV(String(text||"")):[];
+    if(!rows.length)throw Error("No processed parcel records were available for cloud sync.");
+    const blob=new Blob([JSON.stringify({schemaVersion:1,recordType:"parcel-records",rows,recordCount:rows.length,savedAt:Date.now()})],{type:"application/json"});
     const task=()=>uploadShared("upload",blob);
     const next=parcelCloudWriteQueue.catch(()=>{}).then(task);
     parcelCloudWriteQueue=next.catch(()=>{});
@@ -7414,35 +7419,25 @@ window.DASHBOARD_V2_READY = true;
     let payload=file;
     if(kind==="upload"){
       try{
-        const old=await get(path);
-        if(old){
-          const oldRows=parseCSV(await old.text());
-          const newRows=parseCSV(await file.text());
-          // Merge by TN, with the newest uploaded row winning. This is
-          // important for status updates: re-uploading the same TN must
-          // replace the older row instead of being discarded as a duplicate.
-          const indexByKey=new Map();
-          const merged=[];
-          const addRow=(r)=>{
-            const key=typeof spxTN==="function"?spxTN(r):String(r?.["SLS Tracking Number"]??r?.["SPX TN"]??r?.["Tracking Number"]??"").trim().toUpperCase();
-            if(key){
-              if(indexByKey.has(key)){
-                merged[indexByKey.get(key)]=r;
-                return;
-              }
-              indexByKey.set(key,merged.length);
-            }
-            merged.push(r);
-          };
-          oldRows.forEach(addRow);
-          newRows.forEach(addRow);
-          const text=typeof csv==="function"?csv(merged):([Object.keys(merged[0]||{}).join(","),...merged.map(r=>Object.values(r).map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(","))].join("\n"));
-          payload=new Blob([text],{type:"text/csv"});
-          status(`Merging uploads • ${merged.length.toLocaleString()} unique SPX TN`);
-        }
-      }catch(err){
-        console.warn("Multi-upload merge failed; saving new file only:",err);
-      }
+        const readRows=async blob=>{
+          if(!blob)return [];
+          const raw=await blob.text();
+          try{const parsed=JSON.parse(raw);if(parsed?.schemaVersion===1&&Array.isArray(parsed.rows))return parsed.rows;}catch(_){}
+          return typeof parseCSV==="function"?parseCSV(raw):[];
+        };
+        const old=await get(path),oldRows=await readRows(old),newRows=await readRows(file);
+        if(!newRows.length)throw Error("No processed parcel records found in the new upload.");
+        const indexByKey=new Map(),merged=[];
+        const addRow=r=>{
+          const key=typeof spxTN==="function"?spxTN(r):String(r?.["SLS Tracking Number"]??r?.["SPX TN"]??r?.["Tracking Number"]??"").trim().toUpperCase();
+          if(key&&indexByKey.has(key)){merged[indexByKey.get(key)]=r;return;}
+          if(key)indexByKey.set(key,merged.length);
+          merged.push(r);
+        };
+        oldRows.forEach(addRow);newRows.forEach(addRow);
+        payload=new Blob([JSON.stringify({schemaVersion:1,recordType:"parcel-records",rows:merged,recordCount:merged.length,savedAt:Date.now()})],{type:"application/json"});
+        status(`Merging processed parcel records • ${merged.length.toLocaleString()} unique SPX TN`);
+      }catch(err){console.warn("Processed parcel merge failed:",err);throw err;}
     }
 
     // Write the merged payload first. Only after success does the DB state
@@ -7515,15 +7510,15 @@ window.DASHBOARD_V2_READY = true;
     if(!removeKeys.size)return;
     const b=await get(P.upload);
     if(!b)return;
-    const oldRows=parseCSV(await b.text());
+    const raw=await b.text();let oldRows=[];
+    try{const parsed=JSON.parse(raw);oldRows=parsed?.schemaVersion===1&&Array.isArray(parsed.rows)?parsed.rows:parseCSV(raw)}catch(_){oldRows=parseCSV(raw)}
     const kept=oldRows.filter(r=>{
       const k=typeof spxTN==="function"?spxTN(r):String(r?.["SLS Tracking Number"]??r?.["SPX TN"]??r?.["Tracking Number"]??"").trim().toUpperCase();
       return !removeKeys.has(k);
     });
     const version=Date.now();
     if(kept.length){
-      const text=typeof csv==="function"?csv(kept):([Object.keys(kept[0]||{}).join(","),...kept.map(r=>Object.values(r).map(v=>`"${String(v??"").replace(/"/g,'""')}"`).join(","))].join("\n"));
-      await put(P.upload,new Blob([text],{type:"text/csv"}),"text/csv");
+      await put(P.upload,new Blob([JSON.stringify({schemaVersion:1,recordType:"parcel-records",rows:kept,recordCount:kept.length,savedAt:Date.now()})],{type:"application/json"}),"application/json");
       await setState({upload_exists:true,upload_version:version});
     }else{
       await remove(P.upload);
@@ -12744,12 +12739,30 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
   }
   function localRecord(kind){
     try{
-      const raw=localStorage.getItem(LOCAL_KEYS[kind]);
-      if(!raw)return null;
+      const raw=localStorage.getItem(LOCAL_KEYS[kind]);if(!raw)return null;
       const value=JSON.parse(raw);
       if(kind==="names")return value&&typeof value==="object"&&!Array.isArray(value)?value:null;
       return value&&typeof value.csvText==="string"&&value.csvText?value:null;
     }catch(e){return null;}
+  }
+  function pickupRowsToCsv(rows){
+    const list=Array.isArray(rows)?rows:[];if(!list.length)return "";
+    const headers=[...new Set(list.flatMap(row=>Object.keys(row||{})))];
+    const cell=value=>{const t=String(value??"");return /[",\r\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t};
+    return [headers.map(cell).join(","),...list.map(row=>headers.map(h=>cell(row?.[h])).join(","))].join("\r\n");
+  }
+  function pickupProcessedRecord(kind,record){
+    if(kind==="names")return record&&typeof record==="object"&&!Array.isArray(record)?record:{};
+    if(record?.schemaVersion===1&&Array.isArray(record.rows))return record;
+    const rows=typeof parseCsvText==="function"?parseCsvText(String(record?.csvText||"")):[];
+    if(!rows.length)throw Error("No processed Pickup "+kind+" records were found.");
+    return {schemaVersion:1,recordType:"pickup-"+kind,rows,rowCount:rows.length,savedAt:Number(record?.savedAt||Date.now()),taskId:String(record?.taskId||"")};
+  }
+  function pickupLocalRecordFromCloud(kind,record){
+    if(kind==="names")return record;
+    if(record&&typeof record.csvText==="string")return record;
+    if(!record||record.schemaVersion!==1||!Array.isArray(record.rows))throw Error("Shared Pickup "+kind+" data is not a processed-record snapshot.");
+    return {csvText:pickupRowsToCsv(record.rows),fileName:"shared_pickup_"+kind+".csv",taskId:record.taskId||"",savedAt:Number(record.savedAt||Date.now()),rowCount:Number(record.rowCount||record.rows.length)};
   }
   async function readState(){
     const r=await cloudClient().from(TABLE).select("*").eq("id",1).maybeSingle();
@@ -12844,8 +12857,9 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     try{
       // Queued sync/retry calls may run after a newer export has arrived.
       // Always publish the newest local snapshot, not a stale queued argument.
-      const payload=localRecord(kind)||record;
-      if(!payload)throw Error("No locally saved Pickup "+kind+" data to upload.");
+      const local=localRecord(kind)||record;
+      if(!local)throw Error("No locally saved Pickup "+kind+" data to upload.");
+      const payload=pickupProcessedRecord(kind,local);
       const blob=new Blob([JSON.stringify(payload)],{type:"application/json"});
       const up=await storage().upload(path,blob,{contentType:"application/json",upsert:true,cacheControl:"0"});
       if(up.error)throw Error(up.error.message||"Pickup cloud file upload failed.");
@@ -12853,7 +12867,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       seen[kind]=version;
       try{localStorage.removeItem(DIRTY_KEYS[kind])}catch(e){}
       await announce("upload-"+kind);
-      if(kind!=="names")updateLocalRecord(kind,payload);
+      if(kind!=="names")updateLocalRecord(kind,local);
       status("Pickup Orders and Tasks synced to shared cloud","ok");
       return true;
     }catch(e){
@@ -12911,8 +12925,9 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       }
       return;
     }
-    if(!record.csvText)throw Error("Shared Pickup "+kind+" file has no CSV content.");
-    updateLocalRecord(kind,record);
+    const localSnapshot=pickupLocalRecordFromCloud(kind,record);
+    updateLocalRecord(kind,localSnapshot);
+    if(kind!=="names"&&typeof record?.csvText==="string")await upload(kind,localSnapshot);
     seen[kind]=version;
   }
   function hasCloudField(state,kind){
