@@ -4245,7 +4245,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const matchedOrders=matchedGroups.reduce((n,g)=>n+g.eligibleOrders.length,0);
     const unmatchedOrders=orderRows.length-matchedOrders;
     if(stats)stats.innerHTML=[[orderRows.length,"Orders · ETA today"],[matchedGroups.length,"Matched pickup points"],[unmatchedOrders,"Today's orders without task"],[tasksRows.length,"Tasks"],[excludedEtaOrders,"Excluded · ETA not today"]].map(([n,l])=>`<div><strong>${Number(n).toLocaleString()}</strong><span>${l}</span></div>`).join("");
-    if(meta)meta.textContent=`ETA filter: ${today} (Asia/Manila) · Match by Pickup Point ID only · ${firstMileCombinedRows.length.toLocaleString()} pickup-point groups · ${matchedGroups.length.toLocaleString()} matched points · ${matchedOrders.toLocaleString()} eligible orders linked · ${unmatchedOrders.toLocaleString()} eligible orders waiting for a task · ${excludedEtaOrders.toLocaleString()} orders excluded · ${historicalTaskOrders.toLocaleString()} historical Order IDs shown on linked task rows (display only)`;
+    if(meta)meta.textContent="";
     if(downloadBtn)downloadBtn.disabled=!firstMileCombinedRows.length;
     const search=fmNorm($("firstMileCombinedSearch")?.value||"");
     const selectedTaskStatus=$("firstMileTaskStatusFilter")?.value||"all";
@@ -6975,7 +6975,11 @@ window.DASHBOARD_V2_READY = true;
 
   function status(t){
     const e=document.getElementById("sharedStatus"),s=e?.querySelector(".top-sync-text");
-    if(e)e.className="top-sync-status connected";
+    if(String(t||"")==="Pickup Orders and Tasks synced to shared cloud"){
+      if(e){e.hidden=true;e.setAttribute("aria-hidden","true");}
+      return;
+    }
+    if(e){e.hidden=false;e.removeAttribute("aria-hidden");e.className="top-sync-status connected";}
     if(s)s.textContent=t;
     // Keep a compact, user-visible record of the last successful cloud sync.
     if(/all devices synced|upload synced|linehaul synced|last upload undone|cleared on all devices/i.test(String(t||""))){
