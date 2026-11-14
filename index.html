@@ -11949,12 +11949,13 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     return states[index];
   }
 
-  async function run(){
+  async function run(scheduleSlot){
     if(running){
+      if(scheduleSlot)return false;
       cancelled=true;
       setBtn("Stopping…",true,"run");
       try{postBadocSpxMessage("BADOC_ABORT_SYNC")}catch(error){console.warn("Could not request SPX sync cancellation:",error)}
-      return;
+      return false;
     }
     running=true;cancelled=false;bridgePreflightPromise=null;
     const states=STEPS.map(()=>({state:"wait"}));
@@ -12035,35 +12036,67 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     cancelled=false;
     setBtn("⟳ Sync SPX Data",false,nFail?"warn":"done");
     setTimeout(()=>{const button=$("syncAllBtn");if(button&&!running)button.dataset.mode=""},4000);
+    const success=!cancelled&&nFail===0&&nSkip===0;
+    return success;
+  }
+
+  const SCHEDULE_KEY="badoc_sync_all_schedule_v1";
+  const SCHEDULE=[
+    {id:"planning",time:"03:00",label:"3:00 AM · Planning"},
+    {id:"cfr1",time:"04:00",label:"4:00 AM · CFR1"},
+    {id:"after-dispatch",time:"10:00",label:"10:00 AM · After Dispatch"},
+    {id:"afternoon",time:"14:00",label:"2:00 PM · Additional sync"},
+    {id:"eod",time:"21:00",label:"9:00 PM · EOD"},
+    {id:"eod-backup",time:"21:30",label:"9:30 PM · EOD backup"}
+  ];
+  let scheduleProcessing=false,scheduleTimer=null;
+  function manilaNow(){
+    const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date());
+    const v={};parts.forEach(p=>{v[p.type]=p.value});
+    return {date:v.year+"-"+v.month+"-"+v.day,minute:Number(v.hour)*60+Number(v.minute)};
+  }
+  function readScheduleLog(){try{return JSON.parse(localStorage.getItem(SCHEDULE_KEY)||"{}")}catch(e){return {}}}
+  function writeScheduleLog(log){try{localStorage.setItem(SCHEDULE_KEY,JSON.stringify(log))}catch(e){}}
+  async function processSchedule(){
+    if(scheduleProcessing||running)return;
+    scheduleProcessing=true;
+    try{
+      const now=manilaNow(),log=readScheduleLog(),today=log[now.date]||(log[now.date]={});
+      for(const slot of SCHEDULE){
+        const parts=slot.time.split(":").map(Number),due=parts[0]*60+parts[1];
+        if(now.minute<due||today[slot.id])continue;
+        if(slot.id==="eod-backup"&&today.eod&&today.eod.success===true){
+          today[slot.id]={attemptedAt:Date.now(),success:true,skipped:true,reason:"EOD already succeeded"};
+          writeScheduleLog(log);continue;
+        }
+        if(!bridgeReady()){
+          const last=$("syncAllLast");
+          if(last)last.textContent="Scheduled sync due: "+slot.label+" · waiting for extension connection";
+          break;
+        }
+        const last=$("syncAllLast");
+        if(last)last.textContent="Starting scheduled sync: "+slot.label;
+        const success=await run(slot.id);
+        today[slot.id]={attemptedAt:Date.now(),success:!!success};
+        writeScheduleLog(log);
+        if(!success)break;
+      }
+    }finally{scheduleProcessing=false}
+  }
+  function startSchedule(){
+    processSchedule();
+    scheduleTimer=setInterval(processSchedule,30000);
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden)processSchedule()});
   }
 
   function init(){
     const button=$("syncAllBtn");if(!button||button.dataset.bound)return;
     button.dataset.bound="1";
-    button.addEventListener("click",()=>{autoStartClaimed=true;run();});
+    button.addEventListener("click",()=>run());
     button.title="Sync shared cloud data, Received / Transported, all delivery statuses, Incoming Linehaul, and Pickup (First Mile Orders and Tasks).";
     const last=$("syncAllLast");if(last)last.textContent=lastText();
-    // Automatically run Sync All once each time the dashboard is opened,
-    // but wait for the extension bridge before starting SPX exports.
-    const waitForExtension=()=>{
-      if(autoStartClaimed)return;
-      if(bridgeReady()){
-        autoStartClaimed=true;
-        if(last)last.textContent="Extension connected · starting automatic Sync All…";
-        setTimeout(()=>{if(!running)run();},700);
-        return;
-      }
-      if(!autoStartWaitUntil)autoStartWaitUntil=Date.now()+2*60*1000;
-      if(Date.now()<autoStartWaitUntil){
-        if(last)last.textContent="Waiting for extension connection to start automatic Sync All…";
-        setTimeout(waitForExtension,500);
-      }else if(last){
-        last.textContent="Automatic Sync All not started · extension connection unavailable. Use Sync SPX Data to retry.";
-      }
-    };
-    waitForExtension();
+    startSchedule();
   }
-  let autoStartClaimed=false,autoStartWaitUntil=0;
   window.__badocSyncAll=run;
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
 })();
