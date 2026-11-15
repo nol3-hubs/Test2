@@ -1,4 +1,4 @@
-const CACHE_NAME = 'badoc-hub-pwa-app-v65-20261114';
+const CACHE_NAME = 'badoc-test2-pwa-app-v1-20261115';
 const APP_SHELL = [
   './index.html',
   './manifest.webmanifest',
@@ -17,7 +17,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(key => key.startsWith('badoc-hub-pwa-') && key !== CACHE_NAME).map(key => caches.delete(key)));
+    await Promise.all(keys.filter(key => key.startsWith('badoc-test2-pwa-') && key !== CACHE_NAME).map(key => caches.delete(key)));
     await self.clients.claim();
   })());
 });
