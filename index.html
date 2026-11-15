@@ -10021,7 +10021,11 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
         clearRegularCfrAt230AM();
         window.__badocCfr1LedgerMemory=null;
         clearLocalPickupData();
-        try{await clearLocalExemptions();}catch(e){console.warn("2:30 AM already-done exemption reset:",e)}
+        // The shared reset has already cleared exemptions. This device must
+        // pull the authoritative cloud list instead of issuing another clear,
+        // which could erase exemptions added after the first device reset.
+        try{await syncExceptionsFromCloud({silent:true});}
+        catch(e){console.warn("2:30 AM exemption cloud refresh:",e)}
         // Reload once on this device so the CFR1 closure is rebuilt from the
         // now-empty cloud ledger and cleared working dataset.
         setResetStatus("already-done");
