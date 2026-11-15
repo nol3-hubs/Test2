@@ -4046,19 +4046,17 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
 // FIRST MILE — export through SPX Bridge and retain CSV files locally only.
 (function(){
   const $=id=>document.getElementById(id);
+  window.__badocFirstMileCloudVersions=window.__badocFirstMileCloudVersions||{orders:0,tasks:0};
   function updateFirstMileLastUpdated(){
     const target=$("firstMileLastUpdated");if(!target)return;
     const formatter=new Intl.DateTimeFormat("en-PH",{timeZone:"Asia/Manila",month:"short",day:"2-digit",year:"numeric",hour:"numeric",minute:"2-digit",hour12:true});
-    const getTime=key=>{
-      try{
-        const record=JSON.parse(localStorage.getItem(key)||"null");
-        const stamp=Number(record?.savedAt||0);
-        return Number.isFinite(stamp)&&stamp>0?formatter.format(new Date(stamp)):"Not yet";
-      }catch(_){return "Not yet";}
+    const getTime=kind=>{
+      const stamp=Number(window.__badocFirstMileCloudVersions?.[kind]||0);
+      return Number.isFinite(stamp)&&stamp>0?formatter.format(new Date(stamp)):"Not yet synced";
     };
-    const orders=getTime("badoc_first_mile_orders_csv_local_v1");
-    const tasks=getTime("badoc_first_mile_tasks_csv_local_v1");
-    target.textContent="Last updated (PHT) — Orders: "+orders+" · Tasks: "+tasks;
+    const orders=getTime("orders");
+    const tasks=getTime("tasks");
+    target.textContent="Last updated across all devices (PHT) — Orders: "+orders+" · Tasks: "+tasks;
   }
   window.__badocUpdateFirstMileLastUpdated=updateFirstMileLastUpdated;
   let firstMileSequenceBusy=false;
@@ -13078,7 +13076,12 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       const blob=new Blob([JSON.stringify(payload)],{type:"application/json"});
       const up=await storage().upload(path,blob,{contentType:"application/json",upsert:true,cacheControl:"0"});
       if(up.error)throw Error(up.error.message||"Pickup cloud file upload failed.");
-      await writeState({[field+"_exists"]:true,[field+"_version"]:version});
+      const cloudState=await writeState({[field+"_exists"]:true,[field+"_version"]:version});
+      if(kind!=="names"){
+        window.__badocFirstMileCloudVersions=window.__badocFirstMileCloudVersions||{orders:0,tasks:0};
+        window.__badocFirstMileCloudVersions[kind]=version;
+        window.__badocUpdateFirstMileLastUpdated?.();
+      }
       seen[kind]=version;
       try{localStorage.removeItem(DIRTY_KEYS[kind])}catch(e){}
       await announce("upload-"+kind);
@@ -13170,6 +13173,10 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     try{
       const state=await readState();
       if(!state)return; // Connection state is owned by the realtime subscription indicator.
+      window.__badocFirstMileCloudVersions=window.__badocFirstMileCloudVersions||{orders:0,tasks:0};
+      window.__badocFirstMileCloudVersions.orders=Number(state.pickup_orders_version||0);
+      window.__badocFirstMileCloudVersions.tasks=Number(state.pickup_tasks_version||0);
+      window.__badocUpdateFirstMileLastUpdated?.();
       for(const kind of ["orders","tasks","names"]){
         if(!hasCloudField(state,kind)){
           await seedLocalIfNeeded(state,kind);
