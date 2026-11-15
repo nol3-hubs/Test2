@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v63">
+<meta name="badoc-app-version" content="v65">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -29,18 +29,66 @@ window.BADOC_FIREBASE_CONFIG = {
 window.BADOC_SHARED_CONFIG = { url: window.BADOC_FIREBASE_CONFIG.databaseURL, key: window.BADOC_FIREBASE_CONFIG.apiKey || "firebase-rtdb" };
 </script>
 <script id="badoc-poll-gate">
-/* Visible-only timers: background tabs stop polling, and catch up once when you come back. */
+/* Pause non-critical polling timers in background tabs; run one catch-up check on return. */
 (function(){
   if(window.__badocEvery)return;
-  var gated=[],hiddenAt=0;
+  var jobs=Object.create(null),nextId=0,hiddenAt=document.hidden?Date.now():0;
+  var nativeSetTimeout=window.setTimeout.bind(window);
+  var nativeClearTimeout=window.clearTimeout.bind(window);
+  var nativeClearInterval=window.clearInterval.bind(window);
+  function invoke(job){
+    try{var result=job.fn();if(result&&typeof result.then==="function")result.catch(function(){});}
+    catch(error){try{console.warn("Background poll failed:",error);}catch(_){}}
+  }
+  function schedule(job,delay){
+    if(job.cancelled||document.hidden||job.timer!==null)return;
+    job.dueAt=Date.now()+Math.max(0,delay);
+    job.timer=nativeSetTimeout(function(){
+      job.timer=null;
+      if(job.cancelled||document.hidden)return;
+      schedule(job,job.ms);
+      invoke(job);
+    },Math.max(0,delay));
+  }
+  // Negative virtual IDs let the existing clearInterval callers stop these
+  // timers while native interval handles retain their normal behavior.
+  window.clearInterval=function(id){
+    var job=jobs[String(id)];
+    if(job){
+      job.cancelled=true;
+      if(job.timer!==null)nativeClearTimeout(job.timer);
+      delete jobs[String(id)];
+      return;
+    }
+    return nativeClearInterval(id);
+  };
   window.__badocEvery=function(fn,ms){
-    var id=setInterval(function(){ if(document.hidden)return; return fn.apply(this,arguments); },ms);
-    gated.push({fn:fn,ms:ms}); return id;
+    var interval=Math.max(100,Number(ms)||1000),id=String(--nextId);
+    var job={fn:fn,ms:interval,timer:null,dueAt:Date.now()+interval,cancelled:false};
+    jobs[id]=job;
+    schedule(job,interval);
+    return Number(id);
   };
   document.addEventListener("visibilitychange",function(){
-    if(document.hidden){hiddenAt=Date.now();return}
-    var away=Date.now()-hiddenAt,k=0;
-    gated.forEach(function(g){ if(away>=g.ms)setTimeout(function(){try{var r=g.fn();if(r&&r.catch)r.catch(function(){})}catch(e){}},150*(k++)); });
+    if(document.hidden){
+      hiddenAt=Date.now();
+      Object.keys(jobs).forEach(function(id){
+        var job=jobs[id];
+        if(job&&job.timer!==null){nativeClearTimeout(job.timer);job.timer=null;}
+      });
+      return;
+    }
+    var away=hiddenAt?Date.now()-hiddenAt:0,k=0;
+    Object.keys(jobs).forEach(function(id){
+      var job=jobs[id];if(!job||job.cancelled||job.timer!==null)return;
+      if(away>=job.ms){
+        job.timer=nativeSetTimeout(function(){
+          job.timer=null;if(job.cancelled||document.hidden)return;
+          schedule(job,job.ms);invoke(job);
+        },150*(k++));
+      }else schedule(job,Math.max(0,job.dueAt-Date.now()));
+    });
+    hiddenAt=0;
   });
 })();
 </script>
@@ -982,6 +1030,19 @@ html[data-theme="light"] #firstMile .fm-task-other{color:#475467!important;backg
 }
 </style>
 
+<style id="first-mile-alarm-button-color-fix">
+#firstMile #enableFirstMileAlarm{
+  background:linear-gradient(100deg,#1683ff,#0865d5)!important;
+  color:#fff!important;
+  border:1px solid #3b9cff!important;
+  border-radius:9px!important;
+  font-weight:700!important;
+  box-shadow:0 5px 16px rgba(22,131,255,.22)!important;
+}
+#firstMile #enableFirstMileAlarm:hover{background:linear-gradient(100deg,#3194ff,#0b74ed)!important;filter:brightness(1.04)}
+#firstMile #enableFirstMileAlarm:disabled{opacity:.78!important;cursor:default!important}
+#firstMile #ackFirstMileAlarm{background:#b45309!important;color:#fff!important;border:1px solid #f59e0b!important}
+</style>
 </head>
 <body data-app-version="21">
 
@@ -1302,9 +1363,9 @@ html[data-theme="light"] #firstMile .fm-task-other{color:#475467!important;backg
           </div>
           <span id="firstMileCombinedMeta">Sync Orders and Tasks to build the combined pickup list.</span>
           <div id="firstMileAutoAlertControls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            <button class="btn" id="enableFirstMileAlarm" type="button">Enable Unassigned Alarm</button>
+            <button class="btn" id="enableFirstMileAlarm" type="button" hidden>Enable alarm sound</button>
             <button class="btn" id="ackFirstMileAlarm" type="button" hidden>Acknowledge Alarm</button>
-            <span id="firstMileAutoAlertStatus" class="hint" aria-live="polite">Automatic First Mile sync: 10:00 AM–4:00 PM · Alarm not enabled</span>
+            <span id="firstMileAutoAlertStatus" class="hint" aria-live="polite">Checking unassigned alarm and sound…</span>
           </div>
         </div>
         <div id="firstMileCombinedTable" class="first-mile-combined-table"><div class="first-mile-combined-empty">Combined pickup information will appear here after both exports are saved.</div></div>
@@ -2269,7 +2330,7 @@ function startExemptionFallbackPoll(){
       syncExceptionsFromCloud({silent:true});
     },20000);
   }else{
-    setInterval(()=>{if(!document.hidden)syncExceptionsFromCloud({silent:true})},20000);
+    __badocEvery(()=>syncExceptionsFromCloud({silent:true}),20000);
   }
 }
 
@@ -4154,6 +4215,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     };
     return ids.map(linkFor).join("");
   }
+  const FM_ETA_DATE_FORMATTER=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit"});
   function fmEtaDate(row){
     const raw=fmValue(row,["ETA","Estimated Time of Arrival","Estimated Arrival Time","Pickup ETA","Pickup Estimated Time","eta_date","eta_time","estimated_arrival_time"],/^eta(date|time)?$/i);
     if(!raw)return "";
@@ -4172,7 +4234,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       date=new Date(normalized);
     }
     if(!date||Number.isNaN(date.getTime()))return "";
-    return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit"}).format(date);
+    return FM_ETA_DATE_FORMATTER.format(date);
   }
   function fmEtaDate(row){
     const raw=fmValue(row,["ETA","Estimated Time of Arrival","Estimated Arrival Time","Pickup ETA","Pickup Estimated Time","eta_date","eta_time","estimated_arrival_time"],/^eta(date|time)?$/i);
@@ -4192,7 +4254,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       date=new Date(normalized);
     }
     if(!date||Number.isNaN(date.getTime()))return "";
-    return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit"}).format(date);
+    return FM_ETA_DATE_FORMATTER.format(date);
   }
   function fmEsc(value){return typeof esc==="function"?esc(value):String(value??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
   let firstMileCombinedRows=[];
@@ -4216,8 +4278,12 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     fmRememberPickupPointNames(allOrderRows);
     const today=getBadocManilaDayBounds().date;
     // Only pickup orders whose ETA falls on today's Manila date are eligible for matching.
-    const orderRows=allOrderRows.filter(order=>fmEtaDate(order)===today);
-    const excludedEtaOrders=allOrderRows.length-orderRows.length;
+    const orderRows=[],historicalOrderRows=[];
+    allOrderRows.forEach(order=>{
+      if(fmEtaDate(order)===today)orderRows.push(order);
+      else historicalOrderRows.push(order);
+    });
+    const excludedEtaOrders=historicalOrderRows.length;
     const groups=new Map();
     const getGroup=(id)=>{if(!groups.has(id))groups.set(id,{pickupPointId:id,orders:[],eligibleOrders:[],tasks:[]});return groups.get(id);};
     // Today's ETA-eligible orders remain the only orders used for daily totals and sheet copy.
@@ -4226,12 +4292,13 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     // Also attach older Order IDs to an existing task row by Pickup Point ID.
     // Historical orders are display-only: they do not enter today's eligible count or Copy for Sheet.
     let historicalTaskOrders=0;
-    allOrderRows.filter(order=>fmEtaDate(order)!==today).forEach(order=>{
+    historicalOrderRows.forEach(order=>{
       const id=fmNorm(fmPickupPointId(order));
       const group=id?groups.get(id):null;
       if(group&&group.tasks.length){group.orders.push(order);historicalTaskOrders++;}
     });
     firstMileCombinedRows=[...groups.values()];
+    window.__badocCheckNewUnassigned?.();
     // Sort pickup-point rows by Assigned Rider A–Z. Names within each group are
     // already alphabetized by fmAssignedRiderDisplay(); groups without a rider go last.
     const riderCollator=new Intl.Collator("en",{sensitivity:"base",numeric:true});
@@ -4255,7 +4322,12 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const search=fmNorm($("firstMileCombinedSearch")?.value||"");
     const selectedTaskStatus=$("firstMileTaskStatusFilter")?.value||"all";
     const knownTaskStatuses=["assigned","cancelled","onhold","inbounded","done","unassigned"];
-    const taskStatusKeys=g=>(g.tasks||[]).map(t=>fmNorm(fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"])))).filter(Boolean);
+    const taskStatusCache=new WeakMap();
+    const taskStatusKeys=g=>{
+      if(taskStatusCache.has(g))return taskStatusCache.get(g);
+      const keys=(g.tasks||[]).map(t=>fmNorm(fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"])))).filter(Boolean);
+      taskStatusCache.set(g,keys);return keys;
+    };
     const searchMatchedRows=firstMileCombinedRows.filter(g=>!search||[g.pickupPointId,...g.orders.flatMap(o=>Object.values(o)),...g.tasks.flatMap(t=>Object.values(t))].some(v=>fmNorm(v).includes(search)));
     // Counts represent pickup-point groups (table rows), not individual task records.
     const statusCounts={
@@ -4297,7 +4369,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       ["Assigned Rider",g=>fmAssignedRiderDisplay(g)],
       ["Task Status",g=>g.tasks.map(t=>fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"]))).filter(Boolean).join(" | ")||"Unassigned"]
     ];
-    if(table){
+    if(table && $("firstMile")?.classList.contains("active")){
       if(!filtered.length)table.innerHTML='<div class="first-mile-combined-empty">No combined pickup groups match this search.</div>';
       else table.innerHTML=`<table><thead><tr>${columns.map(c=>`<th>${fmEsc(c[0])}</th>`).join("")}</tr></thead><tbody>${filtered.slice(0,2000).map(g=>{return `<tr>${columns.map(c=>c[0]==="Task Status"?`<td title="${fmEsc(c[1](g))}">${fmTaskStatusBadgesHtml(g)}</td>`:c[0]==="Order ID"?`<td>${fmOrderLinksHtml(g)}</td>`:`<td title="${fmEsc(c[1](g))}">${fmEsc(c[1](g))}</td>`).join("")}</tr>`;}).join("")}</tbody></table>${filtered.length>2000?`<div class="first-mile-combined-empty">Showing first 2,000 of ${filtered.length.toLocaleString()} groups.</div>`:""}`;
     }
@@ -4308,7 +4380,39 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const schedule=new Set(["10:00","11:00","12:00","13:00","14:00","15:00","15:30","15:40","15:50","15:57","15:59","16:00"]);
     const statusEl=()=>document.getElementById("firstMileAutoAlertStatus");
     const manilaParts=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).reduce((o,p)=>(o[p.type]=p.value,o),{});
-    let lastAutoRun="",alarmEnabled=false,alarmActive=false,audioCtx=null,alarmTimer=null,knownUnassigned=null;
+    let lastAutoRun="",alarmEnabled=true,alarmActive=false,audioCtx=null,alarmTimer=null,knownUnassigned=null,soundBlocked=false;
+    const SOUND_PREF_KEY="badoc_first_mile_alarm_sound_enabled_v1";
+    function setSoundState(ready,reason){
+      soundBlocked=!ready;
+      const b=document.getElementById("enableFirstMileAlarm");if(b)b.hidden=ready;
+      const el=statusEl();if(el){const notificationOn=("Notification" in window&&Notification.permission==="granted");el.textContent="Unassigned alarm: ON · Sound: "+(ready?"ON":"OFF")+(ready?"":" (Chrome blocked sound)")+" · Browser notifications: "+(notificationOn?"ON":"OFF")+(ready?"":". Click Enable alarm sound to turn sound ON.");}
+    }
+    async function tryRestoreSound(){
+      try{
+        const AC=window.AudioContext||window.webkitAudioContext;
+        if(!AC){setSoundState(false,"Web Audio is unavailable");return false;}
+        audioCtx=audioCtx||new AC();
+        // Do not wait for resume() during page load: Chrome can leave that
+        // promise pending until a user gesture, which previously left the UI
+        // stuck on "Restoring..." forever.
+        if(audioCtx.state==="suspended"){
+          try{const resumeResult=audioCtx.resume();if(resumeResult&&typeof resumeResult.catch==="function")resumeResult.catch(()=>setSoundState(false,"autoplay permission is required"));}catch(e){}
+        }
+        const ready=audioCtx.state==="running";
+        if(ready){try{localStorage.setItem(SOUND_PREF_KEY,"1");}catch(e){}}
+        setSoundState(ready,ready?"":"autoplay permission is required");
+        if(!audioCtx.__badocStateHandler){
+          audioCtx.__badocStateHandler=true;
+          audioCtx.addEventListener("statechange",()=>{
+            const active=audioCtx.state==="running";
+            if(active){try{localStorage.setItem(SOUND_PREF_KEY,"1");}catch(e){}}
+            setSoundState(active,active?"":"autoplay permission is required");
+            if(active&&alarmActive)beep();
+          });
+        }
+        return ready;
+      }catch(e){setSoundState(false,e.message||"autoplay permission is required");return false;}
+    }
     const orderKey=g=>[String(g.pickupPointId||""),...(g.orders||[]).map(o=>String(fmValue(o,["Order ID","Order No","Order Number","Pickup Order ID","order_id","order_sn","order_number"])||"")).filter(Boolean).sort()].join("|");
     function currentUnassigned(){
       return new Set((firstMileCombinedRows||[]).filter(g=>!(g.tasks||[]).length||((g.tasks||[]).some(t=>fmNorm(fmTaskStatusLabel(fmValue(t,["Status","Task Status","Pickup Task Status","status_name","status"])))==="unassigned"))).map(orderKey));
@@ -4343,17 +4447,24 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       const ack=document.getElementById("ackFirstMileAlarm");if(ack)ack.hidden=true;
       const el=statusEl();if(el)el.textContent="Alarm acknowledged. Automatic First Mile sync remains active.";
     }
-    document.getElementById("enableFirstMileAlarm")?.addEventListener("click",async()=>{
+    async function unlockAlarmSound(){
       try{
-        const AC=window.AudioContext||window.webkitAudioContext;
-        if(AC){audioCtx=audioCtx||new AC();if(audioCtx.state==="suspended")await audioCtx.resume();}
+        const ok=await tryRestoreSound();
+        if(ok){try{localStorage.setItem(SOUND_PREF_KEY,"1");}catch(e){}}
         if("Notification" in window&&Notification.permission==="default")await Notification.requestPermission();
-        alarmEnabled=true;
-        const b=document.getElementById("enableFirstMileAlarm");if(b){b.textContent="Alarm Enabled";b.disabled=true;}
-        const el=statusEl();if(el)el.textContent="Automatic First Mile sync active · Unassigned alarm enabled.";
+        if(alarmActive&&ok)beep();
         if(knownUnassigned===null)knownUnassigned=currentUnassigned();
-      }catch(e){const el=statusEl();if(el)el.textContent="Could not enable alarm: "+(e.message||e);}
-    });
+      }catch(e){setSoundState(false,e.message||"permission required");}
+    }
+    document.getElementById("enableFirstMileAlarm")?.addEventListener("click",unlockAlarmSound);
+    // Restore the saved sound preference on every dashboard load. Chrome may
+    // still require a fresh gesture; show the enable button only in that case.
+    tryRestoreSound();
+    // Any ordinary user gesture can satisfy Chrome's autoplay policy; no
+    // dedicated setup click is needed if this succeeds.
+    window.addEventListener("pointerdown",()=>{
+      if(soundBlocked)tryRestoreSound();
+    },{once:true,passive:true});
     document.getElementById("ackFirstMileAlarm")?.addEventListener("click",acknowledge);
     function checkForNewUnassigned(){
       const now=currentUnassigned();
@@ -4362,6 +4473,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       knownUnassigned=now;
       if(added)startAlarm(added);
     }
+    window.__badocCheckNewUnassigned=checkForNewUnassigned;
     const pickupTable=document.getElementById("firstMileCombinedTable");
     if(pickupTable&&typeof MutationObserver!=="undefined"){
       new MutationObserver(()=>checkForNewUnassigned()).observe(pickupTable,{childList:true,subtree:true});
@@ -4377,7 +4489,11 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       catch(e){console.error("Scheduled First Mile click failed:",e);lastAutoRun="";}
     },15000);
   })();
-  $("firstMileCombinedSearch")?.addEventListener("input",renderFirstMileCombined);
+  let firstMileSearchTimer=0;
+  $("firstMileCombinedSearch")?.addEventListener("input",()=>{
+    clearTimeout(firstMileSearchTimer);
+    firstMileSearchTimer=setTimeout(renderFirstMileCombined,120);
+  });
   $("firstMileTaskStatusFilter")?.addEventListener("change",renderFirstMileCombined);
   $("copyFirstMileForSheet")?.addEventListener("click",async()=>{
     const groups=firstMileVisibleRows||[];
@@ -4467,7 +4583,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   renderFirstMileCombined();
 })();
 
-function showPage(p){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));const page=$(p);if(page)page.classList.add("active");document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===p));const titles={homeDashboard:"Dashboard",dashboard:"Parcel Count",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyPickup:"Pickup",dailyPerformance:"Performance",dailyRiderPerformance:"Rider Performance",dailyConsolidated:"Consolidated",dailyEod:"EOD Data",ridersData:"Riders Data",dailyHistory:"Data",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};$("pageTitle").textContent=titles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");document.body.classList.toggle("pickup-page-active",p==="firstMile");if(p==="dailyPerformance")window.__badocInitDailyPerformance?.();if(p==="dailyPickup")window.__badocInitDailyPickup?.();if(p==="dailyConsolidated")window.__badocInitConsolidated?.();if(p==="linehaul")renderLinehaul();if(p==="dailyRiderPerformance")renderRiderPerformance();if(p==="volumeForecastBoard"){window.updateOperationProgress?.();window.__badocRenderForecastBoard?.();document.getElementById("planningBoardNav")?.classList.add("open");document.getElementById("planningBoardToggle")?.setAttribute("aria-expanded","true");}}
+function showPage(p){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));const page=$(p);if(page)page.classList.add("active");document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===p));const titles={homeDashboard:"Dashboard",dashboard:"Parcel Count",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyPickup:"Pickup",dailyPerformance:"Performance",dailyRiderPerformance:"Rider Performance",dailyConsolidated:"Consolidated",dailyEod:"EOD Data",ridersData:"Riders Data",dailyHistory:"Data",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};$("pageTitle").textContent=titles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");document.body.classList.toggle("pickup-page-active",p==="firstMile");if(p==="firstMile")window.__badocRenderFirstMileCombined?.();if(p==="dailyPerformance")window.__badocInitDailyPerformance?.();if(p==="dailyPickup")window.__badocInitDailyPickup?.();if(p==="dailyConsolidated")window.__badocInitConsolidated?.();if(p==="linehaul")renderLinehaul();if(p==="dailyRiderPerformance")renderRiderPerformance();if(p==="volumeForecastBoard"){window.updateOperationProgress?.();window.__badocRenderForecastBoard?.();document.getElementById("planningBoardNav")?.classList.add("open");document.getElementById("planningBoardToggle")?.setAttribute("aria-expanded","true");}}
 $("parcelIncomingVolumeBtn")?.addEventListener("click",()=>{
   const next=!parcelIncomingEnabled();
   try{localStorage.setItem(PARCEL_INCOMING_KEY,next?"1":"0")}catch(e){}
@@ -7033,7 +7149,7 @@ window.DASHBOARD_V2_READY = true;
     }finally{busy=false}
   }
   window.__badocCfr1CloudSync={publish,resetCloud,ensureLoaded};
-  window.addEventListener("load",()=>{poll();setInterval(poll,15000)});
+  window.addEventListener("load",()=>{poll();__badocEvery(poll,15000)});
 })();
 </script>
 <script id="cloud-shared-sync">
@@ -8987,7 +9103,7 @@ __badocEvery(()=>window.updateOperationProgress?.(),30000);
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",run,{once:true});else run();
   __badocEvery(function(){checkKpi();checkSync();updateLastSyncDetail();},3000);
   __badocEvery(checkData,3000);
-  setInterval(checkStorage,30000);
+  __badocEvery(checkStorage,30000);
 })();
 </script>
 <script id="daily-performance-runtime">
@@ -9972,7 +10088,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
   // Check immediately and then frequently enough to catch 12:30 AM / 2:30 AM
   // even when the app is left running.
   setTimeout(tick,1500);
-  setInterval(tick,30000);
+  __badocEvery(tick,30000);
 })();
 </script>
 
@@ -11525,7 +11641,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     // refresh whenever the page is opened, and every 20s while viewing today
     const obs=new MutationObserver(()=>{if(page.classList.contains("active")){if(!page.__wasActive){page.__wasActive=true;window.__badocRefreshDailyHistory()}}else page.__wasActive=false});
     obs.observe(page,{attributes:true,attributeFilter:["class"]});
-    setInterval(()=>{if(page.classList.contains("active")&&!document.hidden&&(curDate||todayDate())===todayDate())show(todayDate())},20000);
+    __badocEvery(()=>{if(page.classList.contains("active")&&(curDate||todayDate())===todayDate())show(todayDate())},20000);
     setTimeout(()=>window.__badocRefreshDailyHistory(),700);
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
@@ -11924,7 +12040,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     bridgeModal()?.addEventListener("click",e=>{if(e.target===bridgeModal())closeBridgeInstaller();});
     window.addEventListener("keydown",e=>{if(e.key==="Escape")closeBridgeInstaller();});
     checkBridgeInstalled(BRIDGE_CHECK_TIMEOUT);
-    setInterval(()=>{if(!document.hidden&&!bridgeCheckInFlight&&!bridgeReady)checkBridgeInstalled(BRIDGE_CHECK_TIMEOUT);},10000);
+    __badocEvery(()=>{if(!bridgeCheckInFlight&&!bridgeReady)checkBridgeInstalled(BRIDGE_CHECK_TIMEOUT);},10000);
   });
 })();
 </script>
@@ -12523,8 +12639,8 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     var recent=(H.issues||[]).some(function(i){return i.kind==="error"&&Date.now()-i.at<10*60*1000});
     document.documentElement.classList.toggle("has-sync-issues",recent);
   }
-  setInterval(dot,15000);
-  function start(){watchStatuses();dot();setInterval(watchStatuses,10000)}
+  __badocEvery(dot,15000);
+  function start(){watchStatuses();dot();__badocEvery(watchStatuses,10000)}
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
 
