@@ -1641,6 +1641,30 @@ html[data-theme="light"] .side > .theme-switch-row{
 </style>
 
 
+<style id="dashboard-card-groups-v2">
+.dashboard-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.dashboard-card-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch}
+.dashboard-card-group{min-width:0;padding:14px;border:1px solid var(--c-22313d-border);border-radius:13px;background:linear-gradient(var(--c-0b151d-bg),var(--c-0b151d-bg));box-shadow:0 8px 22px rgba(0,0,0,.10)}
+.dashboard-card-group-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.dashboard-card-group-head strong{display:block;color:var(--c-f2f8fc-text);font-size:13px;font-weight:950;letter-spacing:.2px}
+.dashboard-card-group-head small{display:block;margin-top:3px;color:var(--c-91a6b6-text);font-size:10px}
+.dashboard-card-group-head>span{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid var(--c-2a4252-border);border-radius:8px;color:var(--c-7fdcff-text);font-size:10px;font-weight:900}
+.dashboard-card-group .dashboard-status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.dashboard-card-group .dashboard-status-card{min-width:0;min-height:78px;padding:12px;border-radius:10px}
+.dashboard-card-group .dashboard-status-card strong{font-size:25px;overflow-wrap:anywhere}
+.dashboard-card-group .dashboard-status-card span{font-size:10px;letter-spacing:.55px}
+.dashboard-card-group .dashboard-status-card small{font-size:9px;line-height:1.3}
+.dashboard-status-card.assigned{border-top:2px solid var(--c-60a5fa-border)}.dashboard-status-card.assigned strong{color:var(--c-93c5fd-text)}
+.dashboard-status-card.redelivery{border-top:2px solid var(--c-fbbf24-border)}.dashboard-status-card.redelivery strong{color:var(--c-fcd34d-text)}
+.dashboard-status-card.rts{border-top:2px solid var(--c-f87171-border)}.dashboard-status-card.rts strong{color:var(--c-fca5a5-text)}
+.dashboard-status-card.exemptions{border-top:2px solid var(--c-a78bfa-border)}.dashboard-status-card.exemptions strong{color:var(--c-c4b5fd-text)}
+.dashboard-status-card.riders{border-top:2px solid var(--c-22d3ee-border)}.dashboard-status-card.riders strong{color:var(--c-67e8f9-text)}
+.dashboard-status-card.linehaul{border-top:2px solid var(--c-38bdf8-border)}.dashboard-status-card.linehaul strong{color:var(--c-7dd3fc-text)}
+.dashboard-status-card.success{border-top:2px solid var(--c-4ade80-border)}.dashboard-status-card.success strong{color:var(--c-86efac-text)}
+@media(max-width:1100px){.dashboard-card-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.hub-performance-group{grid-column:1/-1}.hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.dashboard-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-card-groups{grid-template-columns:1fr}.hub-performance-group{grid-column:auto}.hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:420px){.dashboard-summary-grid{grid-template-columns:1fr}.dashboard-card-group{padding:11px}}
+</style>
 </head>
 <body data-app-version="21">
 
@@ -1775,14 +1799,35 @@ html[data-theme="light"] .side > .theme-switch-row{
       </label>
 
       <div class="dashboard-status-section">
-        <div class="dashboard-status-grid">
-          <div class="dashboard-status-card delivering"><strong id="opDelivering">0</strong><span>DELIVERING</span><small></small></div>
-          <div class="dashboard-status-card delivered"><strong id="opDelivered">0</strong><span>DELIVERED</span><small></small></div>
-          <div class="dashboard-status-card onhold"><strong id="opOnHold">0</strong><span>ON-HOLD</span><small></small></div>
-          <div class="dashboard-status-card received"><strong id="opReceivedSummary">0</strong><span>RECEIVED</span><small></small></div>
-          <div class="dashboard-status-card cfr1" id="cfr1Card" role="button" tabindex="0" title="Click to view CFR1 scanned and unscanned parcels"><strong><b id="opCfr1Scanned">0</b><i>/</i><em id="opCfr1Total">0</em></strong><span>CFR1</span><small></small></div>
+        <div class="dashboard-card-groups">
+          <section class="dashboard-card-group parcel-overview-group" aria-label="Parcel Overview">
+            <div class="dashboard-card-group-head"><div><strong>Parcel Overview</strong><small>Live parcel status totals</small></div><span>01</span></div>
+            <div class="dashboard-status-grid">
+              <div class="dashboard-status-card received"><strong id="opReceivedSummary">0</strong><span>RECEIVED</span><small>Current parcel data</small></div>
+              <div class="dashboard-status-card delivering"><strong id="opDelivering">0</strong><span>DELIVERING</span><small>Current parcel data</small></div>
+              <div class="dashboard-status-card delivered"><strong id="opDelivered">0</strong><span>DELIVERED</span><small>Current parcel data</small></div>
+              <div class="dashboard-status-card onhold"><strong id="opOnHold">0</strong><span>ON-HOLD</span><small>Live On-Hold source</small></div>
+              <div class="dashboard-status-card cfr1" id="cfr1Card" role="button" tabindex="0" title="Click to view CFR1 scanned and unscanned parcels"><strong><b id="opCfr1Scanned">0</b><i>/</i><em id="opCfr1Total">0</em></strong><span>CFR1</span><small>Scanned / total</small></div>
+            </div>
+          </section>
+          <section class="dashboard-card-group delivery-status-group" aria-label="Delivery Status">
+            <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Assigned and exception tracking</small></div><span>02</span></div>
+            <div class="dashboard-status-grid">
+              <div class="dashboard-status-card assigned"><strong id="opAssignedToday">—</strong><span>ASSIGNED TODAY</span><small>Unique OIDs from Onhold Today</small></div>
+              <div class="dashboard-status-card redelivery"><strong id="opRedelivery">—</strong><span>REDELIVERY</span><small>EOD sheet</small></div>
+              <div class="dashboard-status-card rts"><strong id="opRts">—</strong><span>RTS</span><small>EOD sheet</small></div>
+              <div class="dashboard-status-card exemptions"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span><small>Current exemption list</small></div>
+            </div>
+          </section>
+          <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
+            <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div><span>03</span></div>
+            <div class="dashboard-status-grid">
+              <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small>EOD sheet</small></div>
+              <div class="dashboard-status-card linehaul"><strong id="opIncomingLinehaul">0</strong><span>INCOMING LINEHAUL</span><small>Unique eligible SPX TNs</small></div>
+              <div class="dashboard-status-card success"><strong id="opSuccessRate">0.0%</strong><span>SUCCESS RATE</span><small>Delivered / active parcel statuses</small></div>
+            </div>
+          </section>
         </div>
-
       </div>
     </div>
 
@@ -7745,6 +7790,18 @@ window.addEventListener("message",async event=>{
     const btn=$("syncAssignedOnholdToday"),status=$("assignedOnholdTodayStatus");
     if(btn){btn.disabled=false;btn.dataset.busy="0";}
     const forward=Number(data.forwardRowCount||0),returned=Number(data.returnRowCount||0);
+    const assignedTodayCount=Math.max(0,Number(data.assignedTodayCount||0));
+    try{
+      localStorage.setItem("badoc_assigned_today_card_v1",JSON.stringify({
+        date:String(data.todayDate||""),
+        count:assignedTodayCount,
+        forwardRows:forward,
+        returnRows:returned,
+        duplicates:Math.max(0,Number(data.duplicateCount||0))
+      }));
+    }catch(e){}
+    const assignedTodayCard=$("opAssignedToday");
+    if(assignedTodayCard)assignedTodayCard.textContent=assignedTodayCount.toLocaleString();
     const createdStart=String(data.createdDateStart||"");
     const createdEnd=String(data.createdDateEnd||data.todayDate||"");
     const createdRange=createdStart&&createdEnd?createdStart+" to "+createdEnd:"last 14 days";
@@ -9618,6 +9675,44 @@ window.updateOperationProgress=function(){
   }
   setProgress("Transporting",counts.TRANSPORTING);setProgress("Transported",counts.TRANSPORTED);setProgress("Received",counts.RECEIVED);setProgress("Assigning",counts.ASSIGNING);setProgress("Assigned",counts.ASSIGNED);
   setText("opDelivering",counts.DELIVERING);setText("opDelivered",counts.DELIVERED);setText("opReceivedSummary",counts.RECEIVED);
+
+  // Dashboard card groups share the same qualifying parcel population as
+  // Parcel Count. Assigned Today is sourced from the deduplicated SPX
+  // Forward + Return OID result produced by the Onhold Today export.
+  const assignedTodayCard=document.getElementById("opAssignedToday");
+  if(assignedTodayCard){
+    let savedAssigned=null;
+    try{savedAssigned=JSON.parse(localStorage.getItem("badoc_assigned_today_card_v1")||"null")}catch(e){}
+    const cardDate=__badocTime.dayKey();
+    assignedTodayCard.textContent=savedAssigned&&savedAssigned.date===cardDate
+      ?Number(savedAssigned.count||0).toLocaleString()
+      :"—";
+  }
+  const eodCard=window.__badocEodDashboard||{};
+  const eodCardKey=v=>String(v??"").trim().toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+  const eodCardValue=(...keys)=>{
+    for(const key of keys){
+      const normalized=eodCardKey(key);
+      const value=eodCard[normalized];
+      if(value!==undefined&&value!==null&&String(value).trim()!=="")return value;
+    }
+    return "—";
+  };
+  const setMetricText=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value===undefined||value===null||String(value).trim()===""?"—":String(value)};
+  setMetricText("opRedelivery",eodCardValue("total redelivery"));
+  setMetricText("opRts",eodCardValue("total rts"));
+  setMetricText("opTotalRiders",eodCard.totalRidersUsed??"—");
+  setText("opExemptions",Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers.length:0);
+  let incomingCardTotal=0;
+  try{
+    const incomingCardData=tvLinehaulEnabled?incomingForToday:
+      (typeof getParcelIncomingLinehaul==="function"?getParcelIncomingLinehaul():{total:0});
+    incomingCardTotal=Number(incomingCardData?.total||0);
+  }catch(e){console.warn("Incoming linehaul dashboard card could not refresh:",e)}
+  setText("opIncomingLinehaul",incomingCardTotal);
+  const liveStatusDen=(counts.RECEIVED||0)+(counts.DELIVERING||0)+(counts.DELIVERED||0)+(counts.ONHOLD||0);
+  const liveSuccessRate=liveStatusDen?(counts.DELIVERED/liveStatusDen*100):0;
+  setMetricText("opSuccessRate",liveSuccessRate.toFixed(1)+"%");
 
   // CFR1 — Clear Floor Rate 1.
   // CFR1 uses a persistent daily ledger keyed by Order ID.  The ledger is
