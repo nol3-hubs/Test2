@@ -533,10 +533,10 @@ window.BADOC_SHARED_CONFIG = { url: window.BADOC_FIREBASE_CONFIG.databaseURL, ke
 </script>
 <script>
 /* Daily History Google Sheets Web App URL */
-window.BADOC_DAILY_HISTORY_GSHEET_URL = "https://script.google.com/a/macros/spxexpress.com/s/AKfycbxRMaXmJA_Du7wrSqDUmt2xMflAzLa7YpPCY5n74XQod1lApgXPjOJul2nJy_ld4eawWA/exec";
+window.BADOC_DAILY_HISTORY_SPX_EXPORT_URL = "https://script.google.com/a/macros/spxexpress.com/s/AKfycbxRMaXmJA_Du7wrSqDUmt2xMflAzLa7YpPCY5n74XQod1lApgXPjOJul2nJy_ld4eawWA/exec";
 // Daily History snapshots and CFR Daily Summary stay in shared cloud only.
 // Their optional Google Sheets mirror is intentionally disabled.
-window.BADOC_DAILY_HISTORY_GSHEET_MIRROR_ENABLED = false;
+window.BADOC_DAILY_HISTORY_SPX_EXPORT_MIRROR_ENABLED = false;
 </script>
 
 <script id="v2-config">
@@ -1813,18 +1813,18 @@ html[data-theme="light"] .side > .theme-switch-row{
           <section class="dashboard-card-group delivery-status-group" aria-label="Delivery Status">
             <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Assigned and exception tracking</small></div><span>02</span></div>
             <div class="dashboard-status-grid">
-              <div class="dashboard-status-card assigned"><strong id="opAssignedToday">—</strong><span>ASSIGNED TODAY</span><small>Unique OIDs from Onhold Today</small></div>
+              <div class="dashboard-status-card assigned"><strong id="opDispatched">0</strong><span>DISPATCHED</span><small>Delivering + Delivered + On-Hold</small></div>
               <div class="dashboard-status-card redelivery"><strong id="opRedelivery">—</strong><span>REDELIVERY</span><small>EOD sheet</small></div>
-              <div class="dashboard-status-card rts"><strong id="opRts">—</strong><span>RTS</span><small>EOD sheet</small></div>
+              <div class="dashboard-status-card rts"><strong id="opRts">—</strong><span>RTS</span><small></small></div>
               <div class="dashboard-status-card exemptions"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span><small>Current exemption list</small></div>
             </div>
           </section>
           <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
             <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div><span>03</span></div>
             <div class="dashboard-status-grid">
-              <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small>EOD sheet</small></div>
+              <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small></small></div>
               <div class="dashboard-status-card linehaul"><strong id="opIncomingLinehaul">0</strong><span>INCOMING LINEHAUL</span><small>Unique eligible SPX TNs</small></div>
-              <div class="dashboard-status-card success"><strong id="opSuccessRate">0.0%</strong><span>SUCCESS RATE</span><small>Delivered / active parcel statuses</small></div>
+              <div class="dashboard-status-card success"><strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span><small></small></div>
             </div>
           </section>
         </div>
@@ -3109,26 +3109,24 @@ function buildHoldHistory(extraRows=[]){
 }
 function wasOnHoldBefore(tn,rows=[]){
   const key=norm(tn);
-  return !!key && (window.__badocLiveHoldTNs instanceof Set ? window.__badocLiveHoldTNs.has(window.__badocHoldKey?.(tn) || normJoin(tn)) : buildHoldHistory(rows).has(key));
+  return !!key && ((window.__badocOnholdTnKeys instanceof Set ? window.__badocOnholdTnKeys.has(badocOnholdKey(tn)) : buildHoldHistory(rows).has(key)));
 }
 function townStatusCounts(rows){
   const out={};
-  const liveHold=(window.__badocLiveHoldTNs instanceof Set)?window.__badocLiveHoldTNs:new Set();
+  const onholdKeys=new Set(badocGetOnholdRows(rows).map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
   rows.forEach(r=>{
     const meta=badocRowMeta(r),town=meta.town;
     if(!town)return;
     if(!out[town])out[town]={received:0,delivered:0,delivering:0,hold:0,assigned:0,assigning:0};
     const st=meta.status,tn=meta.tn;
-    const isSheetHold=!!tn&&liveHold.has(normJoin(tn));
+    const isOnhold=!!tn&&onholdKeys.has(badocOnholdKey(tn));
     const isReceived=st==="RECEIVED"||st==="LMHUB RECEIVED";
-    // Parcel Count ON-HOLD is sourced ONLY from the Google Sheet Column F.
-    // An uploaded row marked ONHOLD is ignored unless its SPX TN is also in the sheet.
-    if(isSheetHold) out[town].hold++;
-    else if(isReceived) out[town].received++;
-    else if(st==="DELIVERED") out[town].delivered++;
-    else if(st==="DELIVERING") out[town].delivering++;
-    else if(st==="ASSIGNED"||st==="LMHUB ASSIGNED") out[town].assigned++;
-    else if(st==="ASSIGNING"||st==="LMHUB ASSIGNING") out[town].assigning++;
+    if(isOnhold)out[town].hold++;
+    else if(isReceived)out[town].received++;
+    else if(st==="DELIVERED")out[town].delivered++;
+    else if(st==="DELIVERING")out[town].delivering++;
+    else if(st==="ASSIGNED"||st==="LMHUB ASSIGNED")out[town].assigned++;
+    else if(st==="ASSIGNING"||st==="LMHUB ASSIGNING")out[town].assigning++;
   });
   return out;
 }
@@ -3895,6 +3893,39 @@ function fillStatusFilter(){
     statuses.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
   if(statuses.includes(currentValue))el.value=currentValue;
 }
+
+const BADOC_ONHOLD_EXPORT_KEY="badoc_onhold_spx_exports_v1";
+function badocOnholdKey(value){return String(value??"").trim().toUpperCase().replace(/[\\s\\-_.]/g,"")}
+function badocOnholdStatus(row){
+  const raw=String(badocRowMeta(row)?.status||row?.["Parcel Status To"]||row?.["Status To"]||row?.["Status"]||"").trim().toUpperCase().replace(/[_-]+/g," ").replace(/\\s+/g," ");
+  return ["ONHOLD","ON HOLD","LMHUB ONHOLD","LMHUB ON HOLD"].includes(raw);
+}
+function badocLoadOnholdExportRows(){
+  try{const saved=JSON.parse(localStorage.getItem(BADOC_ONHOLD_EXPORT_KEY)||"[]");return Array.isArray(saved)?saved.filter(r=>r&&typeof r==="object"):[]}catch(e){return []}
+}
+function badocSaveOnholdExportRows(rows){
+  const byTn=new Map();
+  (Array.isArray(rows)?rows:[]).forEach(row=>{const key=badocOnholdKey(spxTN(row));if(key)byTn.set(key,row)});
+  const unique=[...byTn.values()];
+  try{localStorage.setItem(BADOC_ONHOLD_EXPORT_KEY,JSON.stringify(unique))}catch(e){console.warn("Could not persist SPX On-Hold exports:",e)}
+  window.__badocOnholdExportRows=unique;
+  return unique;
+}
+function badocGetOnholdRows(baseRows){
+  const rows=Array.isArray(baseRows)?baseRows:(typeof getParcelCountRows==="function"?getParcelCountRows():[]);
+  const byTn=new Map();
+  rows.forEach(row=>{
+    if(!row||isExceptionRow(row)||!badocOnholdStatus(row))return;
+    const key=badocOnholdKey(spxTN(row));if(key)byTn.set(key,row);
+  });
+  const exports=Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:badocLoadOnholdExportRows();
+  exports.forEach(row=>{
+    const key=badocOnholdKey(spxTN(row));if(key&&!isExceptionRow(row))byTn.set(key,row);
+  });
+  return [...byTn.values()];
+}
+window.__badocGetOnholdRows=badocGetOnholdRows;
+window.__badocOnholdExportRows=badocLoadOnholdExportRows();
 
 function getParcelCountRows(){
   // Parcel Count includes both correctly routed parcels and MISROUTED parcels
@@ -4683,7 +4714,7 @@ function renderRiderPerformance(){
     const key=resolvedId||riderPerformanceNorm(resolvedName);
     if(!grouped.has(key))grouped.set(key,{id:resolvedId,name:resolvedName,rider,parcels:0,delivered:0,onHold:0,cod:0,pickup:""});
     const item=grouped.get(key);item.parcels++;item.cod+=riderPerformanceAmount(riderPerformanceValue(row,["COD Amount","COD","Cash on Delivery","COD Collection Amount","Collect COD"]));
-    const status=riderPerformanceNorm(riderPerformanceValue(row,["Status","Parcel Status","Delivery Status","Current Status"]));if(status.includes("DELIVERED"))item.delivered++;const tn=spxTN(row);if(tn && window.__badocLiveHoldTNs instanceof Set && window.__badocLiveHoldTNs.has(window.__badocHoldKey?.(tn) || normJoin(tn)))item.onHold++;
+    const status=riderPerformanceNorm(riderPerformanceValue(row,["Status","Parcel Status","Delivery Status","Current Status"]));if(status.includes("DELIVERED"))item.delivered++;const tn=spxTN(row);const onholdKeys=window.__badocOnholdTnKeys instanceof Set?window.__badocOnholdTnKeys:new Set();if(tn&&onholdKeys.has(badocOnholdKey(tn)))item.onHold++;
     const pickup=riderPerformanceValue(row,["Pickup Time","Pickup Date Time","Pickup Datetime","Pickup Timestamp","First Pickup Time"]);if(pickup&&(!item.pickup||pickup<item.pickup))item.pickup=pickup;
   });
   const search=riderPerformanceNorm($("riderPerformanceSearch")?.value);
@@ -7790,18 +7821,13 @@ window.addEventListener("message",async event=>{
     const btn=$("syncAssignedOnholdToday"),status=$("assignedOnholdTodayStatus");
     if(btn){btn.disabled=false;btn.dataset.busy="0";}
     const forward=Number(data.forwardRowCount||0),returned=Number(data.returnRowCount||0);
-    const assignedTodayCount=Math.max(0,Number(data.assignedTodayCount||0));
-    try{
-      localStorage.setItem("badoc_assigned_today_card_v1",JSON.stringify({
-        date:String(data.todayDate||""),
-        count:assignedTodayCount,
-        forwardRows:forward,
-        returnRows:returned,
-        duplicates:Math.max(0,Number(data.duplicateCount||0))
-      }));
-    }catch(e){}
-    const assignedTodayCard=$("opAssignedToday");
-    if(assignedTodayCard)assignedTodayCard.textContent=assignedTodayCount.toLocaleString();
+    const exportRows=Array.isArray(data.onholdRows)?data.onholdRows:[];
+    if(exportRows.length){
+      const merged=badocSaveOnholdExportRows(exportRows);
+      window.__badocOnholdTnKeys=new Set(merged.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
+      try{window.render?.()}catch(e){}
+      try{window.updateOperationProgress?.()}catch(e){}
+    }
     const createdStart=String(data.createdDateStart||"");
     const createdEnd=String(data.createdDateEnd||data.todayDate||"");
     const createdRange=createdStart&&createdEnd?createdStart+" to "+createdEnd:"last 14 days";
@@ -9593,7 +9619,7 @@ window.updateOperationProgress=function(){
     if(s==="LMHUB RECEIVED" || s==="RECEIVED") counts.RECEIVED++;
     else if(s==="DELIVERING") counts.DELIVERING++;
     else if(s==="DELIVERED") counts.DELIVERED++;
-    if((window.__badocLiveHoldTNs instanceof Set) && window.__badocLiveHoldTNs.has(window.__badocHoldKey?.(spxTN(r)) || normJoin(spxTN(r)))) counts.ONHOLD++;
+
   });
 
   const setText=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=Number(v||0).toLocaleString()};
@@ -9676,32 +9702,13 @@ window.updateOperationProgress=function(){
   setProgress("Transporting",counts.TRANSPORTING);setProgress("Transported",counts.TRANSPORTED);setProgress("Received",counts.RECEIVED);setProgress("Assigning",counts.ASSIGNING);setProgress("Assigned",counts.ASSIGNED);
   setText("opDelivering",counts.DELIVERING);setText("opDelivered",counts.DELIVERED);setText("opReceivedSummary",counts.RECEIVED);
 
-  // Dashboard card groups share the same qualifying parcel population as
-  // Parcel Count. Assigned Today is sourced from the deduplicated SPX
-  // Forward + Return OID result produced by the Onhold Today export.
-  const assignedTodayCard=document.getElementById("opAssignedToday");
-  if(assignedTodayCard){
-    let savedAssigned=null;
-    try{savedAssigned=JSON.parse(localStorage.getItem("badoc_assigned_today_card_v1")||"null")}catch(e){}
-    const cardDate=__badocTime.dayKey();
-    assignedTodayCard.textContent=savedAssigned&&savedAssigned.date===cardDate
-      ?Number(savedAssigned.count||0).toLocaleString()
-      :"—";
-  }
-  const eodCard=window.__badocEodDashboard||{};
-  const eodCardKey=v=>String(v??"").trim().toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
-  const eodCardValue=(...keys)=>{
-    for(const key of keys){
-      const normalized=eodCardKey(key);
-      const value=eodCard[normalized];
-      if(value!==undefined&&value!==null&&String(value).trim()!=="")return value;
-    }
-    return "—";
-  };
+  // Dispatched is the sum of the Delivering, Delivered and On-Hold cards.
+  setText("opDispatched",(counts.DELIVERING||0)+(counts.DELIVERED||0)+(counts.ONHOLD||0));
+  // Keep these metrics deliberately blank until their sources are defined.
   const setMetricText=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value===undefined||value===null||String(value).trim()===""?"—":String(value)};
-  setMetricText("opRedelivery",eodCardValue("total redelivery"));
-  setMetricText("opRts",eodCardValue("total rts"));
-  setMetricText("opTotalRiders",eodCard.totalRidersUsed??"—");
+  setMetricText("opRts","—");
+  setMetricText("opTotalRiders","—");
+  setMetricText("opSuccessRate","—");
   setText("opExemptions",Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers.length:0);
   let incomingCardTotal=0;
   try{
@@ -9710,9 +9717,6 @@ window.updateOperationProgress=function(){
     incomingCardTotal=Number(incomingCardData?.total||0);
   }catch(e){console.warn("Incoming linehaul dashboard card could not refresh:",e)}
   setText("opIncomingLinehaul",incomingCardTotal);
-  const liveStatusDen=(counts.RECEIVED||0)+(counts.DELIVERING||0)+(counts.DELIVERED||0)+(counts.ONHOLD||0);
-  const liveSuccessRate=liveStatusDen?(counts.DELIVERED/liveStatusDen*100):0;
-  setMetricText("opSuccessRate",liveSuccessRate.toFixed(1)+"%");
 
   // CFR1 — Clear Floor Rate 1.
   // CFR1 uses a persistent daily ledger keyed by Order ID.  The ledger is
@@ -10072,21 +10076,15 @@ window.updateOperationProgress=function(){
   };
   setText("opCfr1Scanned",window.__badocCfr1Details.scannedCount);
   setText("opCfr1Total",window.__badocCfr1Details.totalCount);
-  // ON-HOLD KPI source of truth: Google Sheets Column F ONLY.
-  // The live sheet loader normalizes TNs into a Set, so duplicates are counted once.
-  // Do not intersect with today's uploaded parcel rows: unmatched sheet TNs still count.
-  const liveHold=(window.__badocLiveHoldTNs instanceof Set)?window.__badocLiveHoldTNs:new Set();
-  const holdKey=window.__badocHoldKey||normJoin;
-  const onHold=liveHold.size;
+  // On-Hold = uploaded Parcel Count rows with an On-Hold status plus
+  // SPX Forward/Return On-Hold export rows. Exports override older uploaded
+  // rows for the same SPX TN, and duplicates are counted only once.
+  const onholdRows=badocGetOnholdRows(todayRows);
+  const onholdTnKeys=new Set(onholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
+  window.__badocOnholdTnKeys=onholdTnKeys;
+  const onHold=onholdTnKeys.size;
   counts.ONHOLD=onHold;
   setText("opOnHold",onHold);
-
-  // Keep a diagnostic list of GSheet Column F TNs not present in the uploaded
-  // parcel population. This warning is informational only and never changes the KPI.
-  const uploadedParcelRows=todayRows.filter(r=>!isExceptionRow(r));
-  const uploadedTNKeys=new Set(uploadedParcelRows.map(r=>holdKey(spxTN(r))).filter(Boolean));
-  const rawHoldTNs=Array.isArray(window.__badocLiveHoldRawTNs)?window.__badocLiveHoldRawTNs:[];
-  window.__badocUnmatchedHoldTNs=[...new Set(rawHoldTNs.map(v=>String(v??'').trim()).filter(v=>{const k=holdKey(v);return k&&!uploadedTNKeys.has(k);} ))];
 
   // Unscanned: Today's Volume minus Delivering, Delivered and On-Hold.
   const unscanned=Math.max(0,todayVolume-(counts.DELIVERING||0)-(counts.DELIVERED||0)-onHold);
@@ -11313,16 +11311,12 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   function statusNorm(v){return clean(v).toUpperCase().replace(/[_-]+/g," ").replace(/\s+/g," ")}
   function statusCounts(rows){
     const out={received:0,delivered:0,delivering:0,hold:0};
-    const liveHold=(window.__badocLiveHoldTNs instanceof Set)?window.__badocLiveHoldTNs:new Set();
-    const holdKey=window.__badocHoldKey||normJoin;
+    const onholdKeys=new Set(badocGetOnholdRows(rows).map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
     (rows||[]).forEach(r=>{
       const s=statusNorm(statusOf(r));
       const tn=clean(typeof spxTN==="function"?spxTN(r):r?.["SPX TN"]||r?.["SLS Tracking Number"]||"");
-      const isLiveHold=!!tn && liveHold.has(holdKey(tn));
-      // Daily History uses the same On-Hold source as the live dashboard:
-      // Google Sheet Column F matched to the uploaded Parcel Count SPX TN.
-      // A raw uploaded ON HOLD status is not independently treated as Hold.
-      if(isLiveHold && s!=="DELIVERED" && s!=="DELIVERING")out.hold++;
+      const isOnhold=!!tn&&onholdKeys.has(badocOnholdKey(tn));
+      if(isOnhold)out.hold++;
       else if(s==="RECEIVED"||s==="LMHUB RECEIVED")out.received++;
       else if(s==="DELIVERED")out.delivered++;
       else if(s==="DELIVERING")out.delivering++;
@@ -11462,7 +11456,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         linehaul:incomingEnabled?"Current Linehaul Task dataset":"Not included (incoming linehaul disabled)",
         riders:"Current Riders Data",
         townCounts:"Current Town Counts layout and parcel statuses",
-        onHold:"Google Sheet Column F matched against uploaded Parcel Count SPX TNs",
+        onHold:"Uploaded Parcel Count On-Hold status + latest SPX Forward/Return exports, deduplicated by SPX TN",
         riderPositions:"Current Town Counts rider selections/positions",
         misrouted:"Current Parcel Count misrouted rows",
         exemptions:"Current exception/exemption tracking list",
@@ -11529,15 +11523,15 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   }
 
   function googleSheetsUrl(){
-    return clean(window.BADOC_DAILY_HISTORY_GSHEET_URL||"");
+    return clean(window.BADOC_DAILY_HISTORY_SPX_EXPORT_URL||"");
   }
   function googleSheetsConfigured(){
-    return window.BADOC_DAILY_HISTORY_GSHEET_MIRROR_ENABLED === true &&
+    return window.BADOC_DAILY_HISTORY_SPX_EXPORT_MIRROR_ENABLED === true &&
       /^https:\/\/script\.google\.com\/(?:macros\/s\/[^/]+\/exec|a\/macros\/[^/]+\/s\/[^/]+\/exec)(?:\?.*)?$/i.test(googleSheetsUrl());
   }
   function googleSheetsBridgeRequest(action, payload={}){
     const endpoint=googleSheetsUrl();
-    if(!googleSheetsConfigured())return Promise.reject(new Error("Daily History Google Sheets is not connected. Deploy the Daily History Apps Script and set BADOC_DAILY_HISTORY_GSHEET_URL."));
+    if(!googleSheetsConfigured())return Promise.reject(new Error("Daily History Google Sheets is not connected. Deploy the Daily History Apps Script and set BADOC_DAILY_HISTORY_SPX_EXPORT_URL."));
     return new Promise((resolve,reject)=>{
       const requestId="dh_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2);
       const frame=document.createElement("iframe");
@@ -11577,7 +11571,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         }catch(e){}
         if(!allowedOrigin)return;
         const data=event.data;
-        if(!data||data.channel!=="BADOC_DAILY_HISTORY_GSHEET"||data.requestId!==requestId)return;
+        if(!data||data.channel!=="BADOC_DAILY_HISTORY_SPX_EXPORT"||data.requestId!==requestId)return;
         finish(null,data.payload);
       };
       window.addEventListener("message",onMessage);
@@ -12061,7 +12055,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 
     // Status-based CFR uses the same unique Today's Volume rows and the
     // dashboard's optional incoming-linehaul volume. No KPI card totals are added.
-    const liveHold=(window.__badocLiveHoldTNs instanceof Set)?window.__badocLiveHoldTNs:new Set();
+    const onholdTnKeys=window.__badocOnholdTnKeys instanceof Set?window.__badocOnholdTnKeys:new Set();
     const clearedStatuses=new Set(["ASSIGNING","LMHUB ASSIGNING","ASSIGNED","LMHUB ASSIGNED","DELIVERING","DELIVERED","ONHOLD","ON HOLD","LMHUB ONHOLD","LMHUB ON HOLD"]);
     const statusSeen=new Set();let clearedParcels=0;
     todayRows.forEach(row=>{
@@ -14422,110 +14416,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 </style>
 </body>
 
-<script id="badoc-live-onhold-gsheet-v251">
-(function(){
-  const SHEET_ID="11heDz_BMJPM9UDXEZ5nF4cyi6t53pbcLk--1cI62-70";
-  const GID="655087682";
-  const CSV_URL="https://docs.google.com/spreadsheets/d/e/2PACX-1vStjOq5M-MVoX_lbkPoYl4-9mlJSdgrGiv7ZTqFJ9gNCUdo0HbLChwC9lGCLhdvd0nBylnT_jCnMPeZ/pub?gid=655087682&single=true&output=csv";
-  const REFRESH_MS=10000;
-  const key=v=>String(v??"").trim().toUpperCase().replace(/[\s\-_.]/g,"");
-  window.__badocHoldKey=key;
-  window.__badocLiveHoldTNs=new Set();
-  window.__badocLiveHoldState={loading:false,lastSuccess:0,count:0,error:"",source:""};
 
-  function parseCSV(text){
-    const rows=[];let row=[],cell="",q=false;
-    for(let i=0;i<text.length;i++){const c=text[i],n=text[i+1];
-      if(q){if(c==='"'&&n==='"'){cell+='"';i++;}else if(c==='"')q=false;else cell+=c;}
-      else if(c==='"')q=true;
-      else if(c===','){row.push(cell);cell="";}
-      else if(c==='\n'){row.push(cell);rows.push(row);row=[];cell="";}
-      else if(c!=='\r')cell+=c;
-    }
-    if(cell!==""||row.length){row.push(cell);rows.push(row);}
-    return rows;
-  }
-
-  function applyValues(values,source){
-    const next=new Set();
-    const raw=[];
-    (values||[]).forEach(v=>{const k=key(v);if(k){next.add(k);raw.push(String(v??"").trim());}});
-    window.__badocLiveHoldTNs=next;
-    window.__badocLiveHoldRawTNs=[...new Set(raw)];
-    window.__badocLiveHoldState={loading:false,lastSuccess:Date.now(),count:next.size,error:"",source};
-    try{window.render?.();}catch(e){}
-    try{window.renderRiderPerformance?.();}catch(e){}
-    try{window.updateOperationProgress?.();}catch(e){}
-  }
-
-  function fetchGviz(){
-    return new Promise((resolve,reject)=>{
-      const cb="badocHoldGviz_"+Date.now()+"_"+Math.random().toString(36).slice(2);
-      let done=false;
-      let script;
-      const finish=(fn,v)=>{if(done)return;done=true;clearTimeout(timer);try{delete window[cb]}catch(e){};if(script)script.remove();fn(v);};
-      const timer=setTimeout(()=>finish(reject,new Error("GSheet Gviz timeout")),12000);
-      script=document.createElement("script");
-      window[cb]=data=>{
-        try{
-          // select F returns ONLY column F, so the value is c[0], not c[5].
-          const values=(data?.table?.rows||[]).map(x=>{const c=x?.c?.[0];return c?(c.f??c.v??""):"";});
-          if(!Array.isArray(data?.table?.rows))throw new Error("Invalid Gviz response");
-          finish(resolve,values);
-        }catch(e){finish(reject,e);}
-      };
-      script.onerror=()=>finish(reject,new Error("GSheet JSONP unavailable"));
-      const tq=encodeURIComponent("select F where F is not null");
-      script.src="https://docs.google.com/spreadsheets/d/"+SHEET_ID+"/gviz/tq?gid="+GID+"&headers=1&tqx="+encodeURIComponent("out:json;responseHandler:"+cb)+"&tq="+tq+"&_="+Date.now();
-      document.head.appendChild(script);
-    });
-  }
-
-  async function fetchCsv(){
-    const r=await fetch(CSV_URL+"&_="+Date.now()+"&cachebust="+Math.random().toString(36).slice(2),{cache:"no-store"});
-    if(!r.ok)throw new Error("CSV HTTP "+r.status);
-    const rows=parseCSV(await r.text());
-    // Published CSV has the sheet header on row 1; Column F is index 5.
-    return rows.slice(1).map(r=>r?.[5]??"");
-  }
-
-  async function refresh(){
-    if(window.__badocLiveHoldState.loading)return;
-    window.__badocLiveHoldState.loading=true;
-    try{
-      try{
-        const values=await fetchGviz();
-        applyValues(values,"GVIZ");
-      }catch(gvizErr){
-        const values=await fetchCsv();
-        applyValues(values,"CSV");
-      }
-    }catch(e){
-      window.__badocLiveHoldState.loading=false;
-      window.__badocLiveHoldState.error=String(e?.message||e);
-      console.warn("On-Hold Google Sheet refresh failed",e);
-      try{window.updateOperationProgress?.();}catch(_){}
-    }
-  }
-
-  window.__badocRefreshLiveHold=refresh;
-  refresh();
-  __badocEvery(refresh,REFRESH_MS);
-})();
-</script>
-<script id="badoc-unmatched-onhold-view-v249">
-(function(){
-  const card=document.querySelector("#homeDashboard .dashboard-status-card.onhold");
-  if(!card)return;
-  card.style.cursor="pointer";
-  card.title="Column F = Google Sheet On-Hold SPX TNs. Click to view any Column F TN not found in uploaded parcel data.";
-  card.addEventListener("click",function(){
-    const list=Array.isArray(window.__badocUnmatchedHoldTNs)?window.__badocUnmatchedHoldTNs:[];
-    if(!list.length){alert("No unmatched GSheet On-Hold SPX TNs. All GSheet TNs are present in the uploaded parcel data.");return;}
-    alert("UNMATCHED GSHEET ON-HOLD SPX TNs ("+list.length+")\n\n"+list.join("\n"));
-  });
-})();
-</script>
 </html>
 
 <script id="dashboard-eod-summary-sync">
