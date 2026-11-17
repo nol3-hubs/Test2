@@ -2589,6 +2589,35 @@ chrome.runtime.onConnect.addListener(port => {
       return;
     }
 
+    if (type === "BADOC_START_ASSIGNED_ONHOLD_TODAY") {
+      if (activeJobs.size) { failBusy("assigned-onhold-today"); return; }
+      sendToPort(port, "BADOC_SPX_COMMAND_ACCEPTED", {
+        kind: "assigned-onhold-today",
+        message: "Extension accepted Onhold Today. Preparing Forward and Return exports…"
+      });
+      void (async () => {
+        try {
+          const result = await exportAssignedParcelsTodayFromSpx();
+          const forward = result.downloadedData?.find(item => item.source === "Forward Order") || {};
+          const returned = result.downloadedData?.find(item => item.source === "Return Order") || {};
+          const excludedTotal = value => Object.values(value || {}).reduce((sum,n) => sum + Number(n || 0), 0);
+          sendToPort(port, "BADOC_ASSIGNED_ONHOLD_TODAY_COMPLETE", {
+            todayDate: result.todayDate,
+            forwardRowCount: result.forwardRowCount,
+            returnRowCount: result.returnRowCount,
+            excludedForward: excludedTotal(forward.excluded),
+            excludedReturn: excludedTotal(returned.excluded)
+          });
+        } catch (error) {
+          sendToPort(port, "BADOC_ASSIGNED_ONHOLD_TODAY_ERROR", {
+            kind: "assigned-onhold-today",
+            message: error?.message || String(error)
+          });
+        }
+      })();
+      return;
+    }
+
     if (type === "BADOC_ABORT_SYNC") {
       for (const job of activeJobs.values()) if (job.ownerPort === port) job.cancelled = true;
     }
