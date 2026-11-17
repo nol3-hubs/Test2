@@ -859,9 +859,14 @@ async function exportAssignedParcelsTodayFromSpx() {
 
   const onholdByTn = new Map();
   const collectOnholdRows = source => {
+    const tnIndex = findAssignedExportColumn(source?.headers || [], [
+      "SPX TN", "SLS Tracking Number", "SPX Tracking Number", "Tracking Number",
+      "SPX TN/Tracking Number", "SPX Tracking No", "SLS Tracking No"
+    ]);
+    if (tnIndex < 0) throw new Error(source?.source + " export is missing the SPX Tracking Number column; cannot safely deduplicate On-Hold records.");
     (source?.rows || []).forEach(row => {
-      const tn = extractAssignedParcelOidsFromRows(source.headers || [], [row])[0];
-      const key = String(tn || "").trim().toUpperCase().replace(/[\\s\\-_.]/g, "");
+      const tn = String(row[tnIndex] ?? "").trim().toUpperCase();
+      const key = tn.replace(/[\\s\\-_.]/g, "");
       if (key) onholdByTn.set(key, { ...Object.fromEntries((source.headers || []).map((h,i)=>[h,row[i] ?? ""])), _onholdExportSource: source === returned ? "Return Order" : "Forward Order" });
     });
   };
@@ -2608,6 +2613,7 @@ chrome.runtime.onConnect.addListener(port => {
             returnRowCount: result.returnRowCount,
             assignedTodayCount: Array.isArray(result.oids)?result.oids.length:0,
             duplicateCount: Number(result.duplicateCount||0),
+            onholdRows: Array.isArray(result.onholdRows)?result.onholdRows:[],
             excludedForward: excludedTotal(forward.excluded),
             excludedReturn: excludedTotal(returned.excluded),
             excludedCreatedDate: Number(forward.excluded?.otherCreatedDate||0)+Number(returned.excluded?.otherCreatedDate||0),
