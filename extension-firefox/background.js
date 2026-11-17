@@ -513,7 +513,7 @@ function philippineDateKey(value) {
   return part("year") + "-" + part("month") + "-" + part("day");
 }
 
-function filterAssignedTodayExportRows(extracted, todayDate, label) {
+function filterAssignedTodayExportRows(extracted, todayDate, label, rangeCreatedStartDate) {
   const headers = Array.isArray(extracted?.headers) ? extracted.headers : [];
   const rows = Array.isArray(extracted?.rows) ? extracted.rows : [];
   const stationIndex = findAssignedExportColumn(headers, [
@@ -523,6 +523,11 @@ function filterAssignedTodayExportRows(extracted, todayDate, label) {
     "assigned time", "assigned datetime", "assign time", "assignment time", "assigned at",
     "assigned date", "assign date", "assignment date", "assignment datetime",
     "pick up time", "pickup time", "pick up datetime", "pickup datetime"
+  ]);
+  const createdDateIndex = findAssignedExportColumn(headers, [
+    "created date", "create date", "order created date", "order create date",
+    "created time", "create time", "order created time", "order create time",
+    "ctime", "order time"
   ]);
   const statusAliases = [
     "status", "current status", "current status name", "order status",
@@ -534,10 +539,9 @@ function filterAssignedTodayExportRows(extracted, todayDate, label) {
     .filter(item => normalizedStatusAliases.has(item.key))
     .map(item => item.index);
 
-  // SPX Forward/Return exports can omit the Assigned Time column even when the
-  // request includes pick_up_time for today's Assigned Time range. Verify the
-  // CSV column when present; otherwise rely on the server-side SPX export filter.
+  // SPX exports may omit date columns; request filters remain authoritative.
   const assignedTimeFilterSource = assignedTimeIndex >= 0 ? "CSV column" : "SPX export request";
+  const createdDateFilterSource = createdDateIndex >= 0 ? "CSV column" : "SPX export request";
   const missing = [];
   if (stationIndex < 0) missing.push("Current Station");
   if (!statusIndexes.length) missing.push("Status");
@@ -547,13 +551,20 @@ function filterAssignedTodayExportRows(extracted, todayDate, label) {
   }
 
   const kept = [];
-  const excluded = { otherStation: 0, otherAssignedDate: 0, deliveringOrDelivered: 0 };
+  const excluded = { otherStation: 0, otherAssignedDate: 0, otherCreatedDate: 0, deliveringOrDelivered: 0 };
   for (const row of rows) {
     const station = String(row[stationIndex] ?? "").trim().toLowerCase().replace(/\s+/g, " ");
     if (!station.includes("badoc hub")) { excluded.otherStation++; continue; }
     if (assignedTimeIndex >= 0 && philippineDateKey(row[assignedTimeIndex]) !== todayDate) {
       excluded.otherAssignedDate++;
       continue;
+    }
+    if (createdDateIndex >= 0) {
+      const createdDate = philippineDateKey(row[createdDateIndex]);
+      if (!createdDate || createdDate < rangeCreatedStartDate || createdDate > todayDate) {
+        excluded.otherCreatedDate++;
+        continue;
+      }
     }
     const statusValues = statusIndexes.map(index =>
       String(row[index] ?? "").trim().toLowerCase().replace(/[_-]+/g, " ")
@@ -572,7 +583,8 @@ function filterAssignedTodayExportRows(extracted, todayDate, label) {
     rawRowCount: rows.length,
     oids: extractAssignedParcelOidsFromRows(headers, kept),
     excluded,
-    assignedTimeFilterSource
+    assignedTimeFilterSource,
+    createdDateFilterSource
   };
 }
 
@@ -665,15 +677,17 @@ async function runAssignedTodayExportSource({ endpoint, label, range, job, isFor
     format_condition:
       "Current Station= Badoc Hub; " +
       "Assigned Time= " + range.todayDate + " 00:00:00," + range.todayDate + " 23:59:59; " +
+      "Created Date= " + range.createdStartDate + " 00:00:00," + range.todayDate + " 23:59:59; " +
       "Bulky Type= Bulky,N/A,Non-Bulky; " +
       "Driver= All"
   };
 
   progress("Submitting SPX " + label + " export for " + range.todayDate +
-    " (Current Station: Badoc Hub; Assigned Time: today; excluding Delivering and Delivered)…", {
+    " (Current Station: Badoc Hub; Assigned Time: today; Created Date: last 14 days; excluding Delivering and Delivered)…", {
     phase: "pod-assigned-today-export", kind: job.kind, source: label,
     dateStart: range.todayDate, dateEnd: range.todayDate,
     currentStation: "Badoc Hub", assignedDate: range.todayDate,
+    createdDateStart: range.createdStartDate, createdDateEnd: range.todayDate,
     excludedStatuses: ["Delivering", "Delivered"]
   });
 
@@ -710,7 +724,7 @@ async function runAssignedTodayExportSource({ endpoint, label, range, job, isFor
   const signedUrl = await getSignedDownloadUrl(taskId, completedInfo.source);
   const csv = await downloadCsv(signedUrl);
   const raw = extractAssignedParcelOids(csv.text);
-  const filtered = filterAssignedTodayExportRows(raw, range.todayDate, label);
+  const filtered = filterAssignedTodayExportRows(raw, range.todayDate, label, range.createdStartDate);
   return {
     taskId,
     rowCount: filtered.rowCount,
@@ -719,6 +733,8 @@ async function runAssignedTodayExportSource({ endpoint, label, range, job, isFor
     headers: filtered.headers,
     rows: filtered.rows,
     excluded: filtered.excluded,
+    assignedTimeFilterSource: filtered.assignedTimeFilterSource,
+    createdDateFilterSource: filtered.createdDateFilterSource,
     fileName: csv.fileName
   };
 }
