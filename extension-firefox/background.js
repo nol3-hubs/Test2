@@ -2343,6 +2343,8 @@ extApi.runtime.onConnect.addListener(port => {
             todayDate: result.todayDate,
             forwardRowCount: result.forwardRowCount,
             returnRowCount: result.returnRowCount,
+            assignedTodayCount: Array.isArray(result.oids)?result.oids.length:0,
+            duplicateCount: Number(result.duplicateCount||0),
             excludedForward: excludedTotal(forward.excluded),
             excludedReturn: excludedTotal(returned.excluded),
             excludedCreatedDate: Number(forward.excluded?.otherCreatedDate||0)+Number(returned.excluded?.otherCreatedDate||0),
