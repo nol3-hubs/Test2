@@ -12003,7 +12003,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
     // sheet has not populated yet, use loaded parcel data instead of false zeros.
     const parcelStatusForHistory=statusCounts(rows);
     const eodHasPerformance=[eodDispatched,eodDelivered,eodOnhold,eodRedelivery,eodRts].some(v=>v!==0);
-    const historyDispatched=eodHasPerformance?eodDispatched:(rows.length+n(incoming.total));
+    const historyDispatched=totalVolume; // Match Planning Board: Parcel Count rows + enabled incoming linehaul.
     // Delivered must reflect actual parcel statuses in the currently loaded rows.
     // The EOD sheet may contain a stale/aggregate delivered value that incorrectly
     // equals total dispatched (e.g. 1,152 delivered while live dashboard shows 487).
@@ -12050,7 +12050,7 @@ document.getElementById("eodRefreshBtn")?.addEventListener("click",load);load();
       capturedAt:phTimestamp(),
       captureReason:"pre-reset",
       source:{
-        topTotals:"Daily Data > EOD Data (live Google Sheet): Dispatched/Delivered/Onhold/Redelivery/RTS, Fleet Summary, Delivery Performance %, Leaderboard",
+        topTotals:"Planning Board source: current Parcel Count rows + enabled incoming linehaul for total volume",
         parcelCount:"Current Parcel Count dataset (merged uploaded parcel CSVs) — used for Rider/Town breakdown only",
         linehaul:incomingEnabled?"Current Linehaul Task dataset":"Not included (incoming linehaul disabled)",
         riders:"Current Riders Data",
