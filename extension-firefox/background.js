@@ -774,6 +774,8 @@ async function exportAssignedParcelsTodayFromSpx() {
     filterCriteria: {
       currentStation: "Badoc Hub",
       assignedDate: range.todayDate,
+      createdDateStart: range.createdStartDate,
+      createdDateEnd: range.todayDate,
       excludedStatuses: ["Delivering", "Delivered"]
     },
     forwardOidCount: forward.oids.length,
@@ -2342,7 +2344,10 @@ extApi.runtime.onConnect.addListener(port => {
             forwardRowCount: result.forwardRowCount,
             returnRowCount: result.returnRowCount,
             excludedForward: excludedTotal(forward.excluded),
-            excludedReturn: excludedTotal(returned.excluded)
+            excludedReturn: excludedTotal(returned.excluded),
+            excludedCreatedDate: Number(forward.excluded?.otherCreatedDate||0)+Number(returned.excluded?.otherCreatedDate||0),
+            createdDateStart: result.filterCriteria?.createdDateStart||"",
+            createdDateEnd: result.filterCriteria?.createdDateEnd||""
           });
         } catch (error) {
           sendToPort(port, "BADOC_ASSIGNED_ONHOLD_TODAY_ERROR", {
