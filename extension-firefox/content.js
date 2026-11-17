@@ -172,6 +172,7 @@
       "BADOC_START_PARCEL_DELIVERY_SYNC",
       "BADOC_START_RIDER_SYNC",
       "BADOC_START_PARCEL_INBOUND_SYNC",
+      "BADOC_START_ASSIGNED_ONHOLD_TODAY",
       "BADOC_START_RECEIVED_CHECKING_INBOUND_SYNC",
       "BADOC_START_PARCEL_SECONDARY_SYNC",
       "BADOC_LOOKUP_PICKUP_INFO",
@@ -205,6 +206,12 @@
         }
       }
       port.postMessage(payload);
+      if (data.type === "BADOC_START_ASSIGNED_ONHOLD_TODAY") {
+        emit("BADOC_SPX_COMMAND_FORWARDED", {
+          kind: "assigned-onhold-today",
+          message: "Onhold Today command forwarded to the extension background."
+        });
+      }
       if (data.type === "BADOC_START_PARCEL_INBOUND_SYNC") {
         emit("BADOC_SPX_COMMAND_FORWARDED", {
           kind: "parcel-inbound",
