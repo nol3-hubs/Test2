@@ -529,65 +529,36 @@ function filterAssignedTodayExportRows(extracted, todayDate, label, rangeCreated
     "created time", "create time", "order created time", "order create time",
     "ctime", "order time"
   ]);
-  const statusAliases = [
-    "status", "current status", "current status name", "order status",
-    "tracking status", "status log", "status name"
-  ];
-  const normalizedStatusAliases = new Set(statusAliases.map(normalizeAssignedExportHeader));
-  const statusIndexes = headers
-    .map((header, index) => ({ key: normalizeAssignedExportHeader(header), index }))
-    .filter(item => normalizedStatusAliases.has(item.key))
-    .map(item => item.index);
-
-  // SPX exports may omit date columns; request filters remain authoritative.
-  const assignedTimeFilterSource = assignedTimeIndex >= 0 ? "CSV column" : "SPX export request";
-  const createdDateFilterSource = createdDateIndex >= 0 ? "CSV column" : "SPX export request";
   const missing = [];
   if (stationIndex < 0) missing.push("Current Station");
-  if (!statusIndexes.length) missing.push("Status");
-  if (missing.length) {
-    throw new Error(label + " CSV is missing required filter column(s): " + missing.join(", ") +
-      ". No OIDs were loaded because the requested filters could not be verified.");
-  }
-
+  if (missing.length) throw new Error(label + " CSV is missing required filter column(s): " + missing.join(", ") + ".");
+  const assignedTimeFilterSource = assignedTimeIndex >= 0 ? "CSV column" : "SPX export request";
+  const createdDateFilterSource = createdDateIndex >= 0 ? "CSV column" : "SPX export request";
   const kept = [];
-  const excluded = { otherStation: 0, otherAssignedDate: 0, otherCreatedDate: 0, deliveringOrDelivered: 0 };
+  const excluded = { otherStation: 0, otherAssignedDate: 0, otherCreatedDate: 0 };
   for (const row of rows) {
-    const station = String(row[stationIndex] ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    const station = String(row[stationIndex] ?? "").trim().toLowerCase().replace(/\\s+/g, " ");
     if (!station.includes("badoc hub")) { excluded.otherStation++; continue; }
     if (assignedTimeIndex >= 0 && philippineDateKey(row[assignedTimeIndex]) !== todayDate) {
-      excluded.otherAssignedDate++;
-      continue;
+      excluded.otherAssignedDate++; continue;
     }
     if (createdDateIndex >= 0) {
       const createdDate = philippineDateKey(row[createdDateIndex]);
       if (!createdDate || createdDate < rangeCreatedStartDate || createdDate > todayDate) {
-        excluded.otherCreatedDate++;
-        continue;
+        excluded.otherCreatedDate++; continue;
       }
     }
-    const statusValues = statusIndexes.map(index =>
-      String(row[index] ?? "").trim().toLowerCase().replace(/[_-]+/g, " ")
-    );
-    if (statusValues.some(status => status.trim() === "delivering" || status.trim() === "delivered")) {
-      excluded.deliveringOrDelivered++;
-      continue;
-    }
+    // These Forward/Return files are On-Hold snapshots. Preserve their status
+    // as exported: it may have changed since the parcel was put On-Hold, and
+    // the export record must supersede the older uploaded Parcel Count row.
     kept.push(row);
   }
-
   return {
-    headers,
-    rows: kept,
-    rowCount: kept.length,
-    rawRowCount: rows.length,
-    oids: extractAssignedParcelOidsFromRows(headers, kept),
-    excluded,
-    assignedTimeFilterSource,
-    createdDateFilterSource
+    headers, rows: kept, rowCount: kept.length, rawRowCount: rows.length,
+    oids: extractAssignedParcelOidsFromRows(headers, kept), excluded,
+    assignedTimeFilterSource, createdDateFilterSource
   };
 }
-
 
 function extractAssignedParcelOids(csvText) {
   const rows = parseAssignedExportCsvRows(csvText);
@@ -683,12 +654,12 @@ async function runAssignedTodayExportSource({ endpoint, label, range, job, isFor
   };
 
   progress("Submitting SPX " + label + " export for " + range.todayDate +
-    " (Current Station: Badoc Hub; Assigned Time: today; Created Date: last 14 days; excluding Delivering and Delivered)…", {
+    " (Current Station: Badoc Hub; Assigned Time: today; Created Date: last 14 days; preserving exported statuses)…", {
     phase: "pod-assigned-today-export", kind: job.kind, source: label,
     dateStart: range.todayDate, dateEnd: range.todayDate,
     currentStation: "Badoc Hub", assignedDate: range.todayDate,
     createdDateStart: range.createdStartDate, createdDateEnd: range.todayDate,
-    excludedStatuses: ["Delivering", "Delivered"]
+    preservedExportStatuses: true
   });
 
   const response = await extensionFetchText(SPX_ORIGIN + endpoint, {
@@ -760,6 +731,17 @@ async function exportAssignedParcelsTodayFromSpx() {
     isForward: false
   });
 
+  const onholdByTn = new Map();
+  const collectOnholdRows = source => {
+    (source?.rows || []).forEach(row => {
+      const tn = extractAssignedParcelOidsFromRows(source.headers || [], [row])[0];
+      const key = String(tn || "").trim().toUpperCase().replace(/[\\s\\-_.]/g, "");
+      if (key) onholdByTn.set(key, { ...Object.fromEntries((source.headers || []).map((h,i)=>[h,row[i] ?? ""])), _onholdExportSource: source === returned ? "Return Order" : "Forward Order" });
+    });
+  };
+  collectOnholdRows(forward);
+  collectOnholdRows(returned);
+  const onholdRows = [...onholdByTn.values()];
   const oids = [...new Set([...forward.oids, ...returned.oids])];
   return {
     ok: true,
@@ -776,12 +758,13 @@ async function exportAssignedParcelsTodayFromSpx() {
       assignedDate: range.todayDate,
       createdDateStart: range.createdStartDate,
       createdDateEnd: range.todayDate,
-      excludedStatuses: ["Delivering", "Delivered"]
+      excludedStatuses: ["all exported statuses"]
     },
     forwardOidCount: forward.oids.length,
     returnOidCount: returned.oids.length,
     duplicateCount: forward.oids.length + returned.oids.length - oids.length,
     oids,
+    onholdRows,
     downloadedData: [
       { source: "Forward Order", headers: forward.headers, rows: forward.rows, rawRowCount: forward.rawRowCount, excluded: forward.excluded, assignedTimeFilterSource: forward.assignedTimeFilterSource },
       { source: "Return Order", headers: returned.headers, rows: returned.rows, rawRowCount: returned.rawRowCount, excluded: returned.excluded, assignedTimeFilterSource: returned.assignedTimeFilterSource }],
