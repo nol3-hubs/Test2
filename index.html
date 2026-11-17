@@ -7258,7 +7258,7 @@ async function beginAssignedOnholdTodaySync(){
   btn.dataset.busy="1";btn.disabled=true;
   const status=$("assignedOnholdTodayStatus");
   if(status){status.textContent="Connecting to SPX…";status.classList.remove("is-success","is-error");status.classList.add("is-working");}
-  window.__badocOperationModalStart?.("Onhold Today","Exporting Forward and Return orders assigned today, applying the requested filters, and processing both CSV files…");
+  window.__badocOperationModalStart?.("Onhold Today","Exporting Forward and Return orders for Badoc Hub. Filters: Assigned Time today; Created Date within the last 14 days; exclude Delivering and Delivered. Both CSVs are checked before completion…");
   clearTimeout(window.__badocAssignedOnholdTodayTimer);
   window.__badocAssignedOnholdTodayTimer=setTimeout(()=>{
     btn.disabled=false;btn.dataset.busy="0";
@@ -7745,9 +7745,13 @@ window.addEventListener("message",async event=>{
     const btn=$("syncAssignedOnholdToday"),status=$("assignedOnholdTodayStatus");
     if(btn){btn.disabled=false;btn.dataset.busy="0";}
     const forward=Number(data.forwardRowCount||0),returned=Number(data.returnRowCount||0);
-    const msg=`Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; Created Date within 14 days; Delivering and Delivered excluded.`;
+    const createdStart=String(data.createdDateStart||"");
+    const createdEnd=String(data.createdDateEnd||data.todayDate||"");
+    const createdRange=createdStart&&createdEnd?createdStart+" to "+createdEnd:"last 14 days";
+    const excludedCreated=Number(data.excludedCreatedDate||0);
+    const msg=`Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; Created Date ${createdRange}; Delivering and Delivered excluded.`;
     if(status){status.textContent=msg;status.classList.remove("is-working","is-error");status.classList.add("is-success");}
-    window.__badocOperationModalFinish?.("Onhold Today Complete",msg,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Excluded rows",(Number(data.excludedForward||0)+Number(data.excludedReturn||0)).toLocaleString()]],"success");
+    window.__badocOperationModalFinish?.("Onhold Today Complete",msg,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Excluded: Created Date",excludedCreated.toLocaleString()],["Other excluded rows",(Number(data.excludedForward||0)+Number(data.excludedReturn||0)-excludedCreated).toLocaleString()]],"success");
     return;
   }
   if(data.type==="BADOC_ASSIGNED_ONHOLD_TODAY_ERROR"){
