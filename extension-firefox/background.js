@@ -2310,7 +2310,7 @@ extApi.runtime.onConnect.addListener(port => {
     }
 
     if (type === "BADOC_START_ASSIGNED_ONHOLD_TODAY") {
-      if (activeJobs.size) { failBusy("assigned-onhold-today"); return; }
+      if (activeJobs.size) { sendToPort(port, "BADOC_ASSIGNED_ONHOLD_TODAY_ERROR", { message: "Another SPX sync is already running. Try again after it finishes." }); return; }
       sendToPort(port, "BADOC_SPX_COMMAND_ACCEPTED", {
         kind: "assigned-onhold-today",
         message: "Extension accepted Onhold Today. Preparing Forward and Return exports…"
