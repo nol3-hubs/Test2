@@ -1861,8 +1861,6 @@ html[data-theme="light"] .side > .theme-switch-row{
         </div>
         <div class="parcel-spx-sync">
           <button class="btn" id="syncParcelInboundFromSPX" type="button" title="Import Received, Transported, Transporting, SOC_LHPacked, and SOC_LHPacking statuses from SPX into BADOC HUB">↻ Import Received / Transported / Transporting / LH Packed &amp; Packing</button>
-          <button class="btn" id="syncAssignedOnholdToday" type="button" style="display:block!important;visibility:visible!important;grid-column:1 / -1" title="Export and process Forward and Return orders assigned today">↻ Onhold Today</button>
-          <span id="assignedOnholdTodayStatus" class="parcel-status-sync-status" aria-live="polite"></span>
           <button class="btn" id="syncParcelDeliveryAllFromSPX" type="button" style="grid-column:1 / -1" title="Sync Delivering, Delivered, and OnHold from SPX one at a time">↻ Sync Delivering / Delivered / OnHold</button>
           <div class="parcel-status-sync-buttons" aria-label="Internal parcel delivery status controls" aria-hidden="true" style="display:none!important">
             <button class="btn" id="syncParcelDeliveringFromSPX" data-status-id="2" data-status-name="Delivering" type="button" tabindex="-1" style="display:none!important">↻ Delivering</button>
@@ -1873,6 +1871,8 @@ html[data-theme="light"] .side > .theme-switch-row{
           <span id="parcelDeliveredStatus" class="parcel-status-sync-status" aria-live="polite"></span>
           <span id="parcelOnHoldStatus" class="parcel-status-sync-status" aria-live="polite"></span>
           <button class="btn" id="reconcileDeliveringViaBatchSearch" type="button" title="Recheck only parcels NOL3 currently counts as Delivering using SPX Batch Search, then preview verified status changes">↻ Recheck Delivering via Batch Search</button>
+          <button class="btn" id="syncAssignedOnholdToday" type="button" style="display:block!important;visibility:visible!important;grid-column:1 / -1" title="Export and process Forward and Return orders assigned today">↻ Onhold Today</button>
+          <span id="assignedOnholdTodayStatus" class="parcel-status-sync-status" aria-live="polite"></span>
           <span id="parcelInboundSpxSyncStatus" class="hint" aria-live="polite"></span>
           <span id="parcelDeliverySpxSyncStatus" class="hint" aria-live="polite"></span>
           <span id="deliveringBatchReconcileStatus" class="hint" aria-live="polite"></span>
