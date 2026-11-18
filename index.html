@@ -1692,6 +1692,7 @@ html[data-theme="light"] .side > .theme-switch-row{
         <button type="button" class="planning-board-toggle" id="planningBoardToggle" aria-expanded="false" aria-controls="planningBoardSubmenu" aria-label="Show Planning Board pages" title="Show Planning Board pages">›</button>
       </div>
       <div class="planning-board-submenu" id="planningBoardSubmenu">
+        <button type="button" data-page="actualScannedByRiders" title="Actual Scanned by Riders"><span class="sub-ico">•</span> Actual Scanned by Riders</button>
         <button type="button" data-page="volumeForecastBoard" title="Volume Forecast"><span class="sub-ico">•</span> Volume Forecast</button>
       </div>
     </div>
@@ -2059,6 +2060,13 @@ html[data-theme="light"] .side > .theme-switch-row{
       </article>
     </div>
     <div class="hint first-mile-local-note">Pickup Orders and Tasks are cached on this device and synced to shared cloud storage for all dashboard devices.</div>
+  </div>
+</section>
+
+<section id="actualScannedByRiders" class="page" aria-label="Actual Scanned by Riders">
+  <div class="section">
+    <div class="area-head"><h2>Actual Scanned by Riders</h2></div>
+    <p class="hint">This page is reserved for actual parcel scans grouped by the rider recorded in the SPX scan data. Planned town assignments and Volume Forecast remain separate.</p>
   </div>
 </section>
 
@@ -5914,7 +5922,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   window.__badocUpdateFirstMileLastUpdated?.();
 })();
 
-function showPage(p){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));const page=$(p);if(page)page.classList.add("active");document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===p));const titles={homeDashboard:"Dashboard",dashboard:"Parcel Count",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyRiderPerformance:"Rider Performance",ridersData:"Riders Data",dailyHistory:"Data",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};$("pageTitle").textContent=titles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");document.body.classList.toggle("pickup-page-active",p==="firstMile");if(p==="firstMile")window.__badocRenderFirstMileCombined?.();if(p==="linehaul")renderLinehaul();if(p==="dailyRiderPerformance")renderRiderPerformance();if(p==="volumeForecastBoard"){window.updateOperationProgress?.();window.__badocRenderForecastBoard?.();document.getElementById("planningBoardNav")?.classList.add("open");document.getElementById("planningBoardToggle")?.setAttribute("aria-expanded","true");}else if(p!=="dashboard"){const nav=document.getElementById("planningBoardNav");const toggle=document.getElementById("planningBoardToggle");if(nav)nav.classList.remove("open");if(toggle)toggle.setAttribute("aria-expanded","false");}}
+function showPage(p){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));const page=$(p);if(page)page.classList.add("active");document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===p));const titles={homeDashboard:"Dashboard",dashboard:"Parcel Count",actualScannedByRiders:"Actual Scanned by Riders",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyRiderPerformance:"Rider Performance",ridersData:"Riders Data",dailyHistory:"Data",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};$("pageTitle").textContent=titles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");document.body.classList.toggle("pickup-page-active",p==="firstMile");if(p==="firstMile")window.__badocRenderFirstMileCombined?.();if(p==="linehaul")renderLinehaul();if(p==="dailyRiderPerformance")renderRiderPerformance();if(p==="volumeForecastBoard"){window.updateOperationProgress?.();window.__badocRenderForecastBoard?.();document.getElementById("planningBoardNav")?.classList.add("open");document.getElementById("planningBoardToggle")?.setAttribute("aria-expanded","true");}else if(p!=="dashboard"){const nav=document.getElementById("planningBoardNav");const toggle=document.getElementById("planningBoardToggle");if(nav)nav.classList.remove("open");if(toggle)toggle.setAttribute("aria-expanded","false");}}
 $("parcelIncomingVolumeBtn")?.addEventListener("click",()=>{
   const next=!parcelIncomingEnabled();
   try{localStorage.setItem(PARCEL_INCOMING_KEY,next?"1":"0")}catch(e){}
