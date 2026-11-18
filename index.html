@@ -1938,6 +1938,7 @@ html[data-theme="light"] .side > .theme-switch-row{
         <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST</span><small>Expected final by 3 AM</small></div>
       </div>
       <div id="volumeCutoffStatus" style="margin-top:8px;color:#8fa0ad;font-size:12px">Volume period: checking local time…</div>
+      <div id="volumeSnapshotStatus" role="status" aria-live="polite" style="margin-top:4px;color:#8fa0ad;font-size:11px">Daily volume snapshot: waiting for shared data…</div>
       <label title="Add Linehaul Task ID volume to Today's Volume" style="display:inline-flex;align-items:center;gap:6px;margin-top:7px;font-size:11px;color:#8fa0ad;cursor:pointer;opacity:.75">
         <input type="checkbox" id="todayVolumeAddHubStatuses"> Add incoming volume
       </label>
@@ -4126,16 +4127,23 @@ function badocSaveOnholdExportRows(rows){
   window.__badocOnholdExportRows=unique;
   return unique;
 }
-function badocGetOnholdRows(baseRows){
+function badocGetOnholdRows(baseRows,restrictToBase=false){
   const rows=Array.isArray(baseRows)?baseRows:(typeof getParcelCountRows==="function"?getParcelCountRows():[]);
   const byTn=new Map();
+  const baseKeys=new Set();
   rows.forEach(row=>{
-    if(!row||isExceptionRow(row)||!badocOnholdStatus(row))return;
-    const key=badocOnholdKey(spxTN(row));if(key)byTn.set(key,row);
+    if(!row)return;
+    const key=badocOnholdKey(spxTN(row));
+    if(key)baseKeys.add(key);
+    if(isExceptionRow(row)||!badocOnholdStatus(row))return;
+    if(key)byTn.set(key,row);
   });
   const exports=Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:badocLoadOnholdExportRows();
   exports.forEach(row=>{
-    const key=badocOnholdKey(spxTN(row));if(key&&!isExceptionRow(row))byTn.set(key,row);
+    const key=badocOnholdKey(spxTN(row));
+    if(!key||isExceptionRow(row)||(restrictToBase&&!baseKeys.has(key)))return;
+    if(badocOnholdStatus(row))byTn.set(key,row);
+    else byTn.delete(key);
   });
   return [...byTn.values()];
 }
@@ -8732,7 +8740,7 @@ window.DASHBOARD_V2_READY = true;
   const cfg=window.BADOC_SHARED_CONFIG||{};
   const bucket="exported-files";
   const TABLE="badoc_shared_state";
-  const P={upload:"current/uploaded.csv",linehaul:"current/linehaul.csv",linehaulArrivalFlags:"current/linehaul-arrival-flags.json",settings:"current/town-settings.json",riders:"current/riders-data.json",layout:"current/town-layout.json",riderSelections:"current/rider-selections.json",notes:"current/town-group-notes.json"};
+  const P={upload:"current/uploaded.csv",linehaul:"current/linehaul.csv",linehaulArrivalFlags:"current/linehaul-arrival-flags.json",volumeSnapshot:"current/daily-volume-snapshot.json",settings:"current/town-settings.json",riders:"current/riders-data.json",layout:"current/town-layout.json",riderSelections:"current/rider-selections.json",notes:"current/town-group-notes.json"};
   let client=null,channel=null,pollTimer=null,pulling=false,started=false;
   const queuedPullKinds=new Set();
   const pendingCloudWrites=new Set();
@@ -8814,6 +8822,7 @@ window.DASHBOARD_V2_READY = true;
       id:1,
       upload_exists:false,upload_version:0,
       linehaul_exists:false,linehaul_version:0,
+      volume_snapshot_exists:false,volume_snapshot_version:0,
       settings_version:0,layout_version:0,notes_version:0,
       ...clean
     };
@@ -8990,6 +8999,18 @@ window.DASHBOARD_V2_READY = true;
       window.__badocRenderDashboardRiderSummary?.();
     }catch(e){console.warn("Town notes parse:",e)}
   }
+  async function applyVolumeSnapshot(){
+    const b=await get(P.volumeSnapshot);
+    if(!b){
+      window.__badocVolumeSnapshot=null;
+      try{localStorage.removeItem("badoc_daily_volume_snapshot_v1")}catch{}
+      return;
+    }
+    const x=JSON.parse(await b.text());
+    if(!x||x.schemaVersion!==1||!Array.isArray(x.rows)||!x.cycleKey)throw Error("Shared daily volume snapshot has an invalid format.");
+    window.__badocVolumeSnapshot=x;
+    try{localStorage.setItem("badoc_daily_volume_snapshot_v1",JSON.stringify(x))}catch(e){console.warn("Local volume snapshot cache:",e)}
+  }
   async function applyRiderSelections(){
     const b=await get(P.riderSelections);
     if(!b)return false;
@@ -9007,13 +9028,13 @@ window.DASHBOARD_V2_READY = true;
     }catch(e){console.warn("Rider selections parse:",e);return false}
   }
 
-  let seen={upload:0,linehaul:0,settings:0,layout:0,notes:0};
+  let seen={upload:0,linehaul:0,volumeSnapshot:-1,settings:0,layout:0,notes:0};
   async function pull(kind){
     if(pulling){ if(kind)queuedPullKinds.add(kind); else queuedPullKinds.add("__all__"); return; }
     pulling=true;
     try{
       const s=await state();
-      if(!s){status("Shared state not set");return}
+      if(!s){window.__badocVolumeSnapshotCloudReady=true;status("Shared state not set");return}
       if(kind==="upload"){
         if(!pendingCloudWrites.has("upload")&&!uploadLocalDirty){
           if(!s.upload_exists)await clearLocalUpload();else await applyUpload();
@@ -9026,6 +9047,15 @@ window.DASHBOARD_V2_READY = true;
           if(!s.linehaul_exists)await clearLocalLinehaul();else await applyLinehaul();
         }
         seen.linehaul=Number(s.linehaul_version||0);
+      }else if(kind==="volumeSnapshot"){
+        if(Number(s.volume_snapshot_version||0)>seen.volumeSnapshot){
+          if(s.volume_snapshot_exists)await applyVolumeSnapshot();
+          else{
+            window.__badocVolumeSnapshot=null;
+            try{localStorage.removeItem("badoc_daily_volume_snapshot_v1")}catch{}
+          }
+          seen.volumeSnapshot=Number(s.volume_snapshot_version||0);
+        }
       }else if(kind==="settings"){
         if(!pendingCloudWrites.has("settings")){
           if(Number(s.settings_version||0)>seen.settings)await applySettings();
@@ -9047,6 +9077,14 @@ window.DASHBOARD_V2_READY = true;
         if(!pendingCloudWrites.has("linehaul")&&!linehaulLocalDirty){
           if(!s.linehaul_exists)await clearLocalLinehaul();else if(Number(s.linehaul_version||0)>seen.linehaul)await applyLinehaul();
         }
+        if(Number(s.volume_snapshot_version||0)>seen.volumeSnapshot){
+          if(s.volume_snapshot_exists)await applyVolumeSnapshot();
+          else{
+            window.__badocVolumeSnapshot=null;
+            try{localStorage.removeItem("badoc_daily_volume_snapshot_v1")}catch{}
+          }
+          seen.volumeSnapshot=Number(s.volume_snapshot_version||0);
+        }
         if(!pendingCloudWrites.has("settings")&&Number(s.settings_version||0)>seen.settings)await applySettings();
         if(!pendingCloudWrites.has("settings"))seen.settings=Number(s.settings_version||0);
         if(Number(s.layout_version||0)>seen.layout)await applyLayout(Number(s.layout_version||0));
@@ -9054,9 +9092,11 @@ window.DASHBOARD_V2_READY = true;
           await applyNotes();
           await applyRiderSelections();
         }
-        seen={upload:Number(s.upload_version||0),linehaul:Number(s.linehaul_version||0),settings:Number(s.settings_version||0),layout:Number(s.layout_version||0),notes:Number(s.notes_version||0)};
+        seen={upload:Number(s.upload_version||0),linehaul:Number(s.linehaul_version||0),volumeSnapshot:Number(s.volume_snapshot_version||0),settings:Number(s.settings_version||0),layout:Number(s.layout_version||0),notes:Number(s.notes_version||0)};
       }
+      window.__badocVolumeSnapshotCloudReady=true;
       status("All devices synced");
+      if(typeof window.updateOperationProgress==="function")window.updateOperationProgress();
     }catch(e){console.warn("Shared pull:",e);status("Sync retrying…")}
     finally{pulling=false}
   }
@@ -9113,6 +9153,37 @@ window.DASHBOARD_V2_READY = true;
       return {queued:true};
     }
     return queueParcelCloudWrite(text,fileName);
+  };
+  // One immutable parcel population per 3 PM Manila operating cycle.
+  window.__badocCloudSaveDailyVolumeSnapshot = async function(snapshot){
+    const deadline=Date.now()+20000;
+    while(!started && Date.now()<deadline)await new Promise(r=>setTimeout(r,100));
+    if(!started)throw Error("Shared cloud sync is not ready.");
+    if(!snapshot||snapshot.schemaVersion!==1||!snapshot.cycleKey||!Array.isArray(snapshot.rows)||!snapshot.rows.length)
+      throw Error("Daily volume snapshot is empty or invalid.");
+    const currentState=await state();
+    if(currentState?.volume_snapshot_exists){
+      const existingBlob=await get(P.volumeSnapshot);
+      if(existingBlob){
+        try{
+          const existing=JSON.parse(await existingBlob.text());
+          if(existing?.cycleKey===snapshot.cycleKey){
+            window.__badocVolumeSnapshot=existing;
+            try{localStorage.setItem("badoc_daily_volume_snapshot_v1",JSON.stringify(existing))}catch{}
+            return {created:false,snapshot:existing};
+          }
+        }catch(e){console.warn("Existing daily volume snapshot could not be read:",e)}
+      }
+    }
+    const version=Math.max(Date.now(),Number(currentState?.volume_snapshot_version||0)+1);
+    const payload={...snapshot,savedAt:Date.now(),savedBy:deviceId};
+    await put(P.volumeSnapshot,new Blob([JSON.stringify(payload)],{type:"application/json"}),"application/json");
+    await setState({volume_snapshot_exists:true,volume_snapshot_version:version});
+    seen.volumeSnapshot=version;
+    window.__badocVolumeSnapshot=payload;
+    try{localStorage.setItem("badoc_daily_volume_snapshot_v1",JSON.stringify(payload))}catch(e){console.warn("Local volume snapshot cache:",e)}
+    await announce("volumeSnapshot","save");
+    return {created:true,snapshot:payload};
   };
 
   // Save task-level arrival checkboxes separately from the imported CSV. Use
@@ -9732,15 +9803,11 @@ window.updateOperationProgress=function(){
   const dayEligible=r=>destination(r)==="BADOC HUB" && stations.includes(station(r));
   const qualifyingDayRows=allRows.filter(dayEligible).filter(r=>!isExceptionRow(r));
 
-  // Today's Volume uses the EXACT same qualifying parcel population as
-  // Parcel Count → Total Volume. This keeps both metrics consistent and
-  // prevents Today's Volume from using a narrower status/station filter.
-  const todayRows=typeof getParcelCountRows==="function"
+  // Live parcel population before the first cutoff; fixed saved population afterward.
+  // The cutoff is fixed at 3:00 PM Manila time and is not user-adjustable.
+  const liveTodayRows=typeof getParcelCountRows==="function"
     ?getParcelCountRows()
     :allRows.filter(r=>!isExceptionRow(r));
-
-  // Use the EXACT same incoming Linehaul source as Parcel Count.
-  // Both metrics therefore add the same unique, exception-excluded SPX TN set.
   const TV_LINEHAUL_KEY=typeof PARCEL_INCOMING_KEY!=="undefined"
     ?PARCEL_INCOMING_KEY
     :"badoc_parcel_incoming_linehaul_v1";
@@ -9748,9 +9815,104 @@ window.updateOperationProgress=function(){
   try{tvLinehaulEnabled=localStorage.getItem(TV_LINEHAUL_KEY)==="1";}catch(e){}
   const incomingForToday=tvLinehaulEnabled && typeof getParcelIncomingLinehaul==="function"
     ?getParcelIncomingLinehaul()
-    :{total:0};
+    :{total:0,rows:[]};
   const linehaulTodayVolume=Number(incomingForToday.total)||0;
-  const todayVolume=todayRows.length+linehaulTodayVolume;
+  const dateKey=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
+  const nowManila=__badocTime.manilaDate();
+  const currentMinutes=nowManila.getHours()*60+nowManila.getMinutes();
+  const snapshotDue=currentMinutes>=900;
+  const cycleDate=new Date(nowManila.getFullYear(),nowManila.getMonth(),nowManila.getDate());
+  if(!snapshotDue)cycleDate.setDate(cycleDate.getDate()-1);
+  const volumeCycleKey=dateKey(cycleDate);
+  const savedVolumeSnapshot=window.__badocVolumeSnapshot||null;
+  const activeVolumeSnapshot=savedVolumeSnapshot?.cycleKey===volumeCycleKey &&
+    Array.isArray(savedVolumeSnapshot.rows) ? savedVolumeSnapshot : null;
+
+  // Build the population once by SPX TN. Incoming Linehaul is included only
+  // when its existing checkbox is enabled; duplicates across sources are removed.
+  const baselineByTn=new Map();
+  const addBaselineRow=row=>{
+    if(!row||isExceptionRow(row))return;
+    const rawTn=spxTN(row),key=tnKey(rawTn);
+    if(!key||baselineByTn.has(key))return;
+    const meta=badocRowMeta(row);
+    baselineByTn.set(key,{
+      tn:String(rawTn).trim(),
+      town:String(meta.town||row?.["Town Name"]||row?.["Town"]||"").trim(),
+      area:String(row?._area||"").trim(),
+      initialStatus:String(meta.status||statusTo(row)||"").trim()
+    });
+  };
+  liveTodayRows.forEach(addBaselineRow);
+  if(tvLinehaulEnabled)(Array.isArray(incomingForToday.rows)?incomingForToday.rows:[]).forEach(addBaselineRow);
+  const liveBaselineRows=[...baselineByTn.values()];
+
+  // After cutoff, refresh only statuses for SPX TNs in the saved baseline.
+  let todayRows=liveTodayRows;
+  if(activeVolumeSnapshot){
+    const latestByTn=new Map();
+    const liveSources=[
+      ...(Array.isArray(current?.rows)?current.rows:[]),
+      ...(Array.isArray(current?.valid)?current.valid:[]),
+      ...(Array.isArray(current?.mis)?current.mis:[])
+    ];
+    liveSources.forEach(row=>{
+      const key=tnKey(spxTN(row));
+      if(key)latestByTn.set(key,row);
+    });
+    const exportedStatuses=Array.isArray(window.__badocOnholdExportRows)
+      ?window.__badocOnholdExportRows
+      :(typeof badocLoadOnholdExportRows==="function"?badocLoadOnholdExportRows():[]);
+    exportedStatuses.forEach(row=>{
+      const key=tnKey(spxTN(row));
+      if(key)latestByTn.set(key,row);
+    });
+    todayRows=activeVolumeSnapshot.rows.map(item=>{
+      const key=tnKey(item?.tn);
+      const live=key?latestByTn.get(key):null;
+      const liveStatus=live?statusTo(live):"";
+      return {
+        "SPX TN":String(item?.tn||""),
+        "Town Name":String(item?.town||""),
+        "Parcel Status To":String(liveStatus||item?.initialStatus||""),
+        ...(live||{}),
+        _area:String(item?.area||"")
+      };
+    });
+  }
+  const todayVolume=activeVolumeSnapshot
+    ?Number(activeVolumeSnapshot.count||activeVolumeSnapshot.rows.length)
+    :liveTodayRows.length+linehaulTodayVolume;
+
+  // Automatically create one immutable shared snapshot when the 3 PM cutoff is reached.
+  if(snapshotDue&&!activeVolumeSnapshot&&window.__badocVolumeSnapshotCloudReady===true&&
+     !window.__badocVolumeSnapshotSaving&&liveBaselineRows.length&&
+     typeof window.__badocCloudSaveDailyVolumeSnapshot==="function"){
+    const snapshot={
+      schemaVersion:1,
+      cycleKey:volumeCycleKey,
+      cutoff:"15:00",
+      timezone:"Asia/Manila",
+      capturedAt:Date.now(),
+      linehaulIncluded:tvLinehaulEnabled,
+      count:liveBaselineRows.length,
+      rows:liveBaselineRows
+    };
+    window.__badocVolumeSnapshotSaving=true;
+    window.__badocCloudSaveDailyVolumeSnapshot(snapshot)
+      .then(result=>{
+        if(result?.snapshot)window.__badocVolumeSnapshot=result.snapshot;
+      })
+      .catch(error=>{
+        console.error("Daily volume snapshot save failed:",error);
+        const statusEl=document.getElementById("volumeSnapshotStatus");
+        if(statusEl)statusEl.textContent="3:00 PM snapshot not saved — shared cloud sync will retry.";
+      })
+      .finally(()=>{
+        window.__badocVolumeSnapshotSaving=false;
+        if(typeof window.updateOperationProgress==="function")window.updateOperationProgress();
+      });
+  }
 
   // Volume Forecast: from 3 PM through 3 AM next day, estimate the final
   // volume by counting unique SPX TNs that meet the exact forecast criteria.
@@ -9876,6 +10038,18 @@ window.updateOperationProgress=function(){
   }
 
   setText("opTodayVolume",todayVolume);
+  const snapshotStatusEl=document.getElementById("volumeSnapshotStatus");
+  if(snapshotStatusEl){
+    if(activeVolumeSnapshot){
+      const savedAt=Number(activeVolumeSnapshot.savedAt||activeVolumeSnapshot.capturedAt||0);
+      const savedLabel=savedAt?new Date(savedAt).toLocaleTimeString("en-PH",{timeZone:"Asia/Manila",hour:"numeric",minute:"2-digit"}):"";
+      snapshotStatusEl.textContent="VOLUME LOCKED · "+Number(activeVolumeSnapshot.count||activeVolumeSnapshot.rows.length).toLocaleString()+" parcels · "+(savedLabel?"saved "+savedLabel+" Manila":"3:00 PM snapshot");
+    }else if(snapshotDue){
+      snapshotStatusEl.textContent=window.__badocVolumeSnapshotSaving?"Saving 3:00 PM parcel snapshot…":"Waiting to save the 3:00 PM snapshot when shared data is ready…";
+    }else{
+      snapshotStatusEl.textContent="Next fixed volume snapshot: 3:00 PM Manila";
+    }
+  }
   setText("opIncomingVolume",estimatedTomorrow);
   const card=document.getElementById("incomingVolumeCard");if(card)card.style.display=forecastWindow?"":"none";
   setProgress("Transporting",counts.TRANSPORTING);setProgress("Transported",counts.TRANSPORTED);setProgress("Received",counts.RECEIVED);setProgress("Assigning",counts.ASSIGNING);setProgress("Assigned",counts.ASSIGNED);
@@ -10266,7 +10440,7 @@ window.updateOperationProgress=function(){
   // On-Hold = uploaded Parcel Count rows with an On-Hold status plus
   // SPX Forward/Return On-Hold export rows. Exports override older uploaded
   // rows for the same SPX TN, and duplicates are counted only once.
-  const onholdRows=badocGetOnholdRows(todayRows);
+  const onholdRows=badocGetOnholdRows(todayRows,!!activeVolumeSnapshot);
   const onholdTnKeys=new Set(onholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
   window.__badocOnholdTnKeys=onholdTnKeys;
   const onHold=onholdTnKeys.size;
