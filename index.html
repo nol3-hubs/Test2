@@ -1939,10 +1939,6 @@ html[data-theme="light"] .side > .theme-switch-row{
 
         <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST</span><small>Expected final by 3 AM</small></div>
       </div>
-      <div id="volumeCutoffStatus" style="margin-top:8px;color:#8fa0ad;font-size:12px">Volume period: checking local time…</div>
-      <label title="Add Linehaul Task ID volume to Today's Volume" style="display:inline-flex;align-items:center;gap:6px;margin-top:7px;font-size:11px;color:#8fa0ad;cursor:pointer;opacity:.75">
-        <input type="checkbox" id="todayVolumeAddHubStatuses"> Add incoming volume
-      </label>
 
       <div class="dashboard-status-section">
         <div class="dashboard-card-groups">
@@ -10444,12 +10440,6 @@ window.updateOperationProgress=function(){
   // Unscanned: Today's Volume minus Delivering, Delivered and On-Hold.
   const unscanned=Math.max(0,todayVolume-(counts.DELIVERING||0)-(counts.DELIVERED||0)-onHold);
   setText("opUnscanned",unscanned);
-  const cutoff=document.getElementById("volumeCutoffStatus");
-  if(cutoff)cutoff.textContent=forecastWindow
-    ?"FORECAST WINDOW: 3:00 PM–3:00 AM NEXT DAY"
-    :after3am
-      ?"CURRENT PERIOD: 3:00 AM–3:00 PM"
-      :"CURRENT PERIOD: 3:00 AM–3:00 PM";
 };
 __badocEvery(()=>window.updateOperationProgress?.(),30000);
 </script>
