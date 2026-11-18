@@ -4605,6 +4605,19 @@ function parseCsvText(text){
 function riderNorm(v){return String(v??'').trim().toUpperCase();}
 function renderRiders(){
   window.__badocRenderDashboardRiderSummary?.();
+  // Rider data can finish loading after the town cards were first rendered.
+  // Refresh assigned-name labels without changing the saved rider-name values.
+  const riderLabelKey=v=>riderNorm(v).replace(/[\\s_-]+/g,"");
+  const riderVehicleLabel=v=>{const k=riderLabelKey(v);if(k==="2WH"||k==="2W")return "2WH";if(k==="3WH"||k==="3WC"||k==="3W")return "3WH";if(k==="FLEXI"||k==="FLEX")return "Flexi";return "";};
+  const riderByName=new Map();
+  (Array.isArray(ridersData)?ridersData:[]).forEach(r=>{const k=riderLabelKey(r["Driver Name"]);if(k&&!riderByName.has(k))riderByName.set(k,r);});
+  document.querySelectorAll(".town-rider-input").forEach(input=>{
+    const name=String(input.dataset.selectedRiderName||"").trim();
+    if(!name||document.activeElement===input)return;
+    const record=riderByName.get(riderLabelKey(name));
+    const vehicle=record&&riderVehicleLabel(record["Vehicle Type"]);
+    input.value=vehicle?name+" ("+vehicle+")":name;
+  });
   const q=riderNorm($("ridersSearch")?.value);
   const veh=$("ridersVehicle")?.value||"", stat=$("ridersStatus")?.value||"";
   const activeOnly=$("ridersActiveOnly")?.checked!==false;
