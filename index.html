@@ -843,6 +843,10 @@ html[data-theme="light"] .sync-guide-featured .sync-guide-icon{border-color:#fff
 #volumeForecastBoard #forecastBoardSyncStatus.is-success{color:#067647}
 #volumeForecastBoard #forecastBoardSyncStatus.is-error{color:#b42318}
 #volumeForecastBoard .forecast-board-kpis{grid-template-columns:repeat(6,minmax(0,1fr));margin-top:12px}
+#volumeForecastBoard .forecast-board-rider-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:8px 0 14px}
+#volumeForecastBoard .forecast-board-rider-card{min-width:0}
+#volumeForecastBoard .forecast-board-rider-card .num{font-variant-numeric:tabular-nums}
+#volumeForecastBoard .forecast-board-rider-note{grid-column:1/-1;margin:0;color:var(--muted);font-size:10px;line-height:1.4}
 #volumeForecastBoard .forecast-board-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:0 0 16px}
 #volumeForecastBoard .forecast-board-status-manager{margin-top:12px;margin-bottom:12px}
 #volumeForecastBoard .forecast-board-status-manager-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
@@ -891,7 +895,7 @@ html[data-theme="light"] .sync-guide-featured .sync-guide-icon{border-color:#fff
 #volumeForecastBoard .forecast-board-pagination button{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:6px;padding:6px 10px;cursor:pointer}
 #volumeForecastBoard .forecast-board-empty{padding:18px;text-align:center;color:var(--muted);font-size:11px}
 @media(max-width:1050px){#volumeForecastBoard .forecast-board-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}#volumeForecastBoard .forecast-board-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}#volumeForecastBoard .forecast-board-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:700px){#volumeForecastBoard .forecast-board-status-manager-head{flex-direction:column}#volumeForecastBoard .forecast-board-status-manager-actions{align-self:flex-end}#volumeForecastBoard .forecast-board-intro{align-items:flex-start;flex-direction:column}#volumeForecastBoard .forecast-board-intro-actions{align-items:flex-start;min-width:0;width:100%}#volumeForecastBoard #forecastBoardSyncStatus{text-align:left}#volumeForecastBoard .forecast-board-intro-meta{text-align:left}#volumeForecastBoard .forecast-board-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#volumeForecastBoard .forecast-board-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#volumeForecastBoard .forecast-board-town-grid{grid-template-columns:1fr}#volumeForecastBoard .forecast-board-records-head{align-items:flex-start;flex-direction:column}#volumeForecastBoard .forecast-board-filters{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){#volumeForecastBoard .forecast-board-status-manager-head{flex-direction:column}#volumeForecastBoard .forecast-board-status-manager-actions{align-self:flex-end}#volumeForecastBoard .forecast-board-intro{align-items:flex-start;flex-direction:column}#volumeForecastBoard .forecast-board-intro-actions{align-items:flex-start;min-width:0;width:100%}#volumeForecastBoard #forecastBoardSyncStatus{text-align:left}#volumeForecastBoard .forecast-board-intro-meta{text-align:left}#volumeForecastBoard .forecast-board-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#volumeForecastBoard .forecast-board-rider-summary{grid-template-columns:repeat(2,minmax(0,1fr))}#volumeForecastBoard .forecast-board-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}#volumeForecastBoard .forecast-board-town-grid{grid-template-columns:1fr}#volumeForecastBoard .forecast-board-records-head{align-items:flex-start;flex-direction:column}#volumeForecastBoard .forecast-board-filters{grid-template-columns:1fr 1fr}}
 </style>
 
 
@@ -2054,6 +2058,10 @@ html[data-theme="light"] .side > .theme-switch-row{
     <div class="kpi"><div class="num" id="forecastBoardBulky">0</div><div class="lab">BULKY TOTAL</div><div class="desc">Chargeable weight ≥ 4.00 kg</div></div>
     <div class="kpi"><div class="num" id="forecastBoardHighValue">0</div><div class="lab">HIGH VALUE</div><div class="desc">High Value = Y</div></div>
     <div class="kpi"><div class="num" id="forecastBoardStations">0</div><div class="lab">CURRENT STATIONS</div><div class="desc">Stations with eligible parcels</div></div>
+  </div>
+  <div class="section forecast-board-riders-used">
+    <div class="area-head"><h2>Riders Used</h2><span class="forecast-board-area-note">Unique riders assigned across Badoc and Pinili town groups</span></div>
+    <div class="forecast-board-rider-summary" id="forecastBoardRiderSummary" aria-live="polite"></div>
   </div>
   <div class="section forecast-board-status-manager">
     <div class="forecast-board-status-manager-head">
@@ -3529,6 +3537,7 @@ function renderTownGrid(id,list,rows,extraCounts={}){
             if(!Array.isArray(notes[key]))notes[key]=[];
             notes[key][noteIndex]=String(name??"");
             try{localStorage.setItem(TOWN_NOTES_KEY,JSON.stringify(notes))}catch{}
+            window.__badocRenderForecastRiderSummary?.();
             if(typeof window.__badocSyncTownNotesNow==="function")
               window.__badocSyncTownNotesNow(notes).catch(e=>console.warn("Rider selection sync:",e));
           });
@@ -4643,6 +4652,7 @@ function renderRiders(){
       });
     }
   }
+  window.__badocRenderForecastRiderSummary?.();
 }
 
 function initRidersData(){
@@ -8752,6 +8762,7 @@ window.DASHBOARD_V2_READY = true;
       try{localStorage.setItem(TOWN_NOTES_KEY,JSON.stringify(x||{}))}catch{}
       if(document.querySelector(".town-rider-picker.open")){window.__badocPendingRiderRender=true;return;}
       if(typeof render==="function")render();
+      window.__badocRenderForecastRiderSummary?.();
     }catch(e){console.warn("Town notes parse:",e)}
   }
   async function applyRiderSelections(){
@@ -8766,6 +8777,7 @@ window.DASHBOARD_V2_READY = true;
       try{localStorage.setItem(TOWN_NOTES_KEY,JSON.stringify(notes));localStorage.setItem("badoc_rider_selection_version_v1",String(version||Date.now()))}catch{}
       if(document.querySelector(".town-rider-picker.open")){window.__badocPendingRiderRender=true;return true;}
       if(typeof render==="function")render();
+      window.__badocRenderForecastRiderSummary?.();
       return true;
     }catch(e){console.warn("Rider selections parse:",e);return false}
   }
@@ -13548,6 +13560,39 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     var p=typeof towns!=="undefined"&&Array.isArray(towns.pinili)?towns.pinili:[];
     return {badoc:new Set(b.map(normText)),pinili:new Set(p.map(normText)),badocList:b,piniliList:p};
   }
+  function riderNameKey(value){return text(value).trim().toUpperCase().replace(/[\s_-]+/g,"");}
+  function renderRiderSummary(){
+    var node=el("forecastBoardRiderSummary");if(!node)return;
+    var assignedNames=new Map();
+    ["badoc","pinili"].forEach(function(areaKey){
+      var assignments=typeof getTownNotes==="function"?getTownNotes(areaKey):[];
+      var groupCount=typeof getTownLayout==="function"?getTownLayout(areaKey).length:assignments.length;
+      for(var i=0;i<Math.min(groupCount,assignments.length);i++){
+        var name=text(assignments[i]||"").trim(),keyName=riderNameKey(name);
+        if(name&&keyName&&!assignedNames.has(keyName))assignedNames.set(keyName,name);
+      }
+    });
+    var riders=Array.isArray(ridersData)?ridersData:[],byName=new Map();
+    riders.forEach(function(r){
+      var k=riderNameKey(r&&r["Driver Name"]);if(!k)return;
+      var previous=byName.get(k);
+      if(!previous||(normText(r["SPX Status"])==="ACTIVE"&&normText(previous["SPX Status"])!=="ACTIVE"))byName.set(k,r);
+    });
+    var counts={total:assignedNames.size,two:0,three:0,flexi:0,unclassified:0};
+    assignedNames.forEach(function(name,k){
+      var rider=byName.get(k),vehicle=text(rider&&rider["Vehicle Type"]).toUpperCase().replace(/[^A-Z0-9]/g,"");
+      if(vehicle==="2WH"||vehicle==="2W")counts.two++;
+      else if(vehicle==="3WH"||vehicle==="3WC"||vehicle==="3W")counts.three++;
+      else if(vehicle==="FLEXI"||vehicle==="FLEX")counts.flexi++;
+      else counts.unclassified++;
+    });
+    function riderCard(value,label){return '<div class="kpi forecast-board-rider-card"><div class="num">'+Number(value||0).toLocaleString()+'</div><div class="lab">'+label+'</div></div>'; }
+    var note=counts.unclassified
+      ?counts.unclassified.toLocaleString()+" assigned rider(s) could not be classified from the uploaded Riders Data vehicle type."
+      :"Each assigned rider is counted once, even when more than one town-group record references the same name.";
+    if(!riders.length&&counts.total)note="Upload Riders Data to classify assigned riders by vehicle type.";
+    node.innerHTML=riderCard(counts.total,"TOTAL RIDERS USED")+riderCard(counts.two,"2WH")+riderCard(counts.three,"3WH")+riderCard(counts.flexi,"FLEXI")+'<p class="forecast-board-rider-note">'+esc(note)+'</p>';
+  }
   function selectedRows(){
     var source=sourceRows().rows;
     var q=normText(el(ids.search)?.value||"");
@@ -13664,6 +13709,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   }
   function render(){
     var data=sourceRows(),details=data.details,rows=data.rows,sets=areaSets();
+    renderRiderSummary();
     if(!details){el(ids.state).textContent="All-day parcel data is not ready yet. Sync or refresh the Dashboard first.";}
     else{el(ids.state).textContent=rows.length.toLocaleString()+" selected unique parcels · all-day view · same station/status selections";}
     renderStatusControls(details);
@@ -13699,6 +13745,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     document.querySelectorAll('#planningBoardSubmenu button[data-page]').forEach(function(btn){if(btn.dataset.bound)return;btn.dataset.bound="1";btn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if(typeof window.showPage==="function")window.showPage(btn.dataset.page);if(nav){nav.classList.add("open");toggle?.setAttribute("aria-expanded","true");}});});
     var primary=document.querySelector('#planningBoardNav .planning-board-primary');if(primary&&!primary.dataset.bound){primary.dataset.bound="1";primary.addEventListener("click",function(){nav?.classList.add("open");toggle?.setAttribute("aria-expanded","true");});}
   }
+  window.__badocRenderForecastRiderSummary=renderRiderSummary;
   window.__badocRenderForecastBoard=render;
   function init(){bind();render();}
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
