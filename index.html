@@ -1931,6 +1931,7 @@ html[data-theme="light"] .side > .theme-switch-row{
           <div class="dashboard-overview-kicker">OPERATION PROGRESS</div>
           <h2>Today's Operation</h2>
         </div>
+        <span id="volumeSnapshotStatus" title="Fixed daily operating cutoff · Manila time" style="display:inline-flex;align-items:center;justify-content:center;padding:6px 11px;border:1px solid var(--c-18b8ff-border);border-radius:999px;background:var(--c-147bd1-bg);color:var(--c-ffffff-text);font-size:11px;font-weight:900;letter-spacing:.5px;white-space:nowrap;flex-shrink:0">COT: 15:00</span>
       </div>
       <div class="dashboard-summary-grid">
         <div class="dashboard-summary-card volume"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
@@ -1938,7 +1939,6 @@ html[data-theme="light"] .side > .theme-switch-row{
         <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST</span><small>Expected final by 3 AM</small></div>
       </div>
       <div id="volumeCutoffStatus" style="margin-top:8px;color:#8fa0ad;font-size:12px">Volume period: checking local time…</div>
-      <div id="volumeSnapshotStatus" role="status" aria-live="polite" style="margin-top:4px;color:#8fa0ad;font-size:11px">Daily volume snapshot: waiting for shared data…</div>
       <label title="Add Linehaul Task ID volume to Today's Volume" style="display:inline-flex;align-items:center;gap:6px;margin-top:7px;font-size:11px;color:#8fa0ad;cursor:pointer;opacity:.75">
         <input type="checkbox" id="todayVolumeAddHubStatuses"> Add incoming volume
       </label>
@@ -10040,18 +10040,6 @@ window.updateOperationProgress=function(){
   }
 
   setText("opTodayVolume",todayVolume);
-  const snapshotStatusEl=document.getElementById("volumeSnapshotStatus");
-  if(snapshotStatusEl){
-    if(activeVolumeSnapshot){
-      const savedAt=Number(activeVolumeSnapshot.savedAt||activeVolumeSnapshot.capturedAt||0);
-      const savedLabel=savedAt?new Date(savedAt).toLocaleTimeString("en-PH",{timeZone:"Asia/Manila",hour:"numeric",minute:"2-digit"}):"";
-      snapshotStatusEl.textContent="DAILY CUTOFF: 3:00 PM MANILA · VOLUME LOCKED · "+Number(activeVolumeSnapshot.count||activeVolumeSnapshot.rows.length).toLocaleString()+" parcels · "+(savedLabel?"saved "+savedLabel+" Manila":"snapshot time unavailable");
-    }else if(snapshotDue){
-      snapshotStatusEl.textContent=window.__badocVolumeSnapshotSaving?"Saving 3:00 PM parcel snapshot…":"Waiting to save the 3:00 PM snapshot when shared data is ready…";
-    }else{
-      snapshotStatusEl.textContent="Next fixed volume snapshot: 3:00 PM Manila";
-    }
-  }
   setText("opIncomingVolume",estimatedTomorrow);
   const card=document.getElementById("incomingVolumeCard");if(card)card.style.display=forecastWindow?"":"none";
   setProgress("Transporting",counts.TRANSPORTING);setProgress("Transported",counts.TRANSPORTED);setProgress("Received",counts.RECEIVED);setProgress("Assigning",counts.ASSIGNING);setProgress("Assigned",counts.ASSIGNED);
