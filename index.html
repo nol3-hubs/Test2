@@ -1676,6 +1676,33 @@ html[data-theme="light"] .side > .theme-switch-row{
 #dashboard .dashboard-rider-note{margin:8px 2px 0;color:var(--muted);font-size:10px;line-height:1.4}
 @media(max-width:550px){#dashboard .dashboard-rider-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
+
+<style id="actual-scanned-riders-style">
+#actualScannedByRiders .actual-scan-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:0 0 14px}
+#actualScannedByRiders .actual-scan-kpis .kpi{min-width:0}
+#actualScannedByRiders .actual-scan-kpis .num{font-variant-numeric:tabular-nums}
+#actualScannedByRiders .actual-scan-filters{display:grid;grid-template-columns:minmax(150px,2fr) repeat(5,minmax(105px,1fr));gap:8px;align-items:end;margin:12px 0}
+#actualScannedByRiders .actual-scan-filters>div{display:flex;flex-direction:column;gap:4px;min-width:0}
+#actualScannedByRiders .actual-scan-filters label{font-size:9px;font-weight:800;color:var(--muted)}
+#actualScannedByRiders .actual-scan-filters input,#actualScannedByRiders .actual-scan-filters select{width:100%;min-width:0;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font-size:11px}
+#actualScannedByRiders .actual-scan-table-wrap{width:100%;overflow:auto}
+#actualScannedByRiders .actual-scan-table{width:100%;min-width:780px;border-collapse:collapse;font-size:11px}
+#actualScannedByRiders .actual-scan-table th{position:sticky;top:0;background:var(--panel2);color:var(--muted);text-align:left;font-size:9px;padding:9px 8px;white-space:nowrap}
+#actualScannedByRiders .actual-scan-table td{padding:9px 8px;border-top:1px solid var(--line);color:var(--text);vertical-align:middle}
+#actualScannedByRiders .actual-scan-table .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:800}
+#actualScannedByRiders .actual-scan-rider-row{cursor:pointer}
+#actualScannedByRiders .actual-scan-rider-row:hover,#actualScannedByRiders .actual-scan-rider-row.is-selected{background:var(--panel2)}
+#actualScannedByRiders .actual-scan-note{margin:8px 1px 0;color:var(--muted);font-size:10px;line-height:1.5}
+#actualScannedByRiders .actual-scan-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+#actualScannedByRiders .actual-scan-section-head h2{margin:0}
+#actualScannedByRiders .actual-scan-detail[hidden]{display:none!important}
+#actualScannedByRiders .actual-scan-empty{padding:18px;text-align:center;color:var(--muted);font-size:11px}
+#actualScannedByRiders .actual-scan-pill{display:inline-block;padding:3px 6px;border-radius:5px;font-size:9px;font-weight:800;white-space:nowrap;background:var(--panel2);color:var(--muted)}
+#actualScannedByRiders .actual-scan-pill.match{color:#067647;background:rgba(6,118,71,.09)}
+#actualScannedByRiders .actual-scan-pill.mismatch{color:#b42318;background:rgba(180,35,24,.09)}
+@media(max-width:1050px){#actualScannedByRiders .actual-scan-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}#actualScannedByRiders .actual-scan-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:650px){#actualScannedByRiders .actual-scan-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#actualScannedByRiders .actual-scan-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
 </head>
 <body data-app-version="21">
 
@@ -2064,9 +2091,49 @@ html[data-theme="light"] .side > .theme-switch-row{
 </section>
 
 <section id="actualScannedByRiders" class="page" aria-label="Actual Scanned by Riders">
+
+<section id="actualScannedByRiders" class="page" aria-label="Actual Scanned by Riders">
   <div class="section">
-    <div class="area-head"><h2>Actual Scanned by Riders</h2></div>
-    <p class="hint">This page is reserved for actual parcel scans grouped by the rider recorded in the SPX scan data. Planned town assignments and Volume Forecast remain separate.</p>
+    <div class="area-head"><h2>Actual Scanned by Riders</h2><span class="hint" id="actualScannedSourceStatus">Waiting for Parcel Count data</span></div>
+    <div class="actual-scan-kpis">
+      <div class="kpi"><div class="num" id="actualScannedParcels">0</div><div class="lab">TOTAL PARCELS SCANNED</div></div>
+      <div class="kpi"><div class="num" id="actualScannedRiders">0</div><div class="lab">ACTUAL RIDERS</div></div>
+      <div class="kpi"><div class="num" id="actualScanned2WH">0</div><div class="lab">2WH</div></div>
+      <div class="kpi"><div class="num" id="actualScanned3WH">0</div><div class="lab">3WH</div></div>
+      <div class="kpi"><div class="num" id="actualScannedFlexi">0</div><div class="lab">FLEXI</div></div>
+      <div class="kpi"><div class="num" id="actualScannedMismatches">0</div><div class="lab">RIDER MISMATCHES</div></div>
+    </div>
+    <p class="actual-scan-note" id="actualScannedNote">Actual workload is read from actual driver/rider fields in Parcel Count uploads. Planned town assignments are used only for comparison.</p>
+  </div>
+  <div class="section">
+    <div class="actual-scan-section-head"><h2>Actual Rider Workload</h2><button class="btn secondary" type="button" id="actualScannedExport">Export Filtered CSV</button></div>
+    <div class="actual-scan-filters">
+      <div><label for="actualScanSearch">SEARCH</label><input id="actualScanSearch" type="search" placeholder="Rider, ID, tracking number or town"></div>
+      <div><label for="actualScanDate">ACTIVITY DATE</label><select id="actualScanDate"><option value="">All dates</option></select></div>
+      <div><label for="actualScanVehicle">VEHICLE</label><select id="actualScanVehicle"><option value="">All vehicles</option><option value="2WH">2WH</option><option value="3WH">3WH</option><option value="FLEXI">Flexi</option><option value="UNKNOWN">Unknown</option></select></div>
+      <div><label for="actualScanTown">TOWN</label><select id="actualScanTown"><option value="">All towns</option></select></div>
+      <div><label for="actualScanCompare">ASSIGNMENT</label><select id="actualScanCompare"><option value="">All assignments</option><option value="Match">Match</option><option value="Mismatch">Mismatch</option><option value="No planned rider">No planned rider</option><option value="No scanner">No scanner</option></select></div>
+      <div><label for="actualScanStatus">STATUS</label><select id="actualScanStatus"><option value="">All statuses</option></select></div>
+    </div>
+    <div class="actual-scan-table-wrap"><table class="actual-scan-table">
+      <thead><tr><th>RIDER</th><th>VEHICLE</th><th class="num">PARCELS</th><th class="num">DELIVERED</th><th class="num">ONHOLD</th><th class="num">MISMATCH</th><th>TOWNS</th></tr></thead>
+      <tbody id="actualScannedRiderBody"><tr><td colspan="7" class="actual-scan-empty">No actual scan data loaded.</td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="section">
+    <div class="actual-scan-section-head"><h2>Actual Town Distribution</h2><span class="hint">Assigned rider compared with actual scanner</span></div>
+    <div class="actual-scan-table-wrap"><table class="actual-scan-table">
+      <thead><tr><th>TOWN</th><th>ASSIGNED RIDER</th><th>ACTUAL SCANNERS</th><th class="num">PARCELS SCANNED</th><th class="num">MISMATCHES</th></tr></thead>
+      <tbody id="actualScannedTownBody"><tr><td colspan="5" class="actual-scan-empty">No town scan data loaded.</td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="section actual-scan-detail" id="actualScannedDetail" hidden>
+    <div class="actual-scan-section-head"><h2 id="actualScannedDetailTitle">Rider Parcels</h2><button type="button" class="btn secondary" id="actualScannedDetailClose">Close</button></div>
+    <div class="actual-scan-table-wrap"><table class="actual-scan-table">
+      <thead><tr><th>ORDER ID</th><th>SPX TRACKING NUMBER</th><th>TOWN</th><th>STATUS</th><th>ACTUAL RIDER</th><th>ASSIGNED RIDER</th><th>RESULT</th></tr></thead>
+      <tbody id="actualScannedDetailBody"></tbody>
+    </table></div>
+    <p class="actual-scan-note" id="actualScannedDetailNote"></p>
   </div>
 </section>
 
@@ -4166,6 +4233,7 @@ function render(){
  renderTownGrid("badocGrid",towns.badoc,badoc,incoming.townCounts);
  renderTownGrid("piniliGrid",towns.pinili,pinili,incoming.townCounts);
  window.__badocRenderDashboardRiderSummary?.();
+ if(document.getElementById("actualScannedByRiders")?.classList.contains("active"))window.__badocRenderActualScannedByRiders?.();
  updateParcelIncomingButton();
  $("batchLabel").textContent="";
  renderRecords();renderMis();renderHistory();renderTownEdits();renderParcelUploadStatus();window.updateOperationProgress?.()
@@ -4613,6 +4681,7 @@ function parseCsvText(text){
 function riderNorm(v){return String(v??'').trim().toUpperCase();}
 function renderRiders(){
   window.__badocRenderDashboardRiderSummary?.();
+  if(document.getElementById("actualScannedByRiders")?.classList.contains("active"))window.__badocRenderActualScannedByRiders?.();
   // Rider data can finish loading after the town cards were first rendered.
   // Refresh assigned-name labels without changing the saved rider-name values.
   const riderLabelKey=v=>riderNorm(v).replace(/[\\s_-]+/g,"");
@@ -5922,7 +5991,26 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   window.__badocUpdateFirstMileLastUpdated?.();
 })();
 
-function showPage(p){document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));const page=$(p);if(page)page.classList.add("active");document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===p));const titles={homeDashboard:"Dashboard",dashboard:"Parcel Count",actualScannedByRiders:"Actual Scanned by Riders",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyRiderPerformance:"Rider Performance",ridersData:"Riders Data",dailyHistory:"Data",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};$("pageTitle").textContent=titles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");document.body.classList.toggle("pickup-page-active",p==="firstMile");if(p==="firstMile")window.__badocRenderFirstMileCombined?.();if(p==="linehaul")renderLinehaul();if(p==="dailyRiderPerformance")renderRiderPerformance();if(p==="volumeForecastBoard"){window.updateOperationProgress?.();window.__badocRenderForecastBoard?.();document.getElementById("planningBoardNav")?.classList.add("open");document.getElementById("planningBoardToggle")?.setAttribute("aria-expanded","true");}else if(p!=="dashboard"){const nav=document.getElementById("planningBoardNav");const toggle=document.getElementById("planningBoardToggle");if(nav)nav.classList.remove("open");if(toggle)toggle.setAttribute("aria-expanded","false");}}
+function showPage(p){
+ document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
+ const page=$(p);if(page)page.classList.add("active");
+ document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===p));
+ const titles={homeDashboard:"Dashboard",dashboard:"Parcel Count",actualScannedByRiders:"Actual Scanned by Riders",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyRiderPerformance:"Rider Performance",ridersData:"Riders Data",dailyHistory:"Data",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};
+ $("pageTitle").textContent=titles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");
+ document.body.classList.toggle("pickup-page-active",p==="firstMile");
+ if(p==="firstMile")window.__badocRenderFirstMileCombined?.();
+ if(p==="linehaul")renderLinehaul();
+ if(p==="dailyRiderPerformance")renderRiderPerformance();
+ if(p==="actualScannedByRiders")window.__badocRenderActualScannedByRiders?.();
+ if(p==="volumeForecastBoard"){window.updateOperationProgress?.();window.__badocRenderForecastBoard?.();}
+ if(p==="actualScannedByRiders"||p==="volumeForecastBoard"){
+   document.getElementById("planningBoardNav")?.classList.add("open");
+   document.getElementById("planningBoardToggle")?.setAttribute("aria-expanded","true");
+ }else if(p!=="dashboard"){
+   const nav=document.getElementById("planningBoardNav"),toggle=document.getElementById("planningBoardToggle");
+   if(nav)nav.classList.remove("open");if(toggle)toggle.setAttribute("aria-expanded","false");
+ }
+}
 $("parcelIncomingVolumeBtn")?.addEventListener("click",()=>{
   const next=!parcelIncomingEnabled();
   try{localStorage.setItem(PARCEL_INCOMING_KEY,next?"1":"0")}catch(e){}
@@ -15024,3 +15112,4 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   else bind();
 })();
 </script>
+<script src="actual-scanned.js"></script>
