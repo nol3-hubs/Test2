@@ -136,8 +136,15 @@ function render(){
   });
   const scanned=rows.filter(r=>r.hasScanner),groups=new Map();
   scanned.forEach(r=>{
-    if(!groups.has(r.riderKey))groups.set(r.riderKey,{key:r.riderKey,id:r.actualId,name:r.actualName,vehicle:r.vehicle,count:0,delivered:0,onhold:0,mismatch:0,towns:new Set()});
-    const g=groups.get(r.riderKey);g.count++;if(r.delivered)g.delivered++;if(r.onhold)g.onhold++;if(r.comparison==="Mismatch")g.mismatch++;if(r.town)g.towns.add(r.town);
+    if(!groups.has(r.riderKey))groups.set(r.riderKey,{key:r.riderKey,id:r.actualId,name:r.actualName,vehicle:r.vehicle,count:0,delivered:0,onhold:0,mismatch:0,towns:new Set(),townBreakdown:new Map()});
+    const g=groups.get(r.riderKey);g.count++;if(r.delivered)g.delivered++;if(r.onhold)g.onhold++;if(r.comparison==="Mismatch")g.mismatch++;
+    if(r.town){
+      g.towns.add(r.town);
+      const townKey=r.townKey||norm(r.town);
+      if(!g.townBreakdown.has(townKey))g.townBreakdown.set(townKey,{town:r.town,count:0,delivered:0,onhold:0,mismatch:0});
+      const town=g.townBreakdown.get(townKey);
+      town.count++;if(r.delivered)town.delivered++;if(r.onhold)town.onhold++;if(r.comparison==="Mismatch")town.mismatch++;
+    }
     if(g.vehicle==="UNKNOWN"&&r.vehicle!=="UNKNOWN")g.vehicle=r.vehicle;
   });
   const riders=[...groups.values()].sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name));
@@ -157,13 +164,22 @@ function render(){
     note.textContent=t;
   }
   const riderBody=byId("actualScannedRiderBody");
-  if(riderBody)riderBody.innerHTML=riders.length?riders.map(r=>
-    '<tr class="actual-scan-rider-row'+(window.__actualScannedSelectedRider===r.key?" is-selected":"")+'" data-rider-key="'+esc(r.key)+'">'+
-    '<td><strong>'+esc(r.name)+'</strong><small style="display:block;color:var(--muted);font-size:9px">'+esc(r.id||"")+'</small></td>'+
-    '<td>'+esc(r.vehicle==="UNKNOWN"?"Unknown":r.vehicle)+'</td><td class="num">'+r.count.toLocaleString()+'</td>'+
-    '<td class="num">'+r.delivered.toLocaleString()+'</td><td class="num">'+r.onhold.toLocaleString()+'</td>'+
-    '<td class="num">'+r.mismatch.toLocaleString()+'</td><td>'+r.towns.size.toLocaleString()+'</td></tr>'
-  ).join(""):'<tr><td colspan="7" class="actual-scan-empty">'+(all.length?"No recognized actual rider matches these filters.":"No eligible Parcel Count rows yet. Upload or sync parcel exports first.")+'</td></tr>';
+  if(riderBody)riderBody.innerHTML=riders.length?riders.map(r=>{
+    const townRows=[...r.townBreakdown.values()].sort((a,b)=>b.count-a.count||a.town.localeCompare(b.town));
+    const townList=townRows.length
+      ?'<div class="actual-scan-town-dropdown-list">'+townRows.map(t=>
+        '<div class="actual-scan-town-dropdown-item"><div class="actual-scan-town-dropdown-name">'+esc(t.town)+'</div>'+
+        '<strong>'+t.count.toLocaleString()+' parcels</strong>'+
+        '<small>Delivered '+t.delivered.toLocaleString()+' · Onhold '+t.onhold.toLocaleString()+' · Mismatch '+t.mismatch.toLocaleString()+'</small></div>'
+      ).join("")+'</div>'
+      :'<div class="actual-scan-town-dropdown-empty">No town data for this rider.</div>';
+    return '<tr class="actual-scan-rider-row'+(window.__actualScannedSelectedRider===r.key?" is-selected":"")+'" data-rider-key="'+esc(r.key)+'">'+
+      '<td><strong>'+esc(r.name)+'</strong><small style="display:block;color:var(--muted);font-size:9px">'+esc(r.id||"")+'</small></td>'+
+      '<td>'+esc(r.vehicle==="UNKNOWN"?"Unknown":r.vehicle)+'</td><td class="num">'+r.count.toLocaleString()+'</td>'+
+      '<td class="num">'+r.delivered.toLocaleString()+'</td><td class="num">'+r.onhold.toLocaleString()+'</td>'+
+      '<td class="num">'+r.mismatch.toLocaleString()+'</td>'+
+      '<td><details class="actual-scan-town-dropdown"><summary>'+r.towns.size.toLocaleString()+' towns <span aria-hidden="true">▾</span></summary>'+townList+'</details></td></tr>';
+  }).join(""):'<tr><td colspan="7" class="actual-scan-empty">'+(all.length?"No recognized actual rider matches these filters.":"No eligible Parcel Count rows yet. Upload or sync parcel exports first.")+'</td></tr>';
   const townMap=new Map();
   rows.forEach(r=>{
     if(!r.townKey)return;
@@ -205,6 +221,7 @@ window.addEventListener("badoc:parcel-data-updated",function(){if(byId("actualSc
 document.addEventListener("input",function(e){if(e.target?.closest?.("#actualScannedByRiders .actual-scan-filters"))render()});
 document.addEventListener("change",function(e){if(e.target?.closest?.("#actualScannedByRiders .actual-scan-filters"))render()});
 document.addEventListener("click",function(e){
+  if(e.target?.closest?.("#actualScannedRiderBody .actual-scan-town-dropdown"))return;
   const row=e.target?.closest?.("#actualScannedRiderBody tr[data-rider-key]");
   if(row){window.__actualScannedSelectedRider=row.dataset.riderKey||"";render();return}
   if(e.target?.closest?.("#actualScannedDetailClose")){window.__actualScannedSelectedRider="";render();return}
