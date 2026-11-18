@@ -4123,7 +4123,7 @@ function fillStatusFilter(){
   if(!el)return;
   const currentValue=el.value||"";
   const rows=typeof getParcelRecordRows==="function"?getParcelRecordRows():((current&&Array.isArray(current.valid))?current.valid:[]);
-  const statuses=[...new Set(rows.map(x=>String(x?.status??"").trim()).filter(Boolean))]
+  const statuses=[...new Set(rows.map(recordStatusValue).map(x=>String(x??"").trim()).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
   el.innerHTML='<option value="">Status</option>'+
     statuses.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
@@ -4271,12 +4271,25 @@ function getParcelCountRows(){
 // Parcel Records combines uploaded valid rows with the latest Onhold Today
 // Forward/Return exports. Exports replace older rows by SPX TN while retaining
 // their original status text for Records filters and the Status column.
+function parcelRecordTnKey(row){
+  // Use the explicit tracking-number column before any generic fallback.
+  const aliases=["SLS Tracking Number","SPX TN","SPX TN/Tracking Number","SPX Tracking Number","SPX Tracking No","SPX Tracking No.","Tracking Number"];
+  const wanted=new Set(aliases.map(name=>name.toUpperCase().replace(/[^A-Z0-9]/g,"")));
+  for(const field of Object.keys(row||{})){
+    const normalized=field.toUpperCase().replace(/[^A-Z0-9]/g,"");
+    if(wanted.has(normalized)&&String(row[field]??"").trim()){
+      return badocOnholdKey(row[field]);
+    }
+  }
+  return badocOnholdKey(spxTN(row));
+}
+
 function getParcelRecordRows(){
   const baseRows=Array.isArray(current?.valid)?current.valid:[];
   const records=[];
   const indexByTn=new Map();
   baseRows.forEach(row=>{
-    const key=badocOnholdKey(spxTN(row));
+    const key=parcelRecordTnKey(row);
     if(key&&indexByTn.has(key)){
       records[indexByTn.get(key)]=row;
       return;
@@ -4293,7 +4306,7 @@ function getParcelRecordRows(){
 
   exports.forEach(exportRow=>{
     if(!exportRow||isExceptionRow(exportRow))return;
-    const key=badocOnholdKey(spxTN(exportRow));
+    const key=parcelRecordTnKey(exportRow);
     if(!key)return;
     const meta=badocRowMeta(exportRow);
     // Match the existing Parcel Records valid-record scope.
