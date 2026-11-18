@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v102">
+<meta name="badoc-app-version" content="v103">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -4133,7 +4133,14 @@ function fillStatusFilter(){
 const BADOC_ONHOLD_EXPORT_KEY="badoc_onhold_spx_exports_v1";
 function badocOnholdKey(value){return String(value??"").trim().toUpperCase().replace(/[\\s\\-_.]/g,"")}
 function badocOnholdStatus(row){
-  const raw=String(badocRowMeta(row)?.status||row?.["Parcel Status To"]||row?.["Status To"]||row?.["Status"]||"").trim().toUpperCase().replace(/[_-]+/g," ").replace(/\\s+/g," ");
+  const raw=String(badocRowMeta(row)?.status||row?.["Parcel Status To"]||row?.["Status To"]||row?.["Status"]||"")
+    .trim().toUpperCase().replace(/[_-]+/g," ").replace(/\s+/g," ");
+  if(row?._onholdExportSource){
+    // Onhold Today exports: only these three statuses stay in their own buckets.
+    // Every other non-empty SPX status, including Return_LMHub_Received, is On-Hold.
+    return !!raw && !["DELIVERING","DELIVERED","LMHUB RECEIVED"].includes(raw);
+  }
+  // Uploaded Parcel Count rows retain their existing explicit On-Hold rules.
   return ["ONHOLD","ON HOLD","LMHUB ONHOLD","LMHUB ON HOLD"].includes(raw);
 }
 function badocLoadOnholdExportRows(){
@@ -4171,9 +4178,8 @@ window.__badocGetOnholdRows=badocGetOnholdRows;
 window.__badocOnholdExportRows=badocLoadOnholdExportRows();
 
 function getParcelCountRows(){
-  // Parcel Count includes both correctly routed parcels and MISROUTED parcels
-  // when they are in an active volume status. Misrouted rows remain tagged
-  // _area="Misrouted" so they do not get assigned to BADOC/PINILI town totals.
+  // Start with the uploaded Parcel Count rows, preserving the existing
+  // Badoc/Pinili routing and one-row-per-SPX-TN behavior.
   const valid=Array.isArray(current?.valid)?current.valid:[];
   const mis=Array.isArray(current?.mis)?current.mis:[];
   const statusOf=r=>{
@@ -4184,7 +4190,7 @@ function getParcelCountRows(){
     const key=Object.keys(r||{}).find(k=>/parcel\s*status\s*to|status\s*to|to\s*status/i.test(k));
     return key?String(r[key]??"").trim():"";
   };
-  const statusNorm=v=>norm(v).replace(/[_-]+/g," ").replace(/\s+/g," ");
+  const statusNorm=v=>norm(v).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
   const allowedStatuses=new Set([
     "RECEIVED","LMHUB RECEIVED","DELIVERING","DELIVERED",
     "ONHOLD","ON HOLD","LMHUB ONHOLD","LMHUB ON HOLD",
@@ -4195,8 +4201,6 @@ function getParcelCountRows(){
   const rows=[];
   const seen=new Set();
 
-  // Keep one record per SPX TN. Valid rows take precedence; a misrouted row is
-  // added only when that TN is not already present in the valid population.
   valid.forEach(r=>{
     if(!qualifies(r))return;
     const k=keyOf(spxTN(r));
@@ -4209,6 +4213,56 @@ function getParcelCountRows(){
     if(k&&seen.has(k))return;
     if(k)seen.add(k);
     rows.push({...r,_area:"Misrouted"});
+  });
+
+  // Onhold Today stores both Forward and Return exports. Treat each exported
+  // record as the newest status for its SPX TN and merge it into the main
+  // Planning Board row set, even when that TN was not in the uploaded file.
+  const rowIndexByTn=new Map();
+  rows.forEach((row,index)=>{
+    const key=keyOf(spxTN(row));
+    if(key)rowIndexByTn.set(key,index);
+  });
+  const exported=Array.isArray(window.__badocOnholdExportRows)
+    ?window.__badocOnholdExportRows
+    :badocLoadOnholdExportRows();
+  const areaByTown=allowedMap();
+
+  exported.forEach(exportRow=>{
+    if(!exportRow||isExceptionRow(exportRow))return;
+    const key=keyOf(spxTN(exportRow));
+    if(!key)return;
+    const rawStatus=String(badocRowMeta(exportRow)?.status||statusOf(exportRow)||"").trim();
+    const normalized=statusNorm(rawStatus);
+    if(!normalized)return;
+
+    // Keep Delivering, Delivered and LMHub_Received as-is.
+    // Every other populated SPX status is classified as On-Hold.
+    const planningStatus=normalized==="DELIVERING"?"DELIVERING":
+      normalized==="DELIVERED"?"DELIVERED":
+      normalized==="LMHUB RECEIVED"?"LMHUB RECEIVED":"ONHOLD";
+
+    const existingIndex=rowIndexByTn.get(key);
+    const existing=existingIndex===undefined?null:rows[existingIndex];
+    const merged={
+      ...(existing||{}),
+      ...exportRow,
+      "Parcel Status To":planningStatus
+    };
+    // Keep the uploaded row's routing classification when one exists.
+    if(existing?._area)merged._area=existing._area;
+    else if(!merged._area){
+      const town=norm(exportRow?.["Town Name"]??exportRow?.["Town"]??exportRow?.town??badocRowMeta(exportRow)?.town??"");
+      const area=areaByTown[town];
+      if(area)merged._area=area;
+    }
+
+    if(existingIndex===undefined){
+      rowIndexByTn.set(key,rows.length);
+      rows.push(merged);
+    }else{
+      rows[existingIndex]=merged;
+    }
   });
 
   return rows;
@@ -7597,7 +7651,7 @@ async function beginAssignedOnholdTodaySync(){
   btn.dataset.busy="1";btn.disabled=true;
   const status=$("assignedOnholdTodayStatus");
   if(status){status.textContent="Connecting to SPX…";status.classList.remove("is-success","is-error");status.classList.add("is-working");}
-  window.__badocOperationModalStart?.("Onhold Today","Exporting Forward and Return orders for Badoc Hub. Filters: Assigned Time today; Created Date within the last 14 days; exclude Delivering and Delivered. Both CSVs are checked before completion…");
+  window.__badocOperationModalStart?.("Onhold Today","Exporting Forward and Return orders for Badoc Hub. Filters: Assigned Time today; Created Date within the last 14 days. Delivering, Delivered and LMHub_Received keep their statuses; all other non-empty statuses count as On-Hold…");
   clearTimeout(window.__badocAssignedOnholdTodayTimer);
   window.__badocAssignedOnholdTodayTimer=setTimeout(()=>{
     btn.disabled=false;btn.dataset.busy="0";
@@ -8085,17 +8139,17 @@ window.addEventListener("message",async event=>{
     if(btn){btn.disabled=false;btn.dataset.busy="0";}
     const forward=Number(data.forwardRowCount||0),returned=Number(data.returnRowCount||0);
     const exportRows=Array.isArray(data.onholdRows)?data.onholdRows:[];
-    if(exportRows.length){
-      const merged=badocSaveOnholdExportRows(exportRows);
-      window.__badocOnholdTnKeys=new Set(merged.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
-      try{window.render?.()}catch(e){}
-      try{window.updateOperationProgress?.()}catch(e){}
-    }
+    // Replace the full Onhold Today snapshot on every successful run, including
+    // zero-row exports, so old SPX statuses cannot remain active indefinitely.
+    const merged=badocSaveOnholdExportRows(exportRows);
+    window.__badocOnholdTnKeys=new Set(merged.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
+    try{window.render?.()}catch(e){}
+    try{window.updateOperationProgress?.()}catch(e){}
     const createdStart=String(data.createdDateStart||"");
     const createdEnd=String(data.createdDateEnd||data.todayDate||"");
     const createdRange=createdStart&&createdEnd?createdStart+" to "+createdEnd:"last 14 days";
     const excludedCreated=Number(data.excludedCreatedDate||0);
-    const msg=`Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; Created Date ${createdRange}; Forward/Return export statuses preserved; duplicate SPX TNs replaced by the newest export.`;
+    const msg=`Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; Created Date ${createdRange}; Delivering, Delivered and LMHub_Received preserved; all other non-empty export statuses counted as On-Hold; duplicate SPX TNs replaced by the newest export.`;
     if(status){status.textContent=msg;status.classList.remove("is-working","is-error");status.classList.add("is-success");}
     window.__badocOperationModalFinish?.("Onhold Today Complete",msg,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Excluded: Created Date",excludedCreated.toLocaleString()],["Other excluded rows",(Number(data.excludedForward||0)+Number(data.excludedReturn||0)-excludedCreated).toLocaleString()]],"success");
     return;
