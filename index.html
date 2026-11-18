@@ -1809,7 +1809,30 @@ html[data-theme="light"] .side > .theme-switch-row{
   #homeDashboard .dashboard-status-card.cfr1 small{font-size:8px!important}
 }
 </style>
-<style id="cot-light-mode-fix">html[data-theme="light"] body #homeDashboard .dashboard-overview-head #volumeSnapshotStatus{color:#fff!important;-webkit-text-fill-color:#fff!important}</style>
+<style id="cot-light-mode-fix">html[data-theme="light"] body #homeDashboard .dashboard-overview-head #volumeSnapshotStatus{color:#fff!important;-webkit-text-fill-color:#fff!important}<style id="dashboard-card-spacing-adjustment">
+/* Add breathing room between the dashboard summary and status cards. */
+#homeDashboard .dashboard-overview .dashboard-summary-grid{
+  column-gap:14px!important;
+  row-gap:14px!important;
+}
+#homeDashboard .dashboard-overview .dashboard-card-groups{
+  column-gap:20px!important;
+  row-gap:20px!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-grid{
+  column-gap:12px!important;
+  row-gap:12px!important;
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-overview .dashboard-summary-grid{gap:10px!important}
+  #homeDashboard .dashboard-overview .dashboard-card-groups{gap:14px!important}
+  #homeDashboard .dashboard-overview .dashboard-status-grid{gap:8px!important}
+}
+@media(max-width:420px){
+  #homeDashboard .dashboard-overview .dashboard-card-groups{gap:12px!important}
+}
+</style>
+</style>
 </head>
 <body data-app-version="21">
 
