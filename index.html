@@ -6627,7 +6627,8 @@ $("clearData").onclick=async()=>{
       tx.onerror=()=>reject(tx.error);
       tx.onabort=()=>reject(tx.error||new Error("aborted"));
     });
-    await badocClearOnholdExportRows();
+    if(typeof window.__badocCloudClearOnholdToday==="function")await window.__badocCloudClearOnholdToday();
+    else await badocClearOnholdExportRows();
     batches=[];
     current=null;
 
@@ -8322,8 +8323,12 @@ window.addEventListener("message",async event=>{
     const merged=badocSaveOnholdExportRows(exportRows);
     const persistAndFinish=async()=>{
       try{
-        await window.__badocOnholdExportsReady;
-        const savedCount=await badocPersistOnholdExportRows(merged);
+        const cloudResult=await window.__badocCloudSaveOnholdToday(merged,{
+          todayDate:data.todayDate,
+          forwardRowCount:forward,
+          returnRowCount:returned
+        });
+        const savedCount=Number(cloudResult?.rowCount??merged.length);
         const liveOnholdRows=badocGetOnholdRows(typeof getParcelCountRows==="function"?getParcelCountRows():[],false);
         window.__badocOnholdTnKeys=new Set(liveOnholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
         if(btn){btn.disabled=false;btn.dataset.busy="0";}
@@ -8334,12 +8339,12 @@ window.addEventListener("message",async event=>{
         const createdEnd=String(data.createdDateEnd||data.todayDate||"");
         const createdRange=createdStart&&createdEnd?createdStart+" to "+createdEnd:"last 14 days";
         const excludedCreated=Number(data.excludedCreatedDate||0);
-        const msg=`Saved ${savedCount.toLocaleString()} unique SPX tracking records to local IndexedDB. Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; Created Date ${createdRange}; Delivering, Delivered and LMHub_Received preserved; all other non-empty export statuses counted as On-Hold; duplicate SPX TNs replaced by the newest export.`;
+        const msg=`Saved ${savedCount.toLocaleString()} unique SPX tracking records to shared cloud and local IndexedDB. Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; Created Date ${createdRange}; Delivering, Delivered and LMHub_Received preserved; all other non-empty export statuses counted as On-Hold; duplicate SPX TNs replaced by the newest export.`;
         if(status){status.textContent=msg;status.classList.remove("is-working","is-error");status.classList.add("is-success");}
         window.__badocOperationModalFinish?.("Onhold Today Complete",msg,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Saved unique records",savedCount.toLocaleString()],["Excluded: Created Date",excludedCreated.toLocaleString()],["Other excluded rows",(Number(data.excludedForward||0)+Number(data.excludedReturn||0)-excludedCreated).toLocaleString()]],"success");
       }catch(error){
         if(btn){btn.disabled=false;btn.dataset.busy="0";}
-        const message="SPX exports completed, but Onhold Today could not be saved locally. The data will be lost if this page is refreshed. "+String(error?.message||error);
+        const message="SPX exports completed, but Onhold Today did not sync to the shared cloud. A local recovery copy may be available on this device. "+String(error?.message||error);
         if(status){status.textContent=message;status.classList.remove("is-working","is-success");status.classList.add("is-error");}
         window.__badocOperationModalFinish?.("Onhold Today Storage Failed",message,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Saved unique records","Not confirmed"]],"error");
       }
@@ -9007,7 +9012,7 @@ window.DASHBOARD_V2_READY = true;
   const cfg=window.BADOC_SHARED_CONFIG||{};
   const bucket="exported-files";
   const TABLE="badoc_shared_state";
-  const P={upload:"current/uploaded.csv",linehaul:"current/linehaul.csv",linehaulArrivalFlags:"current/linehaul-arrival-flags.json",volumeSnapshot:"current/daily-volume-snapshot.json",settings:"current/town-settings.json",riders:"current/riders-data.json",layout:"current/town-layout.json",riderSelections:"current/rider-selections.json",notes:"current/town-group-notes.json"};
+  const P={upload:"current/uploaded.csv",linehaul:"current/linehaul.csv",linehaulArrivalFlags:"current/linehaul-arrival-flags.json",volumeSnapshot:"current/daily-volume-snapshot.json",onholdExports:"current/onhold-today-exports.json",settings:"current/town-settings.json",riders:"current/riders-data.json",layout:"current/town-layout.json",riderSelections:"current/rider-selections.json",notes:"current/town-group-notes.json"};
   let client=null,channel=null,pollTimer=null,pulling=false,started=false;
   const queuedPullKinds=new Set();
   const pendingCloudWrites=new Set();
@@ -9277,6 +9282,33 @@ window.DASHBOARD_V2_READY = true;
     window.__badocVolumeSnapshot=x;
     try{localStorage.setItem("badoc_daily_volume_snapshot_v1",JSON.stringify(x))}catch(e){console.warn("Local volume snapshot cache:",e)}
   }
+  async function applyOnholdExports(sharedState){
+    const version=Number(sharedState?.onhold_version||0);
+    if(sharedState?.onhold_exists!==true){
+      // A missing legacy field is not a remote delete. Only clear when a newer
+      // explicit cloud state says the shared Onhold Today snapshot was removed.
+      if(sharedState?.onhold_exists===false&&version>0){
+        await badocClearOnholdExportRows();
+        try{if(typeof render==="function")render()}catch(e){}
+        try{if(typeof renderRecords==="function")renderRecords()}catch(e){}
+      }
+      return 0;
+    }
+    await window.__badocOnholdExportsReady;
+    const b=await get(P.onholdExports);
+    if(!b)throw Error("Shared Onhold Today state exists, but its cloud export file is missing.");
+    const record=JSON.parse(await b.text());
+    if(!record||record.schemaVersion!==1||record.recordType!=="onhold-today-exports"||!Array.isArray(record.rows))
+      throw Error("Shared Onhold Today export has an invalid format.");
+    const rows=badocSaveOnholdExportRows(record.rows);
+    try{await badocPersistOnholdExportRows(rows)}catch(error){console.warn("Onhold Today local cache save failed; cloud copy remains available:",error)}
+    const live=badocGetOnholdRows(typeof getParcelCountRows==="function"?getParcelCountRows():[],false);
+    window.__badocOnholdTnKeys=new Set(live.map(row=>badocOnholdKey(spxTN(row))).filter(Boolean));
+    try{if(typeof render==="function")render()}catch(e){console.warn("Onhold Today cloud render:",e)}
+    try{window.updateOperationProgress?.()}catch(e){}
+    try{if(typeof renderRecords==="function")renderRecords()}catch(e){}
+    return rows.length;
+  }
   async function applyRiderSelections(){
     const b=await get(P.riderSelections);
     if(!b)return false;
@@ -9294,7 +9326,7 @@ window.DASHBOARD_V2_READY = true;
     }catch(e){console.warn("Rider selections parse:",e);return false}
   }
 
-  let seen={upload:0,linehaul:0,volumeSnapshot:-1,settings:0,layout:0,notes:0};
+  let seen={upload:0,linehaul:0,volumeSnapshot:-1,onholdExports:-1,settings:0,layout:0,notes:0};
   async function pull(kind){
     if(pulling){ if(kind)queuedPullKinds.add(kind); else queuedPullKinds.add("__all__"); return; }
     pulling=true;
@@ -9317,6 +9349,9 @@ window.DASHBOARD_V2_READY = true;
         await applyVolumeSnapshot();
         seen.upload=Number(s.upload_version||0);
         seen.volumeSnapshot=Number(s.upload_version||0);
+      }else if(kind==="onholdExports"){
+        await applyOnholdExports(s);
+        seen.onholdExports=Number(s.onhold_version||0);
       }else if(kind==="settings"){
         if(!pendingCloudWrites.has("settings")){
           if(Number(s.settings_version||0)>seen.settings)await applySettings();
@@ -9342,6 +9377,10 @@ window.DASHBOARD_V2_READY = true;
           await applyVolumeSnapshot();
           seen.volumeSnapshot=Number(s.upload_version||0);
         }
+        if(Number(s.onhold_version||0)>seen.onholdExports){
+          await applyOnholdExports(s);
+          seen.onholdExports=Number(s.onhold_version||0);
+        }
         if(!pendingCloudWrites.has("settings")&&Number(s.settings_version||0)>seen.settings)await applySettings();
         if(!pendingCloudWrites.has("settings"))seen.settings=Number(s.settings_version||0);
         if(Number(s.layout_version||0)>seen.layout)await applyLayout(Number(s.layout_version||0));
@@ -9349,7 +9388,7 @@ window.DASHBOARD_V2_READY = true;
           await applyNotes();
           await applyRiderSelections();
         }
-        seen={upload:Number(s.upload_version||0),linehaul:Number(s.linehaul_version||0),volumeSnapshot:Number(s.upload_version||0),settings:Number(s.settings_version||0),layout:Number(s.layout_version||0),notes:Number(s.notes_version||0)};
+        seen={upload:Number(s.upload_version||0),linehaul:Number(s.linehaul_version||0),volumeSnapshot:Number(s.upload_version||0),onholdExports:Number(s.onhold_version||0),settings:Number(s.settings_version||0),layout:Number(s.layout_version||0),notes:Number(s.notes_version||0)};
       }
       window.__badocVolumeSnapshotCloudReady=true;
       status("All devices synced");
@@ -9357,6 +9396,61 @@ window.DASHBOARD_V2_READY = true;
     }catch(e){console.warn("Shared pull:",e);status("Sync retrying…")}
     finally{pulling=false}
   }
+
+  // Publish Onhold Today to the same shared file store/state channel used by
+  // other dashboard devices. IndexedDB remains a local cache, not the sync layer.
+  window.__badocCloudSaveOnholdToday=async function(rowsInput,meta={}){
+    const deadline=Date.now()+20000;
+    while(!started&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));
+    if(!started)throw Error("Shared cloud sync is not ready.");
+    const rows=badocSaveOnholdExportRows(Array.isArray(rowsInput)?rowsInput:[]);
+    if(!Array.isArray(rowsInput))throw Error("Onhold Today export rows are invalid.");
+    // Keep a local recovery copy, but cloud persistence is the success condition.
+    try{await badocPersistOnholdExportRows(rows)}catch(error){console.warn("Onhold Today local backup failed; continuing with cloud save:",error)}
+    const currentState=await state();
+    const version=Math.max(Date.now(),Number(currentState?.onhold_version||0)+1);
+    const payload={
+      schemaVersion:1,
+      recordType:"onhold-today-exports",
+      rows,
+      rowCount:rows.length,
+      todayDate:String(meta?.todayDate||""),
+      forwardRowCount:Number(meta?.forwardRowCount||0),
+      returnRowCount:Number(meta?.returnRowCount||0),
+      savedAt:Date.now(),
+      savedBy:deviceId
+    };
+    pendingCloudWrites.add("onholdExports");
+    try{
+      await put(P.onholdExports,new Blob([JSON.stringify(payload)],{type:"application/json"}),"application/json");
+      await setState({onhold_exists:true,onhold_version:version});
+      seen.onholdExports=version;
+      window.__badocOnholdExportRows=rows;
+      const live=badocGetOnholdRows(typeof getParcelCountRows==="function"?getParcelCountRows():[],false);
+      window.__badocOnholdTnKeys=new Set(live.map(row=>badocOnholdKey(spxTN(row))).filter(Boolean));
+      await announce("onholdExports","save");
+      status("Onhold Today synced to shared cloud");
+      return {rowCount:rows.length,version,savedAt:payload.savedAt};
+    }catch(error){
+      status("Onhold Today cloud sync failed — local copy kept");
+      throw Error("Onhold Today is saved on this device, but the shared cloud write failed: "+String(error?.message||error));
+    }finally{
+      pendingCloudWrites.delete("onholdExports");
+    }
+  };
+  window.__badocCloudClearOnholdToday=async function(){
+    const deadline=Date.now()+15000;
+    while(!started&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));
+    if(!started)throw Error("Shared cloud sync is not ready.");
+    const currentState=await state();
+    const version=Math.max(Date.now(),Number(currentState?.onhold_version||0)+1);
+    await remove(P.onholdExports);
+    await setState({onhold_exists:false,onhold_version:version});
+    seen.onholdExports=version;
+    await announce("onholdExports","clear");
+    await badocClearOnholdExportRows();
+    return true;
+  };
 
   // Expose a safe bridge for non-file imports (e.g. SPX automatic sync) so
   // freshly imported Linehaul data is published to the shared cloud state
