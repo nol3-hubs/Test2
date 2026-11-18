@@ -170,6 +170,44 @@ function renderResults(){
   </tr>`).join(""):'<tr><td colspan="5" class="muted">No matching results.</td></tr>';
 }
 
+function startAssignedParcelsExportOverPort(requestId) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      window.removeEventListener("message", onMessage);
+    };
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve(result);
+    };
+    const timer = setTimeout(() => finish(new Error(
+      "Assigned Parcels Today did not finish within 10 minutes. Check the SPX export task monitor and retry."
+    )), 10 * 60 * 1000);
+    const onMessage = event => {
+      if (event.source !== window || event.data?.source !== "BADOC_SPX_BRIDGE") return;
+      const data = event.data;
+      if (String(data.requestId || "") !== requestId) return;
+      if (data.type === "BADOC_POD_CHECKER_ASSIGNED_ACCEPTED") {
+        setStatus(String(data.message || "SPX export accepted…"));
+      } else if (data.type === "BADOC_POD_CHECKER_ASSIGNED_COMPLETE") {
+        finish(null, data.result || null);
+      } else if (data.type === "BADOC_POD_CHECKER_ASSIGNED_ERROR") {
+        finish(new Error(String(data.message || "SPX could not load Assigned Parcels Today.")));
+      }
+    };
+    window.addEventListener("message", onMessage);
+    window.postMessage({
+      source: "BADOC_PAGE",
+      type: "BADOC_START_POD_CHECKER_ASSIGNED_TODAY",
+      requestId
+    }, "*");
+  });
+}
+
 async function refreshCaptures(){
  const r=await pageCommand("LIST");
  if(!r?.ok)throw new Error(r?.error||"Could not get captured requests.");
@@ -184,18 +222,21 @@ $('onholdToday')?.addEventListener("click", async () => {
   button.textContent = "Loading Assigned Parcels…";
   setStatus("Getting Forward and Return Orders assigned today from SPX…");
   try {
-    const reply = await chrome.runtime.sendMessage({
-      target: "POD_CHECKER_BACKGROUND",
-      action: "EXPORT_ASSIGNED_PARCELS_TODAY"
-    });
-    if (!reply) throw new Error("The extension did not return a response for Assigned Parcels Today. Update to Badoc Hub Extension v1.4.7, reload it in chrome://extensions, then refresh BADOC HUB and retry.");
-    if (reply.ok !== true) throw new Error(reply.error || "The extension returned an empty result for Assigned Parcels Today. Reload Badoc Hub Extension v1.4.7 and try again.");
+    const requestId = "pod-checker-assigned-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+    const reply = window.podChrome
+      ? await startAssignedParcelsExportOverPort(requestId)
+      : await chrome.runtime.sendMessage({
+          target: "POD_CHECKER_BACKGROUND",
+          action: "EXPORT_ASSIGNED_PARCELS_TODAY"
+        });
+    if (!reply) throw new Error("The extension returned an empty Assigned Parcels Today result. Confirm Badoc Hub Extension v1.4.8 is connected, then reload the extension and refresh BADOC HUB.");
+    if (reply.ok !== true) throw new Error(reply.error || "The extension returned an empty result for Assigned Parcels Today. Reload Badoc Hub Extension v1.4.8 and try again.");
     const exportFiles = Array.isArray(reply.downloadedData)
       ? reply.downloadedData.filter(source => source && typeof source === "object")
       : [];
     const hasDownloadedCsvRows = exportFiles.some(source =>
       Array.isArray(source.headers) && source.headers.length > 0 &&
-      Array.isArray(source.rows) && source.rows.length > 0
+      ((Array.isArray(source.rows) && source.rows.length > 0) || Number(source.rowCount || 0) > 0)
     );
     const oids = [...new Set((Array.isArray(reply.oids) ? reply.oids : [])
       .map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
@@ -214,7 +255,7 @@ $('onholdToday')?.addEventListener("click", async () => {
       setStatus(`No Forward or Return parcels were assigned on ${reply.todayDate || "today"}.`, "good");
     } else if (!hasDownloadedCsvRows) {
       setStatus(
-        `Loaded ${oids.length.toLocaleString()} OID(s), but the CSV rows were not received by the dashboard. Reload Chrome Extension v1.4.7 or Firefox SPX Bridge v69.5.7, refresh this page, and try again.`,
+        `Loaded ${oids.length.toLocaleString()} OID(s), but the CSV rows were not received by the dashboard. Reload Chrome Extension v1.4.8 or Firefox SPX Bridge v69.5.7, refresh this page, and try again.`,
         "error"
       );
     } else {
