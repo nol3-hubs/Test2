@@ -843,10 +843,6 @@ html[data-theme="light"] .sync-guide-featured .sync-guide-icon{border-color:#fff
 #volumeForecastBoard #forecastBoardSyncStatus.is-success{color:#067647}
 #volumeForecastBoard #forecastBoardSyncStatus.is-error{color:#b42318}
 #volumeForecastBoard .forecast-board-kpis{grid-template-columns:repeat(6,minmax(0,1fr));margin-top:12px}
-#volumeForecastBoard .forecast-board-rider-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:8px 0 14px}
-#volumeForecastBoard .forecast-board-rider-card{min-width:0}
-#volumeForecastBoard .forecast-board-rider-card .num{font-variant-numeric:tabular-nums}
-#volumeForecastBoard .forecast-board-rider-note{grid-column:1/-1;margin:0;color:var(--muted);font-size:10px;line-height:1.4}
 #volumeForecastBoard .forecast-board-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:0 0 16px}
 #volumeForecastBoard .forecast-board-status-manager{margin-top:12px;margin-bottom:12px}
 #volumeForecastBoard .forecast-board-status-manager-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
@@ -1669,6 +1665,17 @@ html[data-theme="light"] .side > .theme-switch-row{
 @media(max-width:700px){.dashboard-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-card-groups{grid-template-columns:1fr}.hub-performance-group{grid-column:auto}.hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:420px){.dashboard-summary-grid{grid-template-columns:1fr}.dashboard-card-group{padding:11px}}
 </style>
+
+<style id="dashboard-rider-summary-style">
+#dashboard .dashboard-rider-section{padding:12px 14px}
+#dashboard .dashboard-rider-section .area-head{margin-bottom:9px}
+#dashboard .dashboard-rider-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:0}
+#dashboard .dashboard-rider-kpis .kpi{min-width:0;padding:11px 12px}
+#dashboard .dashboard-rider-kpis .num{font-size:28px;line-height:1;font-variant-numeric:tabular-nums}
+#dashboard .dashboard-rider-kpis .lab{font-size:9px;line-height:1.25}
+#dashboard .dashboard-rider-note{margin:8px 2px 0;color:var(--muted);font-size:10px;line-height:1.4}
+@media(max-width:550px){#dashboard .dashboard-rider-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
 </head>
 <body data-app-version="21">
 
@@ -1956,6 +1963,16 @@ html[data-theme="light"] .side > .theme-switch-row{
       <div class="kpi clickable-kpi" id="misroutedKpi" role="button" tabindex="0" title="Open Misrouted parcels"><div class="num" id="misTotal">0</div><div class="lab">MISROUTED</div><div class="desc" id="misMetricDesc"></div></div>
       <div class="kpi fleet-productivity-kpi"><input class="num fleet-productivity-input" id="fleetProductivity" type="number" min="0" step="0.01" value="0" aria-label="Fleet Productivity"><div class="lab">FLEET PRODUCTIVITY</div><div class="desc"></div></div>
     </div>
+    <div class="section dashboard-rider-section">
+      <div class="area-head"><h2>Riders Used</h2><span class="hint">Unique riders assigned across Badoc and Pinili</span></div>
+      <div class="dashboard-rider-kpis" id="dashboardRiderSummary" aria-live="polite">
+        <div class="kpi"><div class="num" id="dashboardRiderTotal">0</div><div class="lab">TOTAL RIDERS USED</div></div>
+        <div class="kpi"><div class="num" id="dashboardRider2WH">0</div><div class="lab">2WH</div></div>
+        <div class="kpi"><div class="num" id="dashboardRider3WH">0</div><div class="lab">3WH</div></div>
+        <div class="kpi"><div class="num" id="dashboardRiderFlexi">0</div><div class="lab">FLEXI</div></div>
+      </div>
+      <p class="dashboard-rider-note" id="dashboardRiderNote">Select riders in the town-group selectors to populate this summary.</p>
+    </div>
     <div class="parcel-incoming-toolbar">
       <button class="btn parcel-incoming-btn" id="parcelIncomingVolumeBtn" type="button" aria-pressed="false">＋ Add incoming linehaul volume</button>
       <span class="parcel-incoming-state" id="parcelIncomingVolumeState">Incoming linehaul not included</span>
@@ -2058,10 +2075,6 @@ html[data-theme="light"] .side > .theme-switch-row{
     <div class="kpi"><div class="num" id="forecastBoardBulky">0</div><div class="lab">BULKY TOTAL</div><div class="desc">Chargeable weight ≥ 4.00 kg</div></div>
     <div class="kpi"><div class="num" id="forecastBoardHighValue">0</div><div class="lab">HIGH VALUE</div><div class="desc">High Value = Y</div></div>
     <div class="kpi"><div class="num" id="forecastBoardStations">0</div><div class="lab">CURRENT STATIONS</div><div class="desc">Stations with eligible parcels</div></div>
-  </div>
-  <div class="section forecast-board-riders-used">
-    <div class="area-head"><h2>Riders Used</h2><span class="forecast-board-area-note">Unique riders assigned across Badoc and Pinili town groups</span></div>
-    <div class="forecast-board-rider-summary" id="forecastBoardRiderSummary" aria-live="polite"></div>
   </div>
   <div class="section forecast-board-status-manager">
     <div class="forecast-board-status-manager-head">
@@ -3537,7 +3550,7 @@ function renderTownGrid(id,list,rows,extraCounts={}){
             if(!Array.isArray(notes[key]))notes[key]=[];
             notes[key][noteIndex]=String(name??"");
             try{localStorage.setItem(TOWN_NOTES_KEY,JSON.stringify(notes))}catch{}
-            window.__badocRenderForecastRiderSummary?.();
+            window.__badocRenderDashboardRiderSummary?.();
             if(typeof window.__badocSyncTownNotesNow==="function")
               window.__badocSyncTownNotesNow(notes).catch(e=>console.warn("Rider selection sync:",e));
           });
@@ -4129,6 +4142,7 @@ function render(){
  const ms=$("misroutedSideCount"); if(ms)ms.textContent=m.length;
  renderTownGrid("badocGrid",towns.badoc,badoc,incoming.townCounts);
  renderTownGrid("piniliGrid",towns.pinili,pinili,incoming.townCounts);
+ window.__badocRenderDashboardRiderSummary?.();
  updateParcelIncomingButton();
  $("batchLabel").textContent="";
  renderRecords();renderMis();renderHistory();renderTownEdits();renderParcelUploadStatus();window.updateOperationProgress?.()
@@ -4575,6 +4589,7 @@ function parseCsvText(text){
 }
 function riderNorm(v){return String(v??'').trim().toUpperCase();}
 function renderRiders(){
+  window.__badocRenderDashboardRiderSummary?.();
   const q=riderNorm($("ridersSearch")?.value);
   const veh=$("ridersVehicle")?.value||"", stat=$("ridersStatus")?.value||"";
   const activeOnly=$("ridersActiveOnly")?.checked!==false;
@@ -4652,7 +4667,7 @@ function renderRiders(){
       });
     }
   }
-  window.__badocRenderForecastRiderSummary?.();
+  window.__badocRenderDashboardRiderSummary?.();
 }
 
 function initRidersData(){
@@ -8762,7 +8777,7 @@ window.DASHBOARD_V2_READY = true;
       try{localStorage.setItem(TOWN_NOTES_KEY,JSON.stringify(x||{}))}catch{}
       if(document.querySelector(".town-rider-picker.open")){window.__badocPendingRiderRender=true;return;}
       if(typeof render==="function")render();
-      window.__badocRenderForecastRiderSummary?.();
+      window.__badocRenderDashboardRiderSummary?.();
     }catch(e){console.warn("Town notes parse:",e)}
   }
   async function applyRiderSelections(){
@@ -8777,7 +8792,7 @@ window.DASHBOARD_V2_READY = true;
       try{localStorage.setItem(TOWN_NOTES_KEY,JSON.stringify(notes));localStorage.setItem("badoc_rider_selection_version_v1",String(version||Date.now()))}catch{}
       if(document.querySelector(".town-rider-picker.open")){window.__badocPendingRiderRender=true;return true;}
       if(typeof render==="function")render();
-      window.__badocRenderForecastRiderSummary?.();
+      window.__badocRenderDashboardRiderSummary?.();
       return true;
     }catch(e){console.warn("Rider selections parse:",e);return false}
   }
@@ -13562,7 +13577,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   }
   function riderNameKey(value){return text(value).trim().toUpperCase().replace(/[\s_-]+/g,"");}
   function renderRiderSummary(){
-    var node=el("forecastBoardRiderSummary");if(!node)return;
+    var node=el("dashboardRiderSummary");if(!node)return;
     var assignedNames=new Map();
     ["badoc","pinili"].forEach(function(areaKey){
       var assignments=typeof getTownNotes==="function"?getTownNotes(areaKey):[];
@@ -13586,12 +13601,17 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       else if(vehicle==="FLEXI"||vehicle==="FLEX")counts.flexi++;
       else counts.unclassified++;
     });
-    function riderCard(value,label){return '<div class="kpi forecast-board-rider-card"><div class="num">'+Number(value||0).toLocaleString()+'</div><div class="lab">'+label+'</div></div>'; }
+    var totalNode=el("dashboardRiderTotal"),twoNode=el("dashboardRider2WH"),threeNode=el("dashboardRider3WH"),flexiNode=el("dashboardRiderFlexi"),noteNode=el("dashboardRiderNote");
+    if(totalNode)totalNode.textContent=counts.total.toLocaleString();
+    if(twoNode)twoNode.textContent=counts.two.toLocaleString();
+    if(threeNode)threeNode.textContent=counts.three.toLocaleString();
+    if(flexiNode)flexiNode.textContent=counts.flexi.toLocaleString();
     var note=counts.unclassified
       ?counts.unclassified.toLocaleString()+" assigned rider(s) could not be classified from the uploaded Riders Data vehicle type."
-      :"Each assigned rider is counted once, even when more than one town-group record references the same name.";
-    if(!riders.length&&counts.total)note="Upload Riders Data to classify assigned riders by vehicle type.";
-    node.innerHTML=riderCard(counts.total,"TOTAL RIDERS USED")+riderCard(counts.two,"2WH")+riderCard(counts.three,"3WH")+riderCard(counts.flexi,"FLEXI")+'<p class="forecast-board-rider-note">'+esc(note)+'</p>';
+      :"Each assigned rider is counted once, even when the same name is selected for more than one town group.";
+    if(!counts.total)note="Select riders in the town-group selectors to populate this summary.";
+    if(!riders.length&&counts.total)note="Upload Riders Data to classify assigned riders by vehicle type. Assigned riders are still included in the total.";
+    if(noteNode)noteNode.textContent=note;
   }
   function selectedRows(){
     var source=sourceRows().rows;
@@ -13745,7 +13765,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     document.querySelectorAll('#planningBoardSubmenu button[data-page]').forEach(function(btn){if(btn.dataset.bound)return;btn.dataset.bound="1";btn.addEventListener("click",function(e){e.preventDefault();e.stopPropagation();if(typeof window.showPage==="function")window.showPage(btn.dataset.page);if(nav){nav.classList.add("open");toggle?.setAttribute("aria-expanded","true");}});});
     var primary=document.querySelector('#planningBoardNav .planning-board-primary');if(primary&&!primary.dataset.bound){primary.dataset.bound="1";primary.addEventListener("click",function(){nav?.classList.add("open");toggle?.setAttribute("aria-expanded","true");});}
   }
-  window.__badocRenderForecastRiderSummary=renderRiderSummary;
+  window.__badocRenderDashboardRiderSummary=renderRiderSummary;
   window.__badocRenderForecastBoard=render;
   function init(){bind();render();}
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
