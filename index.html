@@ -1681,7 +1681,7 @@ html[data-theme="light"] .side > .theme-switch-row{
 #actualScannedByRiders .actual-scan-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:0 0 14px}
 #actualScannedByRiders .actual-scan-kpis .kpi{min-width:0}
 #actualScannedByRiders .actual-scan-kpis .num{font-variant-numeric:tabular-nums}
-#actualScannedByRiders .actual-scan-filters{display:grid;grid-template-columns:minmax(150px,2fr) repeat(5,minmax(105px,1fr));gap:8px;align-items:end;margin:12px 0}
+#actualScannedByRiders .actual-scan-filters{display:grid;grid-template-columns:minmax(150px,2fr) repeat(6,minmax(100px,1fr));gap:8px;align-items:end;margin:12px 0}
 #actualScannedByRiders .actual-scan-filters>div{display:flex;flex-direction:column;gap:4px;min-width:0}
 #actualScannedByRiders .actual-scan-filters label{font-size:9px;font-weight:800;color:var(--muted)}
 #actualScannedByRiders .actual-scan-filters input,#actualScannedByRiders .actual-scan-filters select{width:100%;min-width:0;padding:8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);font-size:11px}
@@ -2106,10 +2106,11 @@ html[data-theme="light"] .side > .theme-switch-row{
     <p class="actual-scan-note" id="actualScannedNote">Actual workload is read from actual driver/rider fields in Parcel Count uploads. Planned town assignments are used only for comparison.</p>
   </div>
   <div class="section">
-    <div class="actual-scan-section-head"><h2>Actual Rider Workload</h2><button class="btn secondary" type="button" id="actualScannedExport">Export Filtered CSV</button></div>
+    <div class="actual-scan-section-head"><h2>Actual Rider Workload</h2><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn secondary" type="button" id="actualScanReset">Reset Filters</button><button class="btn secondary" type="button" id="actualScannedExport">Export Filtered CSV</button></div></div>
     <div class="actual-scan-filters">
       <div><label for="actualScanSearch">SEARCH</label><input id="actualScanSearch" type="search" placeholder="Rider, ID, tracking number or town"></div>
       <div><label for="actualScanDate">ACTIVITY DATE</label><select id="actualScanDate"><option value="">All dates</option></select></div>
+      <div><label for="actualScanRider">RIDER</label><select id="actualScanRider"><option value="">All riders</option></select></div>
       <div><label for="actualScanVehicle">VEHICLE</label><select id="actualScanVehicle"><option value="">All vehicles</option><option value="2WH">2WH</option><option value="3WH">3WH</option><option value="FLEXI">Flexi</option><option value="UNKNOWN">Unknown</option></select></div>
       <div><label for="actualScanTown">TOWN</label><select id="actualScanTown"><option value="">All towns</option></select></div>
       <div><label for="actualScanCompare">ASSIGNMENT</label><select id="actualScanCompare"><option value="">All assignments</option><option value="Match">Match</option><option value="Mismatch">Mismatch</option><option value="No planned rider">No planned rider</option><option value="No scanner">No scanner</option></select></div>
