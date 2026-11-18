@@ -9377,9 +9377,22 @@ window.DASHBOARD_V2_READY = true;
           await applyVolumeSnapshot();
           seen.volumeSnapshot=Number(s.upload_version||0);
         }
-        if(Number(s.onhold_version||0)>seen.onholdExports){
+        const cloudOnholdVersion=Number(s.onhold_version||0);
+        if(cloudOnholdVersion>seen.onholdExports){
           await applyOnholdExports(s);
-          seen.onholdExports=Number(s.onhold_version||0);
+          seen.onholdExports=cloudOnholdVersion;
+        }else if(!s.onhold_exists&&cloudOnholdVersion===0&&seen.onholdExports<0){
+          // One-time migration: this browser may have an Onhold Today snapshot
+          // saved locally by the previous IndexedDB-only build. Publish it only
+          // when the shared cloud has never held an Onhold Today version.
+          await window.__badocOnholdExportsReady;
+          const localRows=Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:[];
+          if(localRows.length&&typeof window.__badocCloudSaveOnholdToday==="function"){
+            const migrated=await window.__badocCloudSaveOnholdToday(localRows,{migratedFromLocalCache:true});
+            seen.onholdExports=Number(migrated?.version||cloudOnholdVersion);
+          }else{
+            seen.onholdExports=cloudOnholdVersion;
+          }
         }
         if(!pendingCloudWrites.has("settings")&&Number(s.settings_version||0)>seen.settings)await applySettings();
         if(!pendingCloudWrites.has("settings"))seen.settings=Number(s.settings_version||0);
