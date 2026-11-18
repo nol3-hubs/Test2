@@ -8142,7 +8142,8 @@ window.addEventListener("message",async event=>{
     // Replace the full Onhold Today snapshot on every successful run, including
     // zero-row exports, so old SPX statuses cannot remain active indefinitely.
     const merged=badocSaveOnholdExportRows(exportRows);
-    window.__badocOnholdTnKeys=new Set(merged.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
+    const liveOnholdRows=badocGetOnholdRows(typeof getParcelCountRows==="function"?getParcelCountRows():[],false);
+    window.__badocOnholdTnKeys=new Set(liveOnholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
     try{window.render?.()}catch(e){}
     try{window.updateOperationProgress?.()}catch(e){}
     const createdStart=String(data.createdDateStart||"");
@@ -10504,7 +10505,8 @@ window.updateOperationProgress=function(){
   // On-Hold = uploaded Parcel Count rows with an On-Hold status plus
   // SPX Forward/Return On-Hold export rows. Exports override older uploaded
   // rows for the same SPX TN, and duplicates are counted only once.
-  const onholdRows=badocGetOnholdRows(todayRows,!!activeVolumeSnapshot);
+  // The 3 PM snapshot freezes Today's Volume only. On-Hold remains live and includes every current SPX Forward/Return export TN, including parcels absent from the snapshot.
+  const onholdRows=badocGetOnholdRows(todayRows,false);
   const onholdTnKeys=new Set(onholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
   window.__badocOnholdTnKeys=onholdTnKeys;
   const onHold=onholdTnKeys.size;
