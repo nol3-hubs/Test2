@@ -234,10 +234,6 @@ $('onholdToday')?.addEventListener("click", async () => {
     const exportFiles = Array.isArray(reply.downloadedData)
       ? reply.downloadedData.filter(source => source && typeof source === "object")
       : [];
-    const hasDownloadedCsvRows = exportFiles.some(source =>
-      Array.isArray(source.headers) && source.headers.length > 0 &&
-      ((Array.isArray(source.rows) && source.rows.length > 0) || Number(source.rowCount || 0) > 0)
-    );
     const oids = [...new Set((Array.isArray(reply.oids) ? reply.oids : [])
       .map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
     $("oids").value = oids.join("\n");
@@ -253,12 +249,9 @@ $('onholdToday')?.addEventListener("click", async () => {
       : "Assigned Time today (verified in CSV)";
     if (!oids.length) {
       setStatus(`No Forward or Return parcels were assigned on ${reply.todayDate || "today"}.`, "good");
-    } else if (!hasDownloadedCsvRows) {
-      setStatus(
-        `Loaded ${oids.length.toLocaleString()} OID(s), but the CSV rows were not received by the dashboard. Reload Chrome Extension v1.4.8 or Firefox SPX Bridge v69.5.7, refresh this page, and try again.`,
-        "error"
-      );
     } else {
+      // The dashboard deliberately receives OIDs and compact export metadata,
+      // not the full CSV rows. OIDs are the only data required by this checker.
       setStatus(
         `Loaded ${oids.length.toLocaleString()} unique OID(s) for ${reply.todayDate}: ${forwardCount.toLocaleString()} Forward, ${returnCount.toLocaleString()} Return; ${duplicateCount.toLocaleString()} duplicate(s) removed. Filters: Created Date within the last 14 days, Current Station Badoc Hub, ${assignedTimeDisplay}, excluding Delivering and Delivered. Click Check OIDs to validate them.`,
         "good"
