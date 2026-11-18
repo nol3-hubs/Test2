@@ -4146,13 +4146,105 @@ function badocOnholdStatus(row){
 function badocLoadOnholdExportRows(){
   try{const saved=JSON.parse(localStorage.getItem(BADOC_ONHOLD_EXPORT_KEY)||"[]");return Array.isArray(saved)?saved.filter(r=>r&&typeof r==="object"):[]}catch(e){return []}
 }
+
+// Full Forward/Return snapshots can exceed localStorage's small quota. Store the
+// dataset in IndexedDB, matching the storage approach used for Parcel Count.
+const BADOC_ONHOLD_DB_NAME="BadocHubOnholdExportsV1";
+const BADOC_ONHOLD_DB_STORE="exports";
+let badocOnholdDbReady=null;
+function openBadocOnholdDB(){
+  if(badocOnholdDbReady)return badocOnholdDbReady;
+  badocOnholdDbReady=new Promise((resolve,reject)=>{
+    try{
+      if(!window.indexedDB){reject(new Error("IndexedDB is unavailable in this browser."));return;}
+      const request=indexedDB.open(BADOC_ONHOLD_DB_NAME,1);
+      request.onupgradeneeded=()=>{
+        if(!request.result.objectStoreNames.contains(BADOC_ONHOLD_DB_STORE)){
+          request.result.createObjectStore(BADOC_ONHOLD_DB_STORE,{keyPath:"id"});
+        }
+      };
+      request.onsuccess=()=>{
+        const db=request.result;
+        db.onversionchange=()=>db.close();
+        resolve(db);
+      };
+      request.onerror=()=>reject(request.error||new Error("Could not open Onhold Today storage."));
+      request.onblocked=()=>reject(new Error("Onhold Today storage is blocked by another open dashboard tab. Close other BADOC HUB tabs and retry."));
+    }catch(error){reject(error)}
+  }).catch(error=>{
+    badocOnholdDbReady=null;
+    throw error;
+  });
+  return badocOnholdDbReady;
+}
 function badocSaveOnholdExportRows(rows){
   const byTn=new Map();
   (Array.isArray(rows)?rows:[]).forEach(row=>{const key=badocOnholdKey(spxTN(row));if(key)byTn.set(key,row)});
   const unique=[...byTn.values()];
-  try{localStorage.setItem(BADOC_ONHOLD_EXPORT_KEY,JSON.stringify(unique))}catch(e){console.warn("Could not persist SPX On-Hold exports:",e)}
+  // This assignment updates the live page immediately; persistence is confirmed
+  // separately by badocPersistOnholdExportRows before the sync reports success.
   window.__badocOnholdExportRows=unique;
   return unique;
+}
+async function badocPersistOnholdExportRows(rows){
+  const db=await openBadocOnholdDB();
+  const record={id:"current",rows:Array.isArray(rows)?rows:[],updatedAt:Date.now(),rowCount:Array.isArray(rows)?rows.length:0};
+  const tx=db.transaction(BADOC_ONHOLD_DB_STORE,"readwrite");
+  tx.objectStore(BADOC_ONHOLD_DB_STORE).put(record);
+  await new Promise((resolve,reject)=>{
+    tx.oncomplete=resolve;
+    tx.onerror=()=>reject(tx.error||new Error("Onhold Today data could not be saved."));
+    tx.onabort=()=>reject(tx.error||new Error("Onhold Today storage transaction was aborted."));
+  });
+  // Remove any old, smaller localStorage snapshot only after IndexedDB confirms
+  // the durable write.
+  try{localStorage.removeItem(BADOC_ONHOLD_EXPORT_KEY)}catch(e){}
+  return record.rowCount;
+}
+async function badocRestoreOnholdExportRows(){
+  try{
+    const db=await openBadocOnholdDB();
+    const saved=await new Promise((resolve,reject)=>{
+      const request=db.transaction(BADOC_ONHOLD_DB_STORE,"readonly").objectStore(BADOC_ONHOLD_DB_STORE).get("current");
+      request.onsuccess=()=>resolve(request.result||null);
+      request.onerror=()=>reject(request.error||new Error("Could not read saved Onhold Today data."));
+    });
+    if(saved&&Array.isArray(saved.rows)){
+      window.__badocOnholdExportRows=saved.rows;
+      return saved.rows.length;
+    }
+    // One-time migration for installations that successfully saved the old
+    // localStorage value before the quota was reached.
+    const legacy=badocLoadOnholdExportRows();
+    if(legacy.length){
+      const count=await badocPersistOnholdExportRows(legacy);
+      window.__badocOnholdExportRows=legacy;
+      return count;
+    }
+    window.__badocOnholdExportRows=[];
+    return 0;
+  }catch(error){
+    console.warn("Could not restore durable Onhold Today data:",error);
+    // Preserve any legacy localStorage data as a best-effort fallback.
+    window.__badocOnholdExportRows=badocLoadOnholdExportRows();
+    return window.__badocOnholdExportRows.length;
+  }
+}
+async function badocClearOnholdExportRows(){
+  try{
+    const db=await openBadocOnholdDB();
+    const tx=db.transaction(BADOC_ONHOLD_DB_STORE,"readwrite");
+    tx.objectStore(BADOC_ONHOLD_DB_STORE).delete("current");
+    await new Promise((resolve,reject)=>{
+      tx.oncomplete=resolve;
+      tx.onerror=()=>reject(tx.error||new Error("Could not clear Onhold Today data."));
+      tx.onabort=()=>reject(tx.error||new Error("Onhold Today clear was aborted."));
+    });
+  }finally{
+    window.__badocOnholdExportRows=[];
+    window.__badocOnholdTnKeys=new Set();
+    try{localStorage.removeItem(BADOC_ONHOLD_EXPORT_KEY)}catch(e){}
+  }
 }
 function badocGetOnholdRows(baseRows,restrictToBase=false){
   const rows=Array.isArray(baseRows)?baseRows:(typeof getParcelCountRows==="function"?getParcelCountRows():[]);
@@ -4176,6 +4268,14 @@ function badocGetOnholdRows(baseRows,restrictToBase=false){
 }
 window.__badocGetOnholdRows=badocGetOnholdRows;
 window.__badocOnholdExportRows=badocLoadOnholdExportRows();
+window.__badocOnholdExportsReady=badocRestoreOnholdExportRows().then(count=>{
+  if(count){
+    try{if(typeof render==="function")render()}catch(e){console.warn("Onhold Today restore render:",e)}
+    try{window.updateOperationProgress?.()}catch(e){}
+    try{if(typeof renderRecords==="function")renderRecords()}catch(e){}
+  }
+  return count;
+});
 
 function getParcelCountRows(){
   // Start with the uploaded Parcel Count rows, preserving the existing
@@ -6526,6 +6626,7 @@ $("clearData").onclick=async()=>{
       tx.onerror=()=>reject(tx.error);
       tx.onabort=()=>reject(tx.error||new Error("aborted"));
     });
+    await badocClearOnholdExportRows();
     batches=[];
     current=null;
 
@@ -8213,23 +8314,36 @@ window.addEventListener("message",async event=>{
   if(data.type==="BADOC_ASSIGNED_ONHOLD_TODAY_COMPLETE"){
     clearTimeout(window.__badocAssignedOnholdTodayTimer);
     const btn=$("syncAssignedOnholdToday"),status=$("assignedOnholdTodayStatus");
-    if(btn){btn.disabled=false;btn.dataset.busy="0";}
     const forward=Number(data.forwardRowCount||0),returned=Number(data.returnRowCount||0);
     const exportRows=Array.isArray(data.onholdRows)?data.onholdRows:[];
-    // Replace the full Onhold Today snapshot on every successful run, including
-    // zero-row exports, so old SPX statuses cannot remain active indefinitely.
+    // Replace the complete snapshot, then wait for IndexedDB to confirm the
+    // durable write before the operation is marked COMPLETED.
     const merged=badocSaveOnholdExportRows(exportRows);
-    const liveOnholdRows=badocGetOnholdRows(typeof getParcelCountRows==="function"?getParcelCountRows():[],false);
-    window.__badocOnholdTnKeys=new Set(liveOnholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
-    try{window.render?.()}catch(e){}
-    try{window.updateOperationProgress?.()}catch(e){}
-    const createdStart=String(data.createdDateStart||"");
-    const createdEnd=String(data.createdDateEnd||data.todayDate||"");
-    const createdRange=createdStart&&createdEnd?createdStart+" to "+createdEnd:"last 14 days";
-    const excludedCreated=Number(data.excludedCreatedDate||0);
-    const msg=`Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; Created Date ${createdRange}; Delivering, Delivered and LMHub_Received preserved; all other non-empty export statuses counted as On-Hold; duplicate SPX TNs replaced by the newest export.`;
-    if(status){status.textContent=msg;status.classList.remove("is-working","is-error");status.classList.add("is-success");}
-    window.__badocOperationModalFinish?.("Onhold Today Complete",msg,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Excluded: Created Date",excludedCreated.toLocaleString()],["Other excluded rows",(Number(data.excludedForward||0)+Number(data.excludedReturn||0)-excludedCreated).toLocaleString()]],"success");
+    const persistAndFinish=async()=>{
+      try{
+        await window.__badocOnholdExportsReady;
+        const savedCount=await badocPersistOnholdExportRows(merged);
+        const liveOnholdRows=badocGetOnholdRows(typeof getParcelCountRows==="function"?getParcelCountRows():[],false);
+        window.__badocOnholdTnKeys=new Set(liveOnholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
+        if(btn){btn.disabled=false;btn.dataset.busy="0";}
+        try{window.render?.()}catch(e){}
+        try{window.updateOperationProgress?.()}catch(e){}
+        try{if(typeof renderRecords==="function")renderRecords()}catch(e){}
+        const createdStart=String(data.createdDateStart||"");
+        const createdEnd=String(data.createdDateEnd||data.todayDate||"");
+        const createdRange=createdStart&&createdEnd?createdStart+" to "+createdEnd:"last 14 days";
+        const excludedCreated=Number(data.excludedCreatedDate||0);
+        const msg=`Saved ${savedCount.toLocaleString()} unique SPX tracking records to local IndexedDB. Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; Created Date ${createdRange}; Delivering, Delivered and LMHub_Received preserved; all other non-empty export statuses counted as On-Hold; duplicate SPX TNs replaced by the newest export.`;
+        if(status){status.textContent=msg;status.classList.remove("is-working","is-error");status.classList.add("is-success");}
+        window.__badocOperationModalFinish?.("Onhold Today Complete",msg,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Saved unique records",savedCount.toLocaleString()],["Excluded: Created Date",excludedCreated.toLocaleString()],["Other excluded rows",(Number(data.excludedForward||0)+Number(data.excludedReturn||0)-excludedCreated).toLocaleString()]],"success");
+      }catch(error){
+        if(btn){btn.disabled=false;btn.dataset.busy="0";}
+        const message="SPX exports completed, but Onhold Today could not be saved locally. The data will be lost if this page is refreshed. "+String(error?.message||error);
+        if(status){status.textContent=message;status.classList.remove("is-working","is-success");status.classList.add("is-error");}
+        window.__badocOperationModalFinish?.("Onhold Today Storage Failed",message,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Saved unique records","Not confirmed"]],"error");
+      }
+    };
+    void persistAndFinish();
     return;
   }
   if(data.type==="BADOC_ASSIGNED_ONHOLD_TODAY_ERROR"){
