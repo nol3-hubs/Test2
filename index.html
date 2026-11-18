@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v97">
+<meta name="badoc-app-version" content="v98">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -1843,7 +1843,6 @@ html[data-theme="light"] .side > .theme-switch-row{
       <div class="dashboard-summary-grid">
         <div class="dashboard-summary-card volume"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
 
-<div class="dashboard-summary-card clear"><strong id="opClearFloorRate">0.0%</strong><span>CLEAR FLOOR RATE</span><small></small></div>
         <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST</span><small>Expected final by 3 AM</small></div>
       </div>
       <div id="volumeCutoffStatus" style="margin-top:8px;color:#8fa0ad;font-size:12px">Volume period: checking local time…</div>
@@ -1872,14 +1871,7 @@ html[data-theme="light"] .side > .theme-switch-row{
               <div class="dashboard-status-card exemptions"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span><small>Current exemption list</small></div>
             </div>
           </section>
-          <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
-            <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div><span>03</span></div>
-            <div class="dashboard-status-grid">
-              <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small></small></div>
-              <div class="dashboard-status-card linehaul"><strong id="opIncomingLinehaul">0</strong><span>INCOMING LINEHAUL</span><small>Unique eligible SPX TNs</small></div>
-              <div class="dashboard-status-card success"><strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span><small></small></div>
-            </div>
-          </section>
+
         </div>
       </div>
     </div>
@@ -2156,6 +2148,16 @@ html[data-theme="light"] .side > .theme-switch-row{
     <span id="forecastBoardSyncStatus" class="hint" aria-live="polite" hidden>Not yet synced</span>
     <span id="forecastBoardState" hidden>Loading all-day parcel data…</span>
   </div>
+  <div class="section forecast-board-hub-performance">
+          <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
+            <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div><span>03</span></div>
+            <div class="dashboard-status-grid">
+              <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small></small></div>
+              <div class="dashboard-status-card linehaul"><strong id="opIncomingLinehaul">0</strong><span>INCOMING LINEHAUL</span><small>Unique eligible SPX TNs</small></div>
+              <div class="dashboard-status-card success"><strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span><small></small></div>
+            </div>
+          </section>
+  </div>
   <div class="kpis forecast-board-kpis">
     <div class="kpi"><div class="num" id="forecastBoardTotal">0</div><div class="lab">TOTAL PARCELS</div><div class="desc">Unique SPX tracking numbers · all day</div></div>
     <div class="kpi"><div class="num" id="forecastBoardBadoc">0</div><div class="lab">BADOC</div><div class="desc">Eligible parcels in Badoc towns</div></div>
@@ -2419,10 +2421,6 @@ html[data-theme="light"] .side > .theme-switch-row{
   <div class="section settings-panel" id="settingsMaintenancePanel">
     <h2>4. Maintenance &amp; Reset</h2>
     <div class="settings-maintenance-group">
-      <div><strong>Clear Floor Rate</strong><p class="hint">Reset today's regular Clear Floor Rate peak to 0%. This does not delete parcel data or reset CFR1.</p></div>
-      <button class="btn" id="resetClearFloorRate" type="button">Reset Clear Floor Rate</button>
-    </div>
-    <div class="settings-maintenance-group">
       <div><strong>CFR1</strong><p class="hint">Rebuild today's CFR1 eligible-parcel list and 7:00 AM count freeze from the parcel data currently available on this device.</p></div>
       <button class="btn danger" id="resetCfr1" type="button">Reset CFR1</button>
     </div>
@@ -2436,7 +2434,7 @@ html[data-theme="light"] .side > .theme-switch-row{
         <li>First Mile Pickup Orders, Pickup Tasks, saved Pickup Point ID/name directory, and local first-sync baselines.</li>
         <li>Exemptions from this device and shared cloud.</li>
       </ul>
-      <p class="hint">It keeps town/station settings, Riders Data, Daily History, dashboard preferences, Clear Floor Rate, and CFR1. Historical cloud First Mile baseline files are retained.</p>
+      <p class="hint">It keeps town/station settings, Riders Data, Daily History, dashboard preferences, and CFR1. Historical cloud First Mile baseline files are retained.</p>
       <div class="settings-clear-confirm">
         <label for="settingsClearDataWord">Type <strong>CLEAR DATA</strong> to enable this action.</label>
         <input id="settingsClearDataWord" type="text" autocomplete="off" spellcheck="false" placeholder="Type CLEAR DATA">
@@ -6264,24 +6262,8 @@ $("resetCfr1").onclick=async()=>{
   alert("Shared CFR1 ledger reset. The page will reload and rebuild today's eligible parcel list from the data currently available in this browser.");
   window.location.reload();
 };
-$("resetClearFloorRate").onclick=()=>{
-  if(!confirm("Reset today's Clear Floor Rate to 0%?\n\nThis will only reset the regular CFR peak for the current day. It will not delete parcel data or reset CFR1."))return;
-  try{
-    const key="badoc_cfr_peak_v2";
-    const current=JSON.parse(localStorage.getItem(key)||"null");
-    const baseline=(current&&Number.isFinite(Number(current.value)))?Number(current.value):0;
-    const d=__badocTime.manilaDate();
-    const date=[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
-    localStorage.setItem(key,JSON.stringify({date,value:0}));
-    const revision=(Array.isArray(batches)?batches:[]).map(b=>String(b?.time||"")+"|"+String(b?.name||"")).join(";");
-    localStorage.setItem("badoc_cfr_manual_reset_v1",JSON.stringify({date,baseline,revision,at:Date.now()}));
-  }catch(e){}
-  if(window.__badocCfrMidnightTimer){clearTimeout(window.__badocCfrMidnightTimer);window.__badocCfrMidnightTimer=null;}
-  try{window.updateOperationProgress?.();}catch(e){}
-  alert("Today's Clear Floor Rate has been reset to 0%.");
-};
 $("clearData").onclick=async()=>{
-  if(!confirm("Clear operational data from this device and shared cloud?\\n\\nThis removes Upload Exported parcel batches, Linehaul Task data, First Mile Pickup Orders/Tasks and the Pickup Point ID/name directory, plus Exemptions. Their current shared cloud copies are also cleared, affecting other devices.\\n\\nTown/station settings, Riders Data, Daily History, dashboard preferences, Clear Floor Rate, and CFR1 are kept. Historical cloud First Mile baseline files are retained.\\n\\nContinue?"))return;
+  if(!confirm("Clear operational data from this device and shared cloud?\\n\\nThis removes Upload Exported parcel batches, Linehaul Task data, First Mile Pickup Orders/Tasks and the Pickup Point ID/name directory, plus Exemptions. Their current shared cloud copies are also cleared, affecting other devices.\\n\\nTown/station settings, Riders Data, Daily History, dashboard preferences and CFR1 are kept. Historical cloud First Mile baseline files are retained.\\n\\nContinue?"))return;
   const clearBtn=$("clearData");
   if(clearBtn)clearBtn.disabled=true;
   try{
@@ -6370,13 +6352,12 @@ async function loadLiveKPI(){
 
   const groups=[
     ["COST METRICS",["Fleet Productivity (Points)","Backroom Productivity","New Rider Utilization %","4WH MTD Headcount","4WH Bulky %"]],
-    ["LEAD TIME METRICS",["Clear Floor Rate (FM + LM (ex. Sunday) + RTS + NSS)","Clear Floor Rate (CFR1 - Early Dispatch)","Clear Floor Rate (LM - Sunday)","Success Rate (LM + RTS + NSS)","Loss Rate"]],
+    ["LEAD TIME METRICS",["Clear Floor Rate (CFR1 - Early Dispatch)","Success Rate (LM + RTS + NSS)","Loss Rate"]],
     ["BUYER & SELLER EXPERIENCE METRICS",["FM No Successful Pickup","FM Partial Pickup","LM POD Tier Performance","LM Onhold Validation"]],
     ["HUB COMPLIANCE & FRAUD METRICS",["Hub Compliance Score","Feeder Fraud","Linehaul Arrival Points","Hub BSC Additional Points"]]  ];
 
   const aliases={
     "Fleet Productivity (Points)":["Fleet Productivity (Points)","Fleet Productivity"],
-    "Clear Floor Rate (FM + LM (ex. Sunday) + RTS + NSS)":["Clear Floor Rate (FM + LM (ex. Sunday) + RTS + NSS)","Clear Floor Rate (FM + LM"],
     "Success Rate (LM + RTS + NSS)":["Success Rate (LM + RTS + NSS)"]
   };
 
@@ -9787,7 +9768,6 @@ window.updateOperationProgress=function(){
   });
 
   const setText=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=Number(v||0).toLocaleString()};
-  const pct=(n,d)=>d?Math.min(100,Math.max(0,n/d*100)):0;
   const setProgress=(name,n)=>{    setText("op"+name,n);
   };
   // Master checkbox adds Linehaul Task ID volume to the normal Today's Volume.
@@ -9806,63 +9786,6 @@ window.updateOperationProgress=function(){
   setText("opTodayVolume",todayVolume);
   setText("opIncomingVolume",estimatedTomorrow);
   const card=document.getElementById("incomingVolumeCard");if(card)card.style.display=forecastWindow?"":"none";
-  // Regular Clear Floor Rate: keep the highest value reached during the
-  // CURRENT LOCAL CALENDAR DAY only.  A date mismatch always starts a fresh
-  // peak, and the reset is also scheduled at the next local midnight so the
-  // card resets even if the app remains open and no other event fires.
-  const clearFloorCurrentPct=pct((counts.DELIVERING||0)+(counts.DELIVERED||0)+(counts.ONHOLD||0),todayVolume);
-  const CFR_PEAK_KEY="badoc_cfr_peak_v2";
-  const cfrLocalDate=()=>{const d=__badocTime.manilaDate();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")};
-  const cfrTodayKey=cfrLocalDate();
-  let cfrPeak=0;
-  try{
-    const saved=JSON.parse(localStorage.getItem(CFR_PEAK_KEY)||"null");
-    if(saved&&saved.date===cfrTodayKey&&Number.isFinite(Number(saved.value))) cfrPeak=Math.max(0,Number(saved.value));
-    else localStorage.removeItem(CFR_PEAK_KEY);
-  }catch(e){cfrPeak=0;}
-  // Manual reset lock: after a manual reset, do not immediately rebuild the
-  // old peak from the unchanged current status.  The lock is released only
-  // when the current CFR rises above the pre-reset baseline.
-  const CFR_MANUAL_RESET_KEY="badoc_cfr_manual_reset_v1";
-  let manualReset=null;
-  try{
-    const mr=JSON.parse(localStorage.getItem(CFR_MANUAL_RESET_KEY)||"null");
-    if(mr&&mr.date===cfrTodayKey&&Number.isFinite(Number(mr.baseline))){
-      const revision=(Array.isArray(batches)?batches:[]).map(b=>String(b?.time||"")+"|"+String(b?.name||"")).join(";");
-      manualReset={baseline:Math.max(0,Number(mr.baseline)),revision:String(mr.revision||"")};
-      // A new parcel-file upload means the operation data has changed. Release
-      // the manual-reset lock and immediately recalculate CFR from the new data.
-      if(manualReset.revision && revision!==manualReset.revision){
-        cfrPeak=clearFloorCurrentPct;
-        manualReset=null;
-        try{localStorage.removeItem(CFR_MANUAL_RESET_KEY);}catch(e){}
-      }
-    }else if(mr) localStorage.removeItem(CFR_MANUAL_RESET_KEY);
-  }catch(e){manualReset=null;}
-  if(manualReset){
-    if(clearFloorCurrentPct>manualReset.baseline){
-      cfrPeak=clearFloorCurrentPct;
-      manualReset=null;
-      try{localStorage.removeItem(CFR_MANUAL_RESET_KEY);}catch(e){}
-    }else{
-      cfrPeak=0;
-    }
-  }else if(clearFloorCurrentPct>cfrPeak){
-    cfrPeak=clearFloorCurrentPct;
-  }
-  try{localStorage.setItem(CFR_PEAK_KEY,JSON.stringify({date:cfrTodayKey,value:cfrPeak}));}catch(e){}
-  const clear=document.getElementById("opClearFloorRate");if(clear)clear.textContent=cfrPeak.toFixed(1)+"%";
-  // Schedule a hard local-midnight reset once per page load.  The normal
-  // 30-second update loop will immediately calculate the new day's CFR.
-  if(!window.__badocCfrMidnightTimer){
-    const now=__badocTime.manilaDate(),next=new Date(now);
-    next.setHours(24,0,1,0);
-    window.__badocCfrMidnightTimer=setTimeout(()=>{
-      window.__badocCfrMidnightTimer=null;
-      try{localStorage.removeItem(CFR_PEAK_KEY);}catch(e){}
-      try{window.updateOperationProgress?.();}catch(e){}
-    },Math.max(1000,next-now));
-  }
   setProgress("Transporting",counts.TRANSPORTING);setProgress("Transported",counts.TRANSPORTED);setProgress("Received",counts.RECEIVED);setProgress("Assigning",counts.ASSIGNING);setProgress("Assigned",counts.ASSIGNED);
   setText("opDelivering",counts.DELIVERING);setText("opDelivered",counts.DELIVERED);setText("opReceivedSummary",counts.RECEIVED);
 
@@ -10818,7 +10741,6 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 <script id="badoc-daily-operational-reset">
 /*
   BADOC daily operational reset
-  - Regular Clear Floor Rate: clears its saved daily peak at 2:30 AM local time.
   - Uploaded Parcel + Linehaul working data: resets at 2:30 AM local time.
   - CFR1 cloud ledger: reset at 2:30 AM local time after Daily History is captured.
     CFR1 then rebuilds from newly available parcel data using the existing rules.
@@ -10830,8 +10752,6 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 (function(){
   const RESET_MARKER_PATH="current/.badoc-daily-reset.json";
   const RESET_MARKER_LOCAL="badoc_daily_reset_marker_v1";
-  const CLEAR_FLOOR_KEY="badoc_clear_floor_rate_max_v1";
-  const CLEAR_FLOOR_DATE_KEY="badoc_clear_floor_rate_date_v1";
   const DAY_MS=86400000;
   let busy=false;
   function setResetStatus(state,extra){
@@ -10847,15 +10767,6 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   function twoThirtyAmReached(d=__badocTime.manilaDate()){
     return d.getHours()>2 || (d.getHours()===2 && d.getMinutes()>=30);
   }
-  function clearRegularCfrAt230AM(){
-    try{
-      localStorage.removeItem(CLEAR_FLOOR_KEY);
-      localStorage.setItem(CLEAR_FLOOR_DATE_KEY,dayKey());
-      localStorage.removeItem("badoc_cfr_peak_v2");
-    }catch(e){}
-    if(typeof window.updateOperationProgress==="function") window.updateOperationProgress();
-  }
-
   async function getCloudResetDate(){
     try{
       if(!window.BADOC_SHARED_CONFIG||!window.BadocCloud)return null;
@@ -10977,9 +10888,8 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
           }
         }catch(e){console.warn("Daily History reset-marker recovery:",e)}
         if(localMarker!==today)try{localStorage.setItem(RESET_MARKER_LOCAL,today)}catch(e){}
-        // Reset this device's regular CFR and in-memory CFR1 even when another
+        // Reset this device's in-memory CFR1 even when another
         // device already completed the shared cloud reset.
-        clearRegularCfrAt230AM();
         window.__badocCfr1LedgerMemory=null;
         clearLocalPickupData();
         // The shared reset has already cleared exemptions. This device must
@@ -11037,8 +10947,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         const up=await c.from("badoc_shared_state").upsert(patch,{onConflict:"id"});
         if(up.error)throw Error(up.error.message||"Shared state reset failed");
       }
-      // Clear Clear Floor Rate and CFR1 after Daily History is safely captured.
-      clearRegularCfrAt230AM();
+      // Reset CFR1 after Daily History is safely captured.
       if(window.__badocCfr1CloudSync && typeof window.__badocCfr1CloudSync.resetCloud==="function"){
         await window.__badocCfr1CloudSync.resetCloud();
       }
@@ -11054,7 +10963,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         }
       }catch(e){console.warn("Daily reset marker:",e)}
       try{localStorage.setItem(RESET_MARKER_LOCAL,today)}catch(e){}
-      console.log("BADOC 2:30 AM daily upload/exemption/CFR/CFR1 reset completed for",today);
+      console.log("BADOC 2:30 AM daily upload/exemption/CFR1 reset completed for",today);
       setResetStatus("done");
       // Reinitialize CFR1's in-memory closure after its shared cloud ledger is cleared.
       try{window.location.reload()}catch(e){}
