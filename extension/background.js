@@ -836,9 +836,9 @@ async function runAssignedTodayExportSource({ endpoint, label, range, job, isFor
   };
 }
 
-async function exportAssignedParcelsTodayFromSpx() {
+async function exportAssignedParcelsTodayFromSpx(jobOverride = null) {
   const range = parcelDeliveryDateRange();
-  const job = { kind: "pod-assigned-today", startedAt: Date.now(), cancelled: false };
+  const job = jobOverride || { kind: "pod-assigned-today", startedAt: Date.now(), cancelled: false };
 
   // Keep the two SPX export types separate, then merge their OIDs below.
   // Run sequentially to follow the established SPX export-task handling flow.
@@ -2496,6 +2496,58 @@ chrome.runtime.onConnect.addListener(port => {
     if(type==="BADOC_LOOKUP_PICKUP_INFO"){void runBadocPickupInfoLookup(port,message);return;}
     const failBusy = (kind, text = "A BADOC SPX sync is already running.") =>
       sendToPort(port, "BADOC_SPX_ERROR", { message: text, ...(kind ? { kind } : {}) });
+
+    if (type === "BADOC_START_POD_CHECKER_ASSIGNED_TODAY") {
+      const requestId = String(message?.requestId || "");
+      const job = reserveActiveJob("pod-checker-assigned-today", port, {
+        requestId,
+        startedAt: Date.now()
+      });
+      if (!job) {
+        sendToPort(port, "BADOC_POD_CHECKER_ASSIGNED_ERROR", {
+          requestId,
+          message: "Another SPX export is already running. Try Assigned Parcels Today again after it finishes."
+        });
+        return;
+      }
+      sendToPort(port, "BADOC_POD_CHECKER_ASSIGNED_ACCEPTED", {
+        requestId,
+        message: "Extension accepted Assigned Parcels Today. Preparing Forward and Return exports…"
+      });
+      void (async () => {
+        try {
+          const result = await exportAssignedParcelsTodayFromSpx(job);
+          sendToPort(port, "BADOC_POD_CHECKER_ASSIGNED_COMPLETE", {
+            requestId,
+            result: {
+              ok: true,
+              todayDate: result.todayDate,
+              forwardRowCount: result.forwardRowCount,
+              returnRowCount: result.returnRowCount,
+              forwardOidCount: result.forwardOidCount,
+              returnOidCount: result.returnOidCount,
+              duplicateCount: result.duplicateCount,
+              oids: result.oids,
+              downloadedData: (result.downloadedData || []).map(source => ({
+                source: source.source,
+                headers: source.headers,
+                rowCount: source.rowCount,
+                rawRowCount: source.rawRowCount,
+                assignedTimeFilterSource: source.assignedTimeFilterSource
+              }))
+            }
+          });
+        } catch (error) {
+          sendToPort(port, "BADOC_POD_CHECKER_ASSIGNED_ERROR", {
+            requestId,
+            message: error?.message || String(error)
+          });
+        } finally {
+          releaseActiveJob(job);
+        }
+      })();
+      return;
+    }
 
     if (type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" || type === "BADOC_START_FIRST_MILE_TASKS_SYNC") {
       const kind = type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" ? "first-mile-orders" : "first-mile-tasks";
