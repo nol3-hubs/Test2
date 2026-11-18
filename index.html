@@ -9881,8 +9881,7 @@ window.updateOperationProgress=function(){
   setProgress("Transporting",counts.TRANSPORTING);setProgress("Transported",counts.TRANSPORTED);setProgress("Received",counts.RECEIVED);setProgress("Assigning",counts.ASSIGNING);setProgress("Assigned",counts.ASSIGNED);
   setText("opDelivering",counts.DELIVERING);setText("opDelivered",counts.DELIVERED);setText("opReceivedSummary",counts.RECEIVED);
 
-  // Dispatched is the sum of the Delivering, Delivered and On-Hold cards.
-  setText("opDispatched",(counts.DELIVERING||0)+(counts.DELIVERED||0)+(counts.ONHOLD||0));
+  // Dispatched is refreshed below, after the current On-Hold total is finalized.
   // Keep these metrics deliberately blank until their sources are defined.
   const setMetricText=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value===undefined||value===null||String(value).trim()===""?"—":String(value)};
   setMetricText("opRts","—");
@@ -10273,6 +10272,9 @@ window.updateOperationProgress=function(){
   const onHold=onholdTnKeys.size;
   counts.ONHOLD=onHold;
   setText("opOnHold",onHold);
+
+  // Count all currently dispatched parcels after On-Hold has been recalculated.
+  setText("opDispatched",(counts.DELIVERING||0)+(counts.DELIVERED||0)+onHold);
 
   // Unscanned: Today's Volume minus Delivering, Delivered and On-Hold.
   const unscanned=Math.max(0,todayVolume-(counts.DELIVERING||0)-(counts.DELIVERED||0)-onHold);
