@@ -4122,7 +4122,7 @@ function fillStatusFilter(){
   const el=$("recordStatus");
   if(!el)return;
   const currentValue=el.value||"";
-  const rows=(current&&Array.isArray(current.valid))?current.valid:[];
+  const rows=typeof getParcelRecordRows==="function"?getParcelRecordRows():((current&&Array.isArray(current.valid))?current.valid:[]);
   const statuses=[...new Set(rows.map(x=>String(x?.status??"").trim()).filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b));
   el.innerHTML='<option value="">Status</option>'+
@@ -4266,6 +4266,63 @@ function getParcelCountRows(){
   });
 
   return rows;
+}
+
+// Parcel Records combines uploaded valid rows with the latest Onhold Today
+// Forward/Return exports. Exports replace older rows by SPX TN while retaining
+// their original status text for Records filters and the Status column.
+function getParcelRecordRows(){
+  const baseRows=Array.isArray(current?.valid)?current.valid:[];
+  const records=[];
+  const indexByTn=new Map();
+  baseRows.forEach(row=>{
+    const key=badocOnholdKey(spxTN(row));
+    if(key&&indexByTn.has(key)){
+      records[indexByTn.get(key)]=row;
+      return;
+    }
+    if(key)indexByTn.set(key,records.length);
+    records.push(row);
+  });
+
+  const exports=Array.isArray(window.__badocOnholdExportRows)
+    ?window.__badocOnholdExportRows
+    :badocLoadOnholdExportRows();
+  const areaByTown=allowedMap();
+  const allowedStations=new Set(["BADOC HUB","SOC 6","CAGAYAN DC"]);
+
+  exports.forEach(exportRow=>{
+    if(!exportRow||isExceptionRow(exportRow))return;
+    const key=badocOnholdKey(spxTN(exportRow));
+    if(!key)return;
+    const meta=badocRowMeta(exportRow);
+    // Match the existing Parcel Records valid-record scope.
+    if(meta.destination!=="BADOC HUB"||!allowedStations.has(meta.station))return;
+    const area=areaByTown[meta.town];
+    if(!area)return;
+
+    const existingIndex=indexByTn.get(key);
+    const existing=existingIndex===undefined?null:records[existingIndex];
+    const merged={...(existing||{}),...exportRow,_area:existing?existing._area:area};
+    ["SLS Tracking Number","Order ID","Town Name","Current Station","Destination Station","Zone"].forEach(field=>{
+      if(!String(merged[field]??"").trim()&&String(existing?.[field]??"").trim()){
+        merged[field]=existing[field];
+      }
+    });
+    const rawStatus=String(exportRow?.["Status"]??exportRow?.["Parcel Status To"]??exportRow?.["Status To"]??"").trim();
+    if(rawStatus){
+      merged["Status"]=rawStatus;
+      // This record-list copy is separate from the Planning Board ONHOLD mapping.
+      merged["Parcel Status To"]=rawStatus;
+    }
+    if(existingIndex===undefined){
+      indexByTn.set(key,records.length);
+      records.push(merged);
+    }else{
+      records[existingIndex]=merged;
+    }
+  });
+  return records;
 }
 
 let parcelUploadStatusOpen=false;
@@ -4451,7 +4508,14 @@ function selectedValues(id){
   const el=$(id); if(!el)return [];
   return [...el.selectedOptions].map(o=>String(o.value||"").trim()).filter(Boolean);
 }
-function recordStatusValue(r){return badocRowMeta(r).status}
+function recordStatusValue(r){
+  // Onhold Today rows retain the exact status from the SPX export.
+  if(r?._onholdExportSource){
+    const raw=String(r?.["Status"]??r?.["Parcel Status To"]??r?.["Status To"]??"").trim();
+    if(raw)return raw;
+  }
+  return badocRowMeta(r).status;
+}
 function recordMatches(rows,q,filters,ignore){
   const list=Array.isArray(rows)?rows:[];
   if(!q){
@@ -4480,7 +4544,7 @@ function recordMatches(rows,q,filters,ignore){
 }
 function refreshRecordFilterCounts(){
   if(parcelFilterIsLocked())return;
-  const rows=(current&&Array.isArray(current.valid))?current.valid:[];
+  const rows=typeof getParcelRecordRows==="function"?getParcelRecordRows():((current&&Array.isArray(current.valid))?current.valid:[]);
   const q=norm($("recordSearch")?.value||"");
   const filters={town:selectedValues("recordTown"),station:selectedValues("recordStation"),status:selectedValues("recordStatus")};
   const build=(id,key,ignore)=>{
@@ -4733,7 +4797,7 @@ function updateDashboardFromParcelFilters(){
 
 function renderRecords(skipFilterOptionRefresh=false){
   if(!skipFilterOptionRefresh) refreshRecordFilterCounts();
-  const allRows=Array.isArray(current?.valid)?current.valid:[];
+  const allRows=typeof getParcelRecordRows==="function"?getParcelRecordRows():(Array.isArray(current?.valid)?current.valid:[]);
   const q=norm($("recordSearch")?.value||"");
   const filters={
     town:selectedValues("recordTown"),
