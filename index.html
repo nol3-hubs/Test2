@@ -9048,6 +9048,7 @@ window.DASHBOARD_V2_READY = true;
         seen.linehaul=Number(s.linehaul_version||0);
       }else if(kind==="volumeSnapshot"){
         await applyVolumeSnapshot();
+        seen.upload=Number(s.upload_version||0);
         seen.volumeSnapshot=Number(s.upload_version||0);
       }else if(kind==="settings"){
         if(!pendingCloudWrites.has("settings")){
