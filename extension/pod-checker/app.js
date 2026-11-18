@@ -188,7 +188,8 @@ $('onholdToday')?.addEventListener("click", async () => {
       target: "POD_CHECKER_BACKGROUND",
       action: "EXPORT_ASSIGNED_PARCELS_TODAY"
     });
-    if (!reply?.ok) throw new Error(reply?.error || "SPX assigned parcels could not be loaded.");
+    if (!reply) throw new Error("The extension did not return a response for Assigned Parcels Today. Update to Badoc Hub Extension v1.4.7, reload it in chrome://extensions, then refresh BADOC HUB and retry.");
+    if (reply.ok !== true) throw new Error(reply.error || "The extension returned an empty result for Assigned Parcels Today. Reload Badoc Hub Extension v1.4.7 and try again.");
     const exportFiles = Array.isArray(reply.downloadedData)
       ? reply.downloadedData.filter(source => source && typeof source === "object")
       : [];
@@ -213,7 +214,7 @@ $('onholdToday')?.addEventListener("click", async () => {
       setStatus(`No Forward or Return parcels were assigned on ${reply.todayDate || "today"}.`, "good");
     } else if (!hasDownloadedCsvRows) {
       setStatus(
-        `Loaded ${oids.length.toLocaleString()} OID(s), but the CSV rows were not received by the dashboard. Reload Chrome Extension v1.4.1 or Firefox SPX Bridge v69.5.2, refresh this page, and try again.`,
+        `Loaded ${oids.length.toLocaleString()} OID(s), but the CSV rows were not received by the dashboard. Reload Chrome Extension v1.4.7 or Firefox SPX Bridge v69.5.7, refresh this page, and try again.`,
         "error"
       );
     } else {
