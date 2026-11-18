@@ -8822,7 +8822,6 @@ window.DASHBOARD_V2_READY = true;
       id:1,
       upload_exists:false,upload_version:0,
       linehaul_exists:false,linehaul_version:0,
-      volume_snapshot_exists:false,volume_snapshot_version:0,
       settings_version:0,layout_version:0,notes_version:0,
       ...clean
     };
@@ -9048,14 +9047,8 @@ window.DASHBOARD_V2_READY = true;
         }
         seen.linehaul=Number(s.linehaul_version||0);
       }else if(kind==="volumeSnapshot"){
-        if(Number(s.volume_snapshot_version||0)>seen.volumeSnapshot){
-          if(s.volume_snapshot_exists)await applyVolumeSnapshot();
-          else{
-            window.__badocVolumeSnapshot=null;
-            try{localStorage.removeItem("badoc_daily_volume_snapshot_v1")}catch{}
-          }
-          seen.volumeSnapshot=Number(s.volume_snapshot_version||0);
-        }
+        await applyVolumeSnapshot();
+        seen.volumeSnapshot=Number(s.upload_version||0);
       }else if(kind==="settings"){
         if(!pendingCloudWrites.has("settings")){
           if(Number(s.settings_version||0)>seen.settings)await applySettings();
@@ -9077,13 +9070,9 @@ window.DASHBOARD_V2_READY = true;
         if(!pendingCloudWrites.has("linehaul")&&!linehaulLocalDirty){
           if(!s.linehaul_exists)await clearLocalLinehaul();else if(Number(s.linehaul_version||0)>seen.linehaul)await applyLinehaul();
         }
-        if(Number(s.volume_snapshot_version||0)>seen.volumeSnapshot){
-          if(s.volume_snapshot_exists)await applyVolumeSnapshot();
-          else{
-            window.__badocVolumeSnapshot=null;
-            try{localStorage.removeItem("badoc_daily_volume_snapshot_v1")}catch{}
-          }
-          seen.volumeSnapshot=Number(s.volume_snapshot_version||0);
+        if(Number(s.upload_version||0)>seen.volumeSnapshot){
+          await applyVolumeSnapshot();
+          seen.volumeSnapshot=Number(s.upload_version||0);
         }
         if(!pendingCloudWrites.has("settings")&&Number(s.settings_version||0)>seen.settings)await applySettings();
         if(!pendingCloudWrites.has("settings"))seen.settings=Number(s.settings_version||0);
@@ -9092,7 +9081,7 @@ window.DASHBOARD_V2_READY = true;
           await applyNotes();
           await applyRiderSelections();
         }
-        seen={upload:Number(s.upload_version||0),linehaul:Number(s.linehaul_version||0),volumeSnapshot:Number(s.volume_snapshot_version||0),settings:Number(s.settings_version||0),layout:Number(s.layout_version||0),notes:Number(s.notes_version||0)};
+        seen={upload:Number(s.upload_version||0),linehaul:Number(s.linehaul_version||0),volumeSnapshot:Number(s.upload_version||0),settings:Number(s.settings_version||0),layout:Number(s.layout_version||0),notes:Number(s.notes_version||0)};
       }
       window.__badocVolumeSnapshotCloudReady=true;
       status("All devices synced");
@@ -9159,26 +9148,28 @@ window.DASHBOARD_V2_READY = true;
     const deadline=Date.now()+20000;
     while(!started && Date.now()<deadline)await new Promise(r=>setTimeout(r,100));
     if(!started)throw Error("Shared cloud sync is not ready.");
+    if(uploadLocalDirty||pendingCloudWrites.has("upload"))throw Error("Parcel Count is still syncing; the daily snapshot will retry.");
     if(!snapshot||snapshot.schemaVersion!==1||!snapshot.cycleKey||!Array.isArray(snapshot.rows)||!snapshot.rows.length)
       throw Error("Daily volume snapshot is empty or invalid.");
     const currentState=await state();
-    if(currentState?.volume_snapshot_exists){
-      const existingBlob=await get(P.volumeSnapshot);
-      if(existingBlob){
-        try{
-          const existing=JSON.parse(await existingBlob.text());
-          if(existing?.cycleKey===snapshot.cycleKey){
-            window.__badocVolumeSnapshot=existing;
-            try{localStorage.setItem("badoc_daily_volume_snapshot_v1",JSON.stringify(existing))}catch{}
-            return {created:false,snapshot:existing};
-          }
-        }catch(e){console.warn("Existing daily volume snapshot could not be read:",e)}
-      }
+    const existingBlob=await get(P.volumeSnapshot);
+    if(existingBlob){
+      try{
+        const existing=JSON.parse(await existingBlob.text());
+        if(existing?.cycleKey===snapshot.cycleKey){
+          window.__badocVolumeSnapshot=existing;
+          try{localStorage.setItem("badoc_daily_volume_snapshot_v1",JSON.stringify(existing))}catch{}
+          return {created:false,snapshot:existing};
+        }
+      }catch(e){console.warn("Existing daily volume snapshot could not be read:",e)}
     }
-    const version=Math.max(Date.now(),Number(currentState?.volume_snapshot_version||0)+1);
+    // Reuse the existing upload_version field as a shared change signal. This
+    // avoids requiring a database schema migration for this app feature.
+    const version=Math.max(Date.now(),Number(currentState?.upload_version||0)+1);
     const payload={...snapshot,savedAt:Date.now(),savedBy:deviceId};
     await put(P.volumeSnapshot,new Blob([JSON.stringify(payload)],{type:"application/json"}),"application/json");
-    await setState({volume_snapshot_exists:true,volume_snapshot_version:version});
+    await setState({upload_version:version});
+    seen.upload=version;
     seen.volumeSnapshot=version;
     window.__badocVolumeSnapshot=payload;
     try{localStorage.setItem("badoc_daily_volume_snapshot_v1",JSON.stringify(payload))}catch(e){console.warn("Local volume snapshot cache:",e)}
@@ -9872,10 +9863,10 @@ window.updateOperationProgress=function(){
       const live=key?latestByTn.get(key):null;
       const liveStatus=live?statusTo(live):"";
       return {
-        "SPX TN":String(item?.tn||""),
-        "Town Name":String(item?.town||""),
-        "Parcel Status To":String(liveStatus||item?.initialStatus||""),
         ...(live||{}),
+        "SPX TN":String(item?.tn||""),
+        "Town Name":String(item?.town||live?.["Town Name"]||""),
+        "Parcel Status To":String(liveStatus||item?.initialStatus||""),
         _area:String(item?.area||"")
       };
     });
@@ -10003,7 +9994,17 @@ window.updateOperationProgress=function(){
   // but calculate the four operational cards from the SAME qualifying parcel
   // population used by Today's Volume. This prevents changing Today's Volume
   // from wiping Delivering/Delivered/Received/On-Hold back to zero.
-  qualifyingDayRows.forEach(r=>{
+  const snapshotTnSet=activeVolumeSnapshot
+    ?new Set(activeVolumeSnapshot.rows.map(item=>tnKey(item?.tn)).filter(Boolean))
+    :null;
+  const qualifyingStatusRows=activeVolumeSnapshot
+    ?qualifyingDayRows.filter(r=>{
+      const st=norm(statusTo(r));
+      if(st==="LMHUB ASSIGNING"||st==="LMHUB ASSIGNED")return snapshotTnSet.has(tnKey(spxTN(r)));
+      return true;
+    })
+    :qualifyingDayRows;
+  qualifyingStatusRows.forEach(r=>{
     const s=status(r);
     if(s==="SOC LHTRANSPORTING"||s==="SOC PACKED"||s==="SOC PACKING"||(s==="SOC LHTRANSPORTED"&&(station(r)==="CAGAYAN DC"||station(r)==="SOC 6"))) counts.TRANSPORTING++;
     else if(s==="SOC LHTRANSPORTED" && station(r)==="BADOC HUB") counts.TRANSPORTED++;
