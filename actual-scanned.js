@@ -54,10 +54,12 @@ function assignmentMap(roster){
   ["badoc","pinili"].forEach(area=>{
     const groups=typeof window.getTownLayout==="function"?window.getTownLayout(area):[];
     const notes=typeof window.getTownNotes==="function"?window.getTownNotes(area):[];
-    groups.forEach((group,index)=>{
-      const assigned=String(notes[index]||"").trim();
+    const columns=[[],[]];(groups||[]).forEach((group,index)=>columns[index%2].push(group));
+    let noteIndex=0;
+    columns.forEach(column=>column.forEach(group=>{
+      const assigned=String(notes[noteIndex++]||"").trim();
       (group||[]).forEach(town=>{const k=norm(town);if(k)map.set(k,assigned)});
-    });
+    }));
   });
   return map;
 }
