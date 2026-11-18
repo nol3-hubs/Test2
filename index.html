@@ -9378,7 +9378,7 @@ window.DASHBOARD_V2_READY = true;
           seen.volumeSnapshot=Number(s.upload_version||0);
         }
         const cloudOnholdVersion=Number(s.onhold_version||0);
-        if(cloudOnholdVersion>seen.onholdExports){
+        if(cloudOnholdVersion>0&&cloudOnholdVersion>seen.onholdExports){
           await applyOnholdExports(s);
           seen.onholdExports=cloudOnholdVersion;
         }else if(!s.onhold_exists&&cloudOnholdVersion===0&&seen.onholdExports<0){
