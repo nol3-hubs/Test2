@@ -76,7 +76,7 @@ function build(){
     const sourceName=value(row,["Driver Name","Rider Name","Delivery Driver Name","Delivery Rider Name","Last Mile Driver Name","LM Driver Name","Scan Driver Name","Actual Driver Name","Courier Name","Driver","Rider"]);
     const rider=(driverId&&roster.byId.get(key(driverId)))||(sourceName&&roster.byName.get(key(sourceName)))||null;
     const actualId=driverId||String(rider?.["Driver ID"]||"").trim();
-    const actualName=sourceName||String(rider?.["Driver Name"]||"").trim();
+    const actualName=(driverId&&rider?String(rider["Driver Name"]||"").trim():"")||sourceName||String(rider?.["Driver Name"]||"").trim();
     const hasScanner=!!(actualId||actualName);
     const riderKey=hasScanner?(actualId?"ID:"+key(actualId):"NAME:"+key(actualName)):"";
     const vehicleType=vehicle(rider?.["Vehicle Type"]||value(row,["Vehicle Type","Rider Vehicle Type","Driver Vehicle Type"]));
