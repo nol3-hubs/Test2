@@ -4198,6 +4198,7 @@ async function badocPersistOnholdExportRows(rows){
   });
   // Remove any old, smaller localStorage snapshot only after IndexedDB confirms
   // the durable write.
+  window.__badocOnholdExportRows=record.rows;
   try{localStorage.removeItem(BADOC_ONHOLD_EXPORT_KEY)}catch(e){}
   return record.rowCount;
 }
