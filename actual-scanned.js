@@ -43,7 +43,7 @@ function activityDate(row,status){
 }
 function rosterIndexes(){
   const byId=new Map(),byName=new Map();
-  (Array.isArray(window.ridersData)?window.ridersData:[]).forEach(r=>{
+  (typeof ridersData!=="undefined"&&Array.isArray(ridersData)?ridersData:[]).forEach(r=>{
     const id=String(r["Driver ID"]||"").trim(),name=String(r["Driver Name"]||"").trim();
     if(id)byId.set(key(id),r);if(name)byName.set(key(name),r);
   });
@@ -62,7 +62,7 @@ function assignmentMap(roster){
   return map;
 }
 function build(){
-  const source=typeof window.getParcelCountRows==="function"?window.getParcelCountRows():(Array.isArray(window.current?.rows)?window.current.rows:[]);
+  const source=typeof getParcelCountRows==="function"?getParcelCountRows():(typeof current!=="undefined"&&Array.isArray(current?.rows)?current.rows:[]);
   const roster=rosterIndexes(),assignments=assignmentMap(roster);
   const holdKeys=window.__badocOnholdTnKeys instanceof Set?window.__badocOnholdTnKeys:new Set();
   const seen=new Set(),records=[];
