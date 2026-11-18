@@ -117,7 +117,7 @@ function render(){
   const towns=[...new Set(all.map(r=>r.town).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   const statuses=[...new Set(all.map(r=>r.status).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   const riderSelect=byId("actualScanRider");
-  if(riderSelect){riderSelect.innerHTML='<option value="">All riders</option>'+riderOptions.map(x=>'<option value="'+esc(x[0])+'"'+(x[0]===selected.rider?" selected":"")+">'+esc(x[1])+'</option>').join("");if(riderOptions.some(x=>x[0]===selected.rider))riderSelect.value=selected.rider;}
+  if(riderSelect){riderSelect.innerHTML='<option value="">All riders</option>'+riderOptions.map(x=>'<option value="'+esc(x[0])+'"'+(x[0]===selected.rider?' selected':'')+'>'+esc(x[1])+'</option>').join("");if(riderOptions.some(x=>x[0]===selected.rider))riderSelect.value=selected.rider;}
   [["actualScanDate",dates,selected.date,"All dates"],["actualScanTown",towns,selected.town,"All towns"],["actualScanStatus",statuses,selected.status,"All statuses"]].forEach(x=>{
     const el=byId(x[0]);if(!el)return;el.innerHTML=optionList(x[1],x[2],x[3]);if(x[1].includes(x[2]))el.value=x[2];
   });
