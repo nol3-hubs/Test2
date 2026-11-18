@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v98">
+<meta name="badoc-app-version" content="v99">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -1723,6 +1723,66 @@ html[data-theme="light"] .side > .theme-switch-row{
 #volumeForecastBoard .forecast-board-hub-performance .hub-performance-group{margin:0}
 #volumeForecastBoard .forecast-board-hub-performance .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:650px){#volumeForecastBoard .forecast-board-hub-performance .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+
+<style id="dashboard-two-column-layout-fix-v1">
+/* Dashboard: use the two remaining summary cards and status groups across the full row. */
+#homeDashboard .dashboard-overview .dashboard-summary-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+}
+#homeDashboard .dashboard-overview .dashboard-card-groups{
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  align-items:stretch;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+}
+#homeDashboard .dashboard-overview .delivery-status-group .dashboard-status-grid{
+  grid-template-columns:repeat(4,minmax(0,1fr))!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-card{
+  min-width:0;
+}
+#homeDashboard .dashboard-overview .dashboard-status-card>strong{
+  font-size:clamp(18px,1.45vw,25px);
+  white-space:nowrap;
+  letter-spacing:-.35px;
+  overflow:visible;
+}
+@media(max-width:1250px){
+  #homeDashboard .dashboard-overview .dashboard-card-groups{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+    grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-overview .delivery-status-group .dashboard-status-grid{
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-overview .dashboard-status-card>strong{
+    font-size:clamp(18px,2.2vw,25px);
+  }
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-overview .dashboard-summary-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-overview .delivery-status-group .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
+@media(max-width:420px){
+  #homeDashboard .dashboard-overview .dashboard-summary-grid{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid,
+  #homeDashboard .dashboard-overview .delivery-status-group .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
 </style>
 </head>
 <body data-app-version="21">
