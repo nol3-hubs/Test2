@@ -3437,7 +3437,19 @@ function renderTownGrid(id,list,rows,extraCounts={}){
       riderInput.className="town-rider-input";
       riderInput.type="search";
       riderInput.placeholder="Select active rider...";
-      riderInput.value=getTownNotes(key)[noteIndex]||"";
+      const savedRiderName=String(getTownNotes(key)[noteIndex]||"").trim();
+      const riderNameKeyForLabel=v=>riderNorm(v).replace(/[\s_-]+/g,"");
+      const savedRiderRecord=(savedRiderName&&Array.isArray(ridersData)?ridersData:[]).find(r=>riderNameKeyForLabel(r["Driver Name"])===riderNameKeyForLabel(savedRiderName));
+      const riderVehicleLabel=value=>{
+        const vehicle=riderNameKeyForLabel(value||"");
+        if(vehicle==="2WH"||vehicle==="2W")return "2WH";
+        if(vehicle==="3WH"||vehicle==="3WC"||vehicle==="3W")return "3WH";
+        if(vehicle==="FLEXI"||vehicle==="FLEX")return "Flexi";
+        return String(value||"").trim();
+      };
+      const riderDisplayName=(name,vehicle)=>String(name||"").trim()+(riderVehicleLabel(vehicle)?" ("+riderVehicleLabel(vehicle)+")":"");
+      riderInput.value=savedRiderRecord?riderDisplayName(savedRiderName,savedRiderRecord["Vehicle Type"]):savedRiderName;
+      riderInput.dataset.selectedRiderName=savedRiderName;
       riderInput.setAttribute("aria-label","Select active rider");
       riderInput.autocomplete="off";
       const riderArrow=document.createElement("span");
@@ -3531,18 +3543,20 @@ function renderTownGrid(id,list,rows,extraCounts={}){
         const q=search?riderNorm(riderInput.value):"";
         const allTownNotes=loadTownNotes();
         const selectedNow=new Set(Object.values(allTownNotes).flatMap(v=>Array.isArray(v)?v:[]).map(v=>String(v||"").trim().toUpperCase()).filter(Boolean));
-        const currentName=String(riderInput.value||"").trim().toUpperCase();
+        const currentName=String(riderInput.dataset.selectedRiderName||riderInput.value||"").trim().toUpperCase();
         const matches=activeRiders.filter(r=>{
           const rn=r.name.toUpperCase();
           if(selectedNow.has(rn) && rn!==currentName)return false;
           return !q||riderNorm(r.name).includes(q)||riderNorm(r.id).includes(q)||riderNorm(r.vehicle).includes(q);
         });
-        riderDropdown.innerHTML=matches.length?matches.map(r=>`<button type="button" class="town-rider-option" data-rider-name="${esc(r.name)}">${esc(r.name)}${r.vehicle||r.id?`<small>${esc([r.vehicle,r.id].filter(Boolean).join(" • "))}</small>`:""}</button>`).join(""):`<div class="town-rider-empty">No active rider found.</div>`;
+        riderDropdown.innerHTML=matches.length?matches.map(r=>`<button type="button" class="town-rider-option" data-rider-name="${esc(r.name)}">${esc(riderDisplayName(r.name,r.vehicle))}${r.id?`<small>${esc(r.id)}</small>`:""}</button>`).join(""):`<div class="town-rider-empty">No active rider found.</div>`;
         riderDropdown.querySelectorAll(".town-rider-option").forEach(btn=>{
           btn.addEventListener("click",e=>{
             e.preventDefault();e.stopPropagation();
             const name=btn.dataset.riderName||"";
-            riderInput.value=name;
+            const chosenRider=activeRiders.find(r=>r.name===name);
+            riderInput.value=chosenRider?riderDisplayName(name,chosenRider.vehicle):name;
+            riderInput.dataset.selectedRiderName=name;
             closeRiderPicker();
             // Save the selection without forcing the whole town grid to re-render.
             // The dropdown stays in place while the existing cloud sync runs.
@@ -3556,6 +3570,7 @@ function renderTownGrid(id,list,rows,extraCounts={}){
           });
         });
       };
+      riderInput.addEventListener("input",()=>{riderInput.dataset.selectedRiderName="";});
       riderInput.addEventListener("click",e=>{e.stopPropagation();window.__badocPendingRiderRender=false;openRiderPicker();});
       riderInput.addEventListener("pointerdown",e=>e.stopPropagation());
       riderInput.addEventListener("blur",()=>setTimeout(()=>{if(!note.contains(document.activeElement) && !riderDropdown.contains(document.activeElement))closeRiderPicker();},120));
