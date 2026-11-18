@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v96">
+<meta name="badoc-app-version" content="v97">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -1702,6 +1702,20 @@ html[data-theme="light"] .side > .theme-switch-row{
 #actualScannedByRiders .actual-scan-pill.mismatch{color:#b42318;background:rgba(180,35,24,.09)}
 @media(max-width:1050px){#actualScannedByRiders .actual-scan-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}#actualScannedByRiders .actual-scan-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:650px){#actualScannedByRiders .actual-scan-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}#actualScannedByRiders .actual-scan-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+
+<style id="actual-rider-town-dropdown-style">
+#actualScannedByRiders .actual-scan-town-dropdown{min-width:104px}
+#actualScannedByRiders .actual-scan-town-dropdown>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;list-style:none;width:max-content;max-width:150px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--text);font-size:10px;font-weight:800;white-space:nowrap}
+#actualScannedByRiders .actual-scan-town-dropdown>summary::-webkit-details-marker{display:none}
+#actualScannedByRiders .actual-scan-town-dropdown[open]>summary{border-color:var(--accent,#1683ff);color:var(--accent,#1683ff)}
+#actualScannedByRiders .actual-scan-town-dropdown-list{display:grid;gap:0;min-width:220px;max-width:300px;max-height:260px;overflow:auto;margin-top:6px;padding:4px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+#actualScannedByRiders .actual-scan-town-dropdown-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;padding:8px 2px;border-bottom:1px solid var(--line)}
+#actualScannedByRiders .actual-scan-town-dropdown-item:last-child{border-bottom:0}
+#actualScannedByRiders .actual-scan-town-dropdown-name{min-width:0;overflow-wrap:anywhere;font-size:10px;font-weight:800;color:var(--text)}
+#actualScannedByRiders .actual-scan-town-dropdown-item>strong{font-size:10px;font-weight:900;color:var(--c-38bdf8-text,var(--text));white-space:nowrap}
+#actualScannedByRiders .actual-scan-town-dropdown-item>small{grid-column:1/-1;color:var(--muted);font-size:8px;line-height:1.35}
+#actualScannedByRiders .actual-scan-town-dropdown-empty{padding:10px;color:var(--muted);font-size:10px}
 </style>
 </head>
 <body data-app-version="21">
@@ -15111,4 +15125,4 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   else bind();
 })();
 </script>
-<script src="actual-scanned.js"></script>
+<script src="actual-scanned.js?v=town-breakdown-v1"></script>
