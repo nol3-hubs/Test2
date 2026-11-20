@@ -4132,16 +4132,66 @@ function fillStatusFilter(){
 
 const BADOC_ONHOLD_EXPORT_KEY="badoc_onhold_spx_exports_v1";
 function badocOnholdKey(value){return String(value??"").trim().toUpperCase().replace(/[\\s\\-_.]/g,"")}
+function badocOnholdPickupBeforeCutoff(row){
+  if(!row||typeof row!=="object")return false;
+  const keys=Object.keys(row);
+  const compact=value=>String(value??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  const wanted=new Set([
+    "pickuptime","firstpickuptime","firstpickupdatetime",
+    "pickupdatetime","pickuptimestamp","atpickuptime","scannedtime"
+  ]);
+  let pickupKey=keys.find(key=>wanted.has(compact(key))&&String(row[key]??"").trim()!=="");
+  if(!pickupKey){
+    pickupKey=keys.find(key=>compact(key).includes("pickuptime")&&String(row[key]??"").trim()!=="");
+  }
+  if(!pickupKey)return false;
+  const raw=String(row[pickupKey]??"").trim();
+  // A date without a clock time is not evidence of a pickup before cutoff.
+  if(!/\d{1,2}:\d{2}/.test(raw))return false;
+
+  const parseManilaStamp=value=>{
+    let m=value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?\s*(AM|PM)?$/i);
+    if(m){
+      let hour=Number(m[4]),mer=String(m[7]||"").toUpperCase();
+      if(mer==="AM"&&hour===12)hour=0;else if(mer==="PM"&&hour<12)hour+=12;
+      return {dateKey:[m[1],String(Number(m[2])).padStart(2,"0"),String(Number(m[3])).padStart(2,"0")].join("-"),minutes:hour*60+Number(m[5])+Number(m[6]||0)/60};
+    }
+    m=value.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+    if(m){
+      let year=Number(m[3]);if(year<100)year+=2000;
+      let hour=Number(m[4]),mer=String(m[7]||"").toUpperCase();
+      if(mer==="AM"&&hour===12)hour=0;else if(mer==="PM"&&hour<12)hour+=12;
+      return {dateKey:[String(year),String(Number(m[1])).padStart(2,"0"),String(Number(m[2])).padStart(2,"0")].join("-"),minutes:hour*60+Number(m[5])+Number(m[6]||0)/60};
+    }
+    // Zoned ISO and native timestamps are converted to Philippine time.
+    const parsed=new Date(value);
+    if(Number.isNaN(parsed.getTime()))return null;
+    const parts=new Intl.DateTimeFormat("en-CA",{
+      timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit",
+      hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"
+    }).formatToParts(parsed);
+    const p={};parts.forEach(part=>{if(part.type!=="literal")p[part.type]=part.value;});
+    if(!p.year||!p.hour)return null;
+    return {dateKey:p.year+"-"+p.month+"-"+p.day,minutes:Number(p.hour)*60+Number(p.minute||0)+Number(p.second||0)/60};
+  };
+
+  const pickup=parseManilaStamp(raw);
+  if(!pickup||pickup.minutes>=900)return false;
+  const nowParts=new Intl.DateTimeFormat("en-CA",{
+    timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit"
+  }).formatToParts(new Date());
+  const today={};nowParts.forEach(part=>{if(part.type!=="literal")today[part.type]=part.value;});
+  const todayKey=today.year+"-"+today.month+"-"+today.day;
+  return pickup.dateKey===todayKey;
+}
 function badocOnholdStatus(row){
   const raw=String(badocRowMeta(row)?.status||row?.["Parcel Status To"]||row?.["Status To"]||row?.["Status"]||"")
     .trim().toUpperCase().replace(/[_-]+/g," ").replace(/\s+/g," ");
-  if(row?._onholdExportSource){
-    // Assigned Today exports: only these three statuses stay in their own buckets.
-    // Every other non-empty SPX status, including Return_LMHub_Received, is On-Hold.
-    return !!raw && !["DELIVERING","DELIVERED","LMHUB RECEIVED"].includes(raw);
-  }
-  // Uploaded Parcel Count rows retain their existing explicit On-Hold rules.
-  return ["ONHOLD","ON HOLD","LMHUB ONHOLD","LMHUB ON HOLD"].includes(raw);
+  if(!raw||/(^|\s)(DELIVERING|DELIVERED)$/.test(raw))return false;
+  // Shared rule for Dashboard and Planning Board:
+  // every populated status except Delivering / Delivered is On-Hold
+  // only when Pick Up Time is today and earlier than 3:00 PM Manila time.
+  return badocOnholdPickupBeforeCutoff(row);
 }
 function badocLoadOnholdExportRows(){
   try{const saved=JSON.parse(localStorage.getItem(BADOC_ONHOLD_EXPORT_KEY)||"[]");return Array.isArray(saved)?saved.filter(r=>r&&typeof r==="object"):[]}catch(e){return []}
@@ -4337,11 +4387,11 @@ function getParcelCountRows(){
     const normalized=statusNorm(rawStatus);
     if(!normalized)return;
 
-    // Keep Delivering, Delivered and LMHub_Received as-is.
-    // Every other populated SPX status is classified as On-Hold.
-    const planningStatus=normalized==="DELIVERING"?"DELIVERING":
-      normalized==="DELIVERED"?"DELIVERED":
-      normalized==="LMHUB RECEIVED"?"LMHUB RECEIVED":"ONHOLD";
+    // Preserve Delivering / Delivered. Other statuses enter the On-Hold
+    // bucket only when their Pick Up Time is today before 3:00 PM Manila time.
+    const planningStatus=/(^|\\s)DELIVERING$/.test(normalized)?"DELIVERING":
+      /(^|\\s)DELIVERED$/.test(normalized)?"DELIVERED":
+      badocOnholdStatus(exportRow)?"ONHOLD":normalized;
 
     const existingIndex=rowIndexByTn.get(key);
     const existing=existingIndex===undefined?null:rows[existingIndex];
@@ -8085,7 +8135,7 @@ window.addEventListener("message",async event=>{
         try{window.updateOperationProgress?.()}catch(e){}
         try{if(typeof renderRecords==="function")renderRecords()}catch(e){}
         const excludedRows=Number(data.excludedForward||0)+Number(data.excludedReturn||0);
-        const msg=`Saved ${savedCount.toLocaleString()} unique SPX tracking records to shared cloud and local IndexedDB. Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; no Created Date restriction; Delivering, Delivered and LMHub_Received preserved; all other non-empty export statuses counted as On-Hold; duplicate SPX TNs replaced by the newest export.`;
+        const msg=`Saved ${savedCount.toLocaleString()} unique SPX tracking records to shared cloud and local IndexedDB. Processed ${forward.toLocaleString()} Forward rows and ${returned.toLocaleString()} Return rows for ${data.todayDate||"today"}. Filters: Current Station Badoc Hub; Assigned Time today; no Created Date restriction; Delivering and Delivered excluded from On-Hold; every other non-empty status, including LMHub_Received, counts as On-Hold only when Pick Up Time is today before 3:00 PM Manila time; duplicate SPX TNs replaced by the newest export.`;
         if(status){status.textContent=msg;status.classList.remove("is-working","is-error");status.classList.add("is-success");}
         window.__badocOperationModalFinish?.("Assigned Today Complete",msg,[["Forward rows",forward.toLocaleString()],["Return rows",returned.toLocaleString()],["Saved unique records",savedCount.toLocaleString()],["Excluded rows",excludedRows.toLocaleString()]],"success");
       }catch(error){
