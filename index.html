@@ -10836,6 +10836,7 @@ window.updateOperationProgress=function(){
   };
   const dashboardDetailRow=row=>({
     orderId:String(row?.["Order ID"]??row?.["Order Id"]??"").trim(),
+    tn:String(spxTN(row)||row?.["SLS Tracking Number"]||row?.["SPX TN"]||"").trim(),
     status:String(statusTo(row)||row?.["Status"]||row?.["Parcel Status"]||row?.["Delivery Status"]||row?.["Current Status"]||"").trim(),
     town:String(row?.["Town Name"]??row?.["Town"]??row?.town??"").trim(),
     scannedTime:dashboardScannedTime(row),
@@ -10857,9 +10858,10 @@ window.updateOperationProgress=function(){
       const item=dashboardDetailRow(row);
       const key=tnKey(item.tn);
       if(!key)return;
-      const previous=detailLookup.get(key)||{orderId:"",status:"",town:"",scannedTime:"",rider:""};
+      const previous=detailLookup.get(key)||{orderId:"",tn:"",status:"",town:"",scannedTime:"",rider:""};
       detailLookup.set(key,{
         orderId:item.orderId||previous.orderId,
+        tn:item.tn||previous.tn,
         status:item.status||previous.status,
         town:item.town||previous.town,
         scannedTime:item.scannedTime||previous.scannedTime,
