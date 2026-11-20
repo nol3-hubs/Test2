@@ -196,7 +196,7 @@ try {
   await page.waitForFunction(date => {
     try {
       const status = JSON.parse(localStorage.getItem('badoc_reset_status') || 'null');
-      return status && status.date === date && status.state === 'done';
+      return status && status.date === date && (status.state === 'done' || status.state === 'already-done');
     } catch (_) { return false; }
   }, resetDate, { timeout: 8 * 60 * 1000, polling: POLL_MS });
   console.log('Daily History, CFR summary, and guarded 12:00 AM reset completed for ' + resetDate + '.');
