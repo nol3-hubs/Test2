@@ -154,7 +154,6 @@
 
     const supported = new Set([
       "BADOC_START_LINEHAUL_SYNC",
-      "BADOC_START_DELIVERING_RECONCILE",
       "BADOC_START_PARCEL_DELIVERY_SYNC",
       "BADOC_START_RIDER_SYNC",
       "BADOC_START_PARCEL_INBOUND_SYNC",
@@ -175,8 +174,7 @@
         });
         return;
       }
-      const errorKind =         data.type === "BADOC_START_DELIVERING_RECONCILE" ? "delivering-reconcile" :
-        data.type === "BADOC_START_PARCEL_SECONDARY_SYNC" ? "parcel-secondary" :
+      const errorKind =         data.type === "BADOC_START_PARCEL_SECONDARY_SYNC" ? "parcel-secondary" :
         data.type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" ? "first-mile-orders" :
         data.type === "BADOC_START_FIRST_MILE_TASKS_SYNC" ? "first-mile-tasks" :
         data.type === "BADOC_START_PARCEL_DELIVERY_SYNC" ? "parcel-delivery" :
@@ -192,7 +190,6 @@
       const payload = { type: data.type };
       if (data.type === "BADOC_LOOKUP_PICKUP_INFO") { payload.reqId=String(data.reqId||""); payload.orderId=String(data.orderId||"").trim(); }
       if (data.type === "BADOC_START_POD_CHECKER_ASSIGNED_TODAY") payload.requestId=String(data.requestId||"");
-      if (data.type === "BADOC_START_DELIVERING_RECONCILE") payload.trackingNumbers = Array.isArray(data.trackingNumbers) ? data.trackingNumbers.map(v => String(v || "").trim()).filter(Boolean) : [];
       if (data.type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" || data.type === "BADOC_START_FIRST_MILE_TASKS_SYNC") {
         if (data.selectedDate !== undefined) payload.selectedDate = String(data.selectedDate || "");
       }
