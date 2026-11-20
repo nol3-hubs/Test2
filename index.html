@@ -16412,33 +16412,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   }
 }
 </style>
-<style id="dashboard-summary-number-equalization-v2">
-/* Equal headline number size: override the old dispatched-only 30px rule. */
-#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.volume strong,
-#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched strong,
-#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming strong{
-  display:block!important;
-  font-size:clamp(28px,2.1vw,34px)!important;
-  font-weight:900!important;
-  line-height:1!important;
-  letter-spacing:-.8px!important;
-  font-variant-numeric:tabular-nums!important;
-}
-@media(max-width:700px){
-  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.volume strong,
-  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched strong,
-  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming strong{
-    font-size:24px!important;
-  }
-}
-@media(max-width:380px){
-  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.volume strong,
-  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched strong,
-  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming strong{
-    font-size:22px!important;
-  }
-}
-</style>
+
 </body>
 
 
@@ -17209,6 +17183,33 @@ html[data-theme="dark"] #homeDashboard .dashboard-status-card.rts span{color:#fe
 @media(max-width:700px){
   #homeDashboard .dashboard-overview .dashboard-summary-grid{
     grid-template-columns:1fr!important;
+  }
+}
+
+/* Final override: all three headline cards use the same number typography.
+   This clears the legacy Dispatched-only 30px rule. */
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.volume strong,
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched strong,
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming strong{
+  display:block!important;
+  font-size:30px!important;
+  font-weight:900!important;
+  line-height:1!important;
+  letter-spacing:-.8px!important;
+  font-variant-numeric:tabular-nums!important;
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.volume strong,
+  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched strong,
+  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming strong{
+    font-size:24px!important;
+  }
+}
+@media(max-width:380px){
+  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.volume strong,
+  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched strong,
+  #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming strong{
+    font-size:22px!important;
   }
 }
 </style>
