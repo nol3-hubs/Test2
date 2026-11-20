@@ -11806,7 +11806,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     const note=byId("dashboardParcelDetailNote");
     const body=byId("dashboardParcelDetailBody");
     if(title)title.textContent=titles[key]||"Parcel Details";
-    const total=Number.isFinite(Number(data.count))?Number(data.count):null;
+    const total=data.count!==null&&data.count!==undefined&&Number.isFinite(Number(data.count))?Number(data.count):null;
     if(summary){
       summary.textContent=total===null
         ?rows.length.toLocaleString()+" OID records available"
