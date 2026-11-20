@@ -4132,6 +4132,26 @@ function fillStatusFilter(){
 
 const BADOC_ONHOLD_EXPORT_KEY="badoc_onhold_spx_exports_v1";
 function badocOnholdKey(value){return String(value??"").trim().toUpperCase().replace(/[\\s\\-_.]/g,"")}
+const BADOC_ONHOLD_MANILA_DATETIME_FORMATTER=new Intl.DateTimeFormat("en-CA",{
+  timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit",
+  hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"
+});
+const BADOC_ONHOLD_MANILA_DATE_FORMATTER=new Intl.DateTimeFormat("en-CA",{
+  timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit"
+});
+let badocOnholdTodayKeyCache="",badocOnholdTodayKeyCacheAt=0;
+function badocOnholdTodayKey(){
+  const now=Date.now();
+  if(!badocOnholdTodayKeyCache||now-badocOnholdTodayKeyCacheAt>=30000){
+    const p={};
+    BADOC_ONHOLD_MANILA_DATE_FORMATTER.formatToParts(new Date(now)).forEach(part=>{
+      if(part.type!=="literal")p[part.type]=part.value;
+    });
+    badocOnholdTodayKeyCache=p.year+"-"+p.month+"-"+p.day;
+    badocOnholdTodayKeyCacheAt=now;
+  }
+  return badocOnholdTodayKeyCache;
+}
 function badocOnholdPickupBeforeCutoff(row){
   if(!row||typeof row!=="object")return false;
   const keys=Object.keys(row);
@@ -4166,23 +4186,16 @@ function badocOnholdPickupBeforeCutoff(row){
     // Zoned ISO and native timestamps are converted to Philippine time.
     const parsed=new Date(value);
     if(Number.isNaN(parsed.getTime()))return null;
-    const parts=new Intl.DateTimeFormat("en-CA",{
-      timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit",
-      hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"
-    }).formatToParts(parsed);
-    const p={};parts.forEach(part=>{if(part.type!=="literal")p[part.type]=part.value;});
+    const p={};
+    BADOC_ONHOLD_MANILA_DATETIME_FORMATTER.formatToParts(parsed).forEach(part=>{
+      if(part.type!=="literal")p[part.type]=part.value;
+    });
     if(!p.year||!p.hour)return null;
     return {dateKey:p.year+"-"+p.month+"-"+p.day,minutes:Number(p.hour)*60+Number(p.minute||0)+Number(p.second||0)/60};
   };
 
   const pickup=parseManilaStamp(raw);
-  if(!pickup||pickup.minutes>=900)return false;
-  const nowParts=new Intl.DateTimeFormat("en-CA",{
-    timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit"
-  }).formatToParts(new Date());
-  const today={};nowParts.forEach(part=>{if(part.type!=="literal")today[part.type]=part.value;});
-  const todayKey=today.year+"-"+today.month+"-"+today.day;
-  return pickup.dateKey===todayKey;
+  return !!pickup&&pickup.dateKey===badocOnholdTodayKey()&&pickup.minutes<900;
 }
 function badocOnholdStatus(row){
   const raw=String(badocRowMeta(row)?.status||row?.["Parcel Status To"]||row?.["Status To"]||row?.["Status"]||"")
@@ -4389,8 +4402,8 @@ function getParcelCountRows(){
 
     // Preserve Delivering / Delivered. Other statuses enter the On-Hold
     // bucket only when their Pick Up Time is today before 3:00 PM Manila time.
-    const planningStatus=/(^|\\s)DELIVERING$/.test(normalized)?"DELIVERING":
-      /(^|\\s)DELIVERED$/.test(normalized)?"DELIVERED":
+    const planningStatus=/(^|\s)DELIVERING$/.test(normalized)?"DELIVERING":
+      /(^|\s)DELIVERED$/.test(normalized)?"DELIVERED":
       badocOnholdStatus(exportRow)?"ONHOLD":normalized;
 
     const existingIndex=rowIndexByTn.get(key);
@@ -10658,9 +10671,10 @@ window.updateOperationProgress=function(){
   const cfr1SummaryNode=document.getElementById("opCfr1Summary");
   if(cfr1PercentNode)cfr1PercentNode.textContent=cfr1DisplayPercent.toFixed(1)+"%";
   if(cfr1SummaryNode)cfr1SummaryNode.textContent=cfr1DisplayScanned.toLocaleString()+" / "+cfr1DisplayTotal.toLocaleString()+" scanned";
-  // On-Hold = uploaded Parcel Count rows with an On-Hold status plus
-  // SPX Forward/Return On-Hold export rows. Exports override older uploaded
-  // rows for the same SPX TN, and duplicates are counted only once.
+  // On-Hold = any populated status except Delivering / Delivered, with
+  // a same-day Pick Up Time before 3:00 PM Manila time. This shared rule is
+  // applied to uploaded Parcel Count rows and SPX Forward / Return exports.
+  // Newer exports override older rows for the same SPX TN; duplicates count once.
   // Before 3 PM, exports may add qualifying TNs to the live population.
   // After the 3 PM snapshot, export status updates are restricted to TNs
   // already in that frozen population; new TNs cannot enter On-Hold,
