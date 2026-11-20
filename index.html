@@ -1967,7 +1967,7 @@ html[data-theme="light"] .side > .theme-switch-row{
       <div class="dashboard-summary-grid">
         <div class="dashboard-summary-card volume"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
 
-        <div class="dashboard-summary-card dispatched"><strong id="opDispatched">0</strong><span>DISPATCHED</span><small>Delivering + Delivered + On-Hold</small></div>
+        <div class="dashboard-summary-card dispatched"><strong id="opDispatched">0</strong><span>DISPATCHED</span></div>
 
         <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
       </div>
@@ -15958,6 +15958,80 @@ html[data-theme="dark"] #homeDashboard .dashboard-summary-grid > .dashboard-summ
   #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.dispatched,
   #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming{
     min-height:76px!important;
+  }
+}
+</style>
+\n
+<style id="dashboard-one-row-status-colors-v3">
+/* Override the later dashboard-two-column rule that was forcing two top cards per row. */
+#homeDashboard .dashboard-overview .dashboard-summary-grid{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  grid-auto-flow:row!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.volume,
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched,
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming{
+  grid-column:auto!important;
+  width:auto!important;
+  min-width:0!important;
+  min-height:88px!important;
+  height:100%!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched{
+  border-radius:11px!important;
+}
+/* Dispatched: blue. */
+html[data-theme="light"] #homeDashboard .dashboard-overview .dashboard-summary-card.dispatched{
+  background:linear-gradient(145deg,#eff6ff 0%,#f8fbff 100%)!important;
+  border:1px solid #bfdbfe!important;
+  border-top:3px solid #2563eb!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-summary-card.dispatched strong{color:#1d4ed8!important}
+html[data-theme="light"] #homeDashboard .dashboard-summary-card.dispatched span{color:#1e40af!important}
+html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-summary-card.dispatched{
+  background:linear-gradient(145deg,#10243a 0%,#132b43 100%)!important;
+  border:1px solid #315b80!important;
+  border-top:3px solid #60a5fa!important;
+}
+html[data-theme="dark"] #homeDashboard .dashboard-summary-card.dispatched strong{color:#f8fbff!important}
+html[data-theme="dark"] #homeDashboard .dashboard-summary-card.dispatched span{color:#dbeafe!important}
+/* Backlogs: amber. */
+html[data-theme="light"] #homeDashboard .dashboard-overview .dashboard-status-card.backlogs{
+  background:linear-gradient(145deg,#fffbeb 0%,#fffdf5 100%)!important;
+  border:1px solid #fde68a!important;
+  border-top:3px solid #d97706!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-status-card.backlogs strong{color:#b45309!important}
+html[data-theme="light"] #homeDashboard .dashboard-status-card.backlogs span{color:#92400e!important}
+html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-status-card.backlogs{
+  background:linear-gradient(145deg,#33220b 0%,#3b290f 100%)!important;
+  border:1px solid #80551a!important;
+  border-top:3px solid #f59e0b!important;
+}
+html[data-theme="dark"] #homeDashboard .dashboard-status-card.backlogs strong{color:#fcd34d!important}
+html[data-theme="dark"] #homeDashboard .dashboard-status-card.backlogs span{color:#fde68a!important}
+/* RTS: red. */
+html[data-theme="light"] #homeDashboard .dashboard-overview .dashboard-status-card.rts{
+  background:linear-gradient(145deg,#fff1f2 0%,#fff8f8 100%)!important;
+  border:1px solid #fecdd3!important;
+  border-top:3px solid #e11d48!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-status-card.rts strong{color:#be123c!important}
+html[data-theme="light"] #homeDashboard .dashboard-status-card.rts span{color:#9f1239!important}
+html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-status-card.rts{
+  background:linear-gradient(145deg,#351721 0%,#401a27 100%)!important;
+  border:1px solid #7f1d3e!important;
+  border-top:3px solid #fb7185!important;
+}
+html[data-theme="dark"] #homeDashboard .dashboard-status-card.rts strong{color:#fda4af!important}
+html[data-theme="dark"] #homeDashboard .dashboard-status-card.rts span{color:#fecdd3!important}
+/* Three cards fit on one row for desktop/tablet. Stack only on narrow phones. */
+@media(max-width:700px){
+  #homeDashboard .dashboard-overview .dashboard-summary-grid{
+    grid-template-columns:1fr!important;
   }
 }
 </style>
