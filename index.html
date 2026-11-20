@@ -1987,7 +1987,7 @@ html[data-theme="light"] .side > .theme-switch-row{
           <section class="dashboard-card-group delivery-status-group" aria-label="Delivery Status">
             <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Backlogs and exception tracking</small></div></div>
             <div class="dashboard-status-grid">
-              <div class="dashboard-status-card backlogs"><strong>—</strong><span>BACKLOGS</span><small></small></div>
+              <div class="dashboard-status-card backlogs"><strong id="opBacklogs">0</strong><span>BACKLOGS</span><small>No pickup time today</small></div>
               <div class="dashboard-status-card redelivery"><strong id="opRedelivery">—</strong><span>REDELIVER</span><small>EOD + late-received pickups</small></div>
               <div class="dashboard-status-card rts"><strong id="opRts">—</strong><span>RTS</span><small></small></div>
               <div class="dashboard-status-card exemptions"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span><small>Current exemption list</small></div>
@@ -9934,7 +9934,7 @@ window.updateOperationProgress=function(){
     const keys=Object.keys(row||{});
     const normalized=key=>String(key).toLowerCase().replace(/[^a-z0-9]/g,"");
     const wanted=kind==="pickup"
-      ?["pickuptime","firstpickuptime","atpickuptime","scannedtime"]
+      ?["pickuptime","firstpickuptime","firstpickupdatetime","pickupdatetime","pickuptimestamp","atpickuptime","scannedtime"]
       :["currentstationreceivedtime","stationreceivedtime","currentreceivedtime","receivedtime"];
     for(const target of wanted){
       const key=keys.find(name=>normalized(name)===target&&String(row[name]??"").trim()!=="");
@@ -10608,6 +10608,19 @@ window.updateOperationProgress=function(){
   // already in that frozen population; new TNs cannot enter On-Hold,
   // Dispatched, or Unscanned for the current operating cycle.
   const onholdRows=badocGetOnholdRows(todayRows,!!activeVolumeSnapshot);
+  // Backlogs = unique parcels in today's operating population without a
+  // Pick Up Time timestamp dated today in Manila. Blank and prior-day pickup
+  // timestamps both remain in Backlogs. After 3 PM, use the frozen population
+  // with its latest available row data, matching Today's Volume's cutoff.
+  const backlogTnKeys=new Set();
+  todayRows.forEach(row=>{
+    if(!row||isExceptionRow(row))return;
+    const key=tnKey(spxTN(row));
+    if(!key)return;
+    const pickupAt=manilaStamp(rowTimestamp(row,"pickup"));
+    if(pickupAt?.dateKey!==todayManilaKey)backlogTnKeys.add(key);
+  });
+  setText("opBacklogs",backlogTnKeys.size);
   // Add every TN that is currently in a dispatched bucket. This ledger is
   // cumulative for the operating day, so a later Received status cannot undo it.
   if(activeVolumeSnapshot){
