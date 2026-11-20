@@ -453,7 +453,7 @@ function philippineDateKey(value) {
   return part("year") + "-" + part("month") + "-" + part("day");
 }
 
-function filterAssignedTodayExportRows(extracted, todayDate, label, rangeCreatedStartDate) {
+function filterAssignedTodayExportRows(extracted, todayDate, label, rangeCreatedStartDate, includeCreatedDate = true) {
   const headers = Array.isArray(extracted?.headers) ? extracted.headers : [];
   const rows = Array.isArray(extracted?.rows) ? extracted.rows : [];
   const stationIndex = findAssignedExportColumn(headers, [
@@ -464,16 +464,16 @@ function filterAssignedTodayExportRows(extracted, todayDate, label, rangeCreated
     "assigned date", "assign date", "assignment date", "assignment datetime",
     "pick up time", "pickup time", "pick up datetime", "pickup datetime"
   ]);
-  const createdDateIndex = findAssignedExportColumn(headers, [
+  const createdDateIndex = includeCreatedDate ? findAssignedExportColumn(headers, [
     "created date", "create date", "order created date", "order create date",
     "created time", "create time", "order created time", "order create time",
     "ctime", "order time"
-  ]);
+  ]) : -1;
   const missing = [];
   if (stationIndex < 0) missing.push("Current Station");
   if (missing.length) throw new Error(label + " CSV is missing required filter column(s): " + missing.join(", ") + ".");
   const assignedTimeFilterSource = assignedTimeIndex >= 0 ? "CSV column" : "SPX export request";
-  const createdDateFilterSource = createdDateIndex >= 0 ? "CSV column" : "SPX export request";
+  const createdDateFilterSource = !includeCreatedDate ? "Not applied" : (createdDateIndex >= 0 ? "CSV column" : "SPX export request");
   const kept = [];
   const excluded = { otherStation: 0, otherAssignedDate: 0, otherCreatedDate: 0 };
   for (const row of rows) {
@@ -482,7 +482,7 @@ function filterAssignedTodayExportRows(extracted, todayDate, label, rangeCreated
     if (assignedTimeIndex >= 0 && philippineDateKey(row[assignedTimeIndex]) !== todayDate) {
       excluded.otherAssignedDate++; continue;
     }
-    if (createdDateIndex >= 0) {
+    if (includeCreatedDate && createdDateIndex >= 0) {
       const createdDate = philippineDateKey(row[createdDateIndex]);
       if (!createdDate || createdDate < rangeCreatedStartDate || createdDate > todayDate) {
         excluded.otherCreatedDate++; continue;
@@ -577,28 +577,35 @@ async function waitForAssignedTodayExportTask(taskId, startSec, job, label) {
   throw new Error(label+" task "+taskId+" was accepted by SPX but did not become downloadable within 4 minutes."+diagnostic+errors+" Open the SPX export task monitor to confirm its state.");
 }
 
-async function runAssignedTodayExportSource({ endpoint, label, range, job, isForward = false }) {
-  // Match the FMS Order Export dialog: Assigned Time is today's only date filter.
+async function runAssignedTodayExportSource({ endpoint, label, range, job, isForward = false, includeCreatedDate = true }) {
+  // Match the FMS Order Export dialog: Assigned Time is today's date filter.
   // SPX maps its visible Assigned Time control to pick_up_time; leave On Hold Time unrestricted.
-  // Request all statuses, then remove Delivering / Delivered after the CSV is downloaded.
+  // Created Date is optional: Planning Board Assigned Today omits it; POD/POOH Checker keeps it.
+  // Request all statuses so the Planning Board can classify the latest exported status.
   const body = {
     bulky_type: "1,0,2",
-    ctime: String(range.createdStartSec) + "," + String(range.assignedEndSec),
+    ...(includeCreatedDate ? {
+      ctime: String(range.createdStartSec) + "," + String(range.assignedEndSec)
+    } : {}),
     pick_up_time: String(range.assignedStartSec) + "," + String(range.assignedEndSec),
     format_condition:
       "Current Station= Badoc Hub; " +
       "Assigned Time= " + range.todayDate + " 00:00:00," + range.todayDate + " 23:59:59; " +
-      "Created Date= " + range.createdStartDate + " 00:00:00," + range.todayDate + " 23:59:59; " +
+      (includeCreatedDate ? "Created Date= " + range.createdStartDate + " 00:00:00," + range.todayDate + " 23:59:59; " : "") +
       "Bulky Type= Bulky,N/A,Non-Bulky; " +
       "Driver= All"
   };
 
   progress("Submitting SPX " + label + " export for " + range.todayDate +
-    " (Current Station: Badoc Hub; Assigned Time: today; Created Date: last 14 days; preserving exported statuses)…", {
+    " (Current Station: Badoc Hub; Assigned Time: today; " +
+    (includeCreatedDate ? "Created Date: last 14 days; " : "no Created Date restriction; ") +
+    "preserving exported statuses)…", {
     phase: "pod-assigned-today-export", kind: job.kind, source: label,
     dateStart: range.todayDate, dateEnd: range.todayDate,
     currentStation: "Badoc Hub", assignedDate: range.todayDate,
-    createdDateStart: range.createdStartDate, createdDateEnd: range.todayDate,
+    includeCreatedDate,
+    createdDateStart: includeCreatedDate ? range.createdStartDate : null,
+    createdDateEnd: includeCreatedDate ? range.todayDate : null,
     preservedExportStatuses: true
   });
 
@@ -635,7 +642,7 @@ async function runAssignedTodayExportSource({ endpoint, label, range, job, isFor
   const signedUrl = await getSignedDownloadUrl(taskId, completedInfo.source);
   const csv = await downloadCsv(signedUrl);
   const raw = extractAssignedParcelOids(csv.text);
-  const filtered = filterAssignedTodayExportRows(raw, range.todayDate, label, range.createdStartDate);
+  const filtered = filterAssignedTodayExportRows(raw, range.todayDate, label, range.createdStartDate, includeCreatedDate);
   return {
     taskId,
     rowCount: filtered.rowCount,
@@ -650,9 +657,10 @@ async function runAssignedTodayExportSource({ endpoint, label, range, job, isFor
   };
 }
 
-async function exportAssignedParcelsTodayFromSpx() {
+async function exportAssignedParcelsTodayFromSpx(jobOverride = null, options = {}) {
   const range = parcelDeliveryDateRange();
-  const job = { kind: "pod-assigned-today", startedAt: Date.now(), cancelled: false };
+  const job = jobOverride || { kind: "pod-assigned-today", startedAt: Date.now(), cancelled: false };
+  const includeCreatedDate = options?.includeCreatedDate !== false;
 
   // Keep the two SPX export types separate, then merge their OIDs below.
   // Run sequentially to follow the established SPX export-task handling flow.
@@ -661,14 +669,16 @@ async function exportAssignedParcelsTodayFromSpx() {
     label: "Forward Order",
     range,
     job,
-    isForward: true
+    isForward: true,
+    includeCreatedDate
   });
   const returned = await runAssignedTodayExportSource({
     endpoint: PARCEL_RETURN_EXPORT_PATH,
     label: "Return Order",
     range,
     job,
-    isForward: false
+    isForward: false,
+    includeCreatedDate
   });
 
   const onholdByTn = new Map();
@@ -701,8 +711,11 @@ async function exportAssignedParcelsTodayFromSpx() {
     filterCriteria: {
       currentStation: "Badoc Hub",
       assignedDate: range.todayDate,
-      createdDateStart: range.createdStartDate,
-      createdDateEnd: range.todayDate,
+      includeCreatedDate,
+      ...(includeCreatedDate ? {
+        createdDateStart: range.createdStartDate,
+        createdDateEnd: range.todayDate
+      } : {}),
       excludedStatuses: ["all exported statuses"]
     },
     forwardOidCount: forward.oids.length,
@@ -1879,7 +1892,7 @@ extApi.runtime.onConnect.addListener(port => {
       });
       void (async () => {
         try {
-          const result = await exportAssignedParcelsTodayFromSpx();
+          const result = await exportAssignedParcelsTodayFromSpx(null, { includeCreatedDate: false });
           const forward = result.downloadedData?.find(item => item.source === "Forward Order") || {};
           const returned = result.downloadedData?.find(item => item.source === "Return Order") || {};
           const excludedTotal = value => Object.values(value || {}).reduce((sum,n) => sum + Number(n || 0), 0);
@@ -1891,10 +1904,7 @@ extApi.runtime.onConnect.addListener(port => {
             duplicateCount: Number(result.duplicateCount||0),
             onholdRows: Array.isArray(result.onholdRows)?result.onholdRows:[],
             excludedForward: excludedTotal(forward.excluded),
-            excludedReturn: excludedTotal(returned.excluded),
-            excludedCreatedDate: Number(forward.excluded?.otherCreatedDate||0)+Number(returned.excluded?.otherCreatedDate||0),
-            createdDateStart: result.filterCriteria?.createdDateStart||"",
-            createdDateEnd: result.filterCriteria?.createdDateEnd||""
+            excludedReturn: excludedTotal(returned.excluded)
           });
         } catch (error) {
           sendToPort(port, "BADOC_ASSIGNED_ONHOLD_TODAY_ERROR", {
