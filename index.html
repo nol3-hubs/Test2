@@ -3114,6 +3114,12 @@ html[data-theme="dark"] #dashboardKpiSummary .dashboard-kpi-attention-name{color
 }
 @media(max-width:900px){
   #homeDashboard .dashboard-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  #homeDashboard .dashboard-summary-card,
+  #homeDashboard .dashboard-summary-card.volume,
+  #homeDashboard .dashboard-summary-card.dispatched,
+  #homeDashboard .dashboard-summary-card.incoming{
+    height:100px!important;min-height:100px!important;
+  }
   #homeDashboard .dashboard-card-group .dashboard-status-grid{
     grid-template-columns:repeat(3,minmax(0,1fr))!important;
     grid-auto-rows:100px!important;
