@@ -10289,10 +10289,33 @@ window.updateOperationProgress=function(){
   setProgress("Transporting",counts.TRANSPORTING);setProgress("Transported",counts.TRANSPORTED);setProgress("Received",counts.RECEIVED);setProgress("Assigning",counts.ASSIGNING);setProgress("Assigned",counts.ASSIGNED);
   setText("opDelivering",counts.DELIVERING);setText("opDelivered",counts.DELIVERED);setText("opReceivedSummary",counts.RECEIVED);
 
+  // RTS = unique parcels whose current status begins with Return and whose
+  // Pick Up Time is dated today in Philippine time. No 3:00 PM cutoff applies.
+  // todayRows already applies the active daily population / snapshot rules.
+  const rtsTnKeys=new Set();
+  todayRows.forEach(row=>{
+    if(!row||isExceptionRow(row))return;
+    const key=tnKey(spxTN(row));
+    if(!key||rtsTnKeys.has(key))return;
+    const statusCandidates=[
+      row?.["Status"],
+      statusTo(row),
+      row?.["Parcel Status"],
+      row?.["Delivery Status"],
+      row?.["Current Status"]
+    ];
+    const isReturn=statusCandidates.some(value=>
+      String(value??"").trim()!=="" && norm(value).startsWith("RETURN")
+    );
+    if(!isReturn)return;
+    const pickupAt=manilaStamp(rowTimestamp(row,"pickup"));
+    if(pickupAt?.dateKey!==todayManilaKey)return;
+    rtsTnKeys.add(key);
+  });
+
   // Dispatched is refreshed below, after the current On-Hold total is finalized.
-  // Keep these metrics deliberately blank until their sources are defined.
   const setMetricText=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value===undefined||value===null||String(value).trim()===""?"—":String(value)};
-  setMetricText("opRts","—");
+  setText("opRts",rtsTnKeys.size);
   setMetricText("opTotalRiders","—");
   setMetricText("opSuccessRate","—");
   setText("opExemptions",Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers.length:0);
