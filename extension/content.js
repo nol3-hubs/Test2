@@ -207,7 +207,7 @@
       if (data.type === "BADOC_START_ASSIGNED_ONHOLD_TODAY") {
         emit("BADOC_SPX_COMMAND_FORWARDED", {
           kind: "assigned-onhold-today",
-          message: "Onhold Today command forwarded to the extension background."
+          message: "Assigned Today command forwarded to the extension background."
         });
       }
       if (data.type === "BADOC_START_PARCEL_INBOUND_SYNC") {
