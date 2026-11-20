@@ -17212,4 +17212,104 @@ html[data-theme="dark"] #homeDashboard .dashboard-status-card.rts span{color:#fe
     font-size:22px!important;
   }
 }
+<style id="dashboard-neutral-cards-and-attention-emphasis-v1">
+/* Keep colored top accents, but remove colored fill from the requested cards. */
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched,
+#homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming,
+#homeDashboard .dashboard-overview .dashboard-card-group .dashboard-status-card.backlogs,
+#homeDashboard .dashboard-overview .dashboard-card-group .dashboard-status-card.rts{
+  background:var(--panel,#101820)!important;
+  box-shadow:none!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched,
+html[data-theme="light"] #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming,
+html[data-theme="light"] #homeDashboard .dashboard-overview .dashboard-card-group .dashboard-status-card.backlogs,
+html[data-theme="light"] #homeDashboard .dashboard-overview .dashboard-card-group .dashboard-status-card.rts{
+  background:var(--panel,#ffffff)!important;
+}
+html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.dispatched,
+html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-summary-grid > .dashboard-summary-card.incoming,
+html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-card-group .dashboard-status-card.backlogs,
+html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-card-group .dashboard-status-card.rts{
+  background:var(--panel,#101820)!important;
+}
+
+/* Make Needs Attention a stronger, more readable priority panel. */
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-card{
+  padding:20px!important;
+  border-width:1px!important;
+  border-color:rgba(220,38,38,.72)!important;
+  border-radius:14px!important;
+  background:rgba(220,38,38,.075)!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head{
+  margin-bottom:16px!important;
+  gap:16px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head .label{
+  font-size:12px!important;
+  font-weight:950!important;
+  letter-spacing:.12em!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head strong{
+  min-width:38px!important;
+  height:38px!important;
+  padding:0 11px!important;
+  font-size:20px!important;
+  font-weight:950!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-list{
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:10px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-item{
+  min-height:88px!important;
+  padding:15px 16px!important;
+  gap:14px!important;
+  border-radius:11px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-details{
+  gap:6px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-group{
+  font-size:9px!important;
+  line-height:1.25!important;
+  letter-spacing:.075em!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-name{
+  font-size:13px!important;
+  font-weight:850!important;
+  line-height:1.4!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-value{
+  font-size:22px!important;
+  font-weight:950!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-empty{
+  min-height:54px!important;
+  display:flex!important;
+  align-items:center!important;
+  padding:14px 16px!important;
+  font-size:12px!important;
+}
+@media(max-width:1050px){
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-list{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
+@media(max-width:700px){
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-card{
+    padding:14px!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-list{
+    grid-template-columns:1fr!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-item{
+    min-height:78px!important;
+    padding:12px!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-name{font-size:12px!important}
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-value{font-size:19px!important}
+}
+</style>
 </style>
