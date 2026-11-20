@@ -1988,7 +1988,7 @@ html[data-theme="light"] .side > .theme-switch-row{
             <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Backlogs and exception tracking</small></div></div>
             <div class="dashboard-status-grid">
               <div class="dashboard-status-card backlogs"><strong>—</strong><span>BACKLOGS</span><small></small></div>
-              <div class="dashboard-status-card redelivery"><strong id="opRedelivery">—</strong><span>REDELIVERY</span><small>EOD sheet</small></div>
+              <div class="dashboard-status-card redelivery"><strong id="opRedelivery">—</strong><span>REDELIVER</span><small>EOD + late-received pickups</small></div>
               <div class="dashboard-status-card rts"><strong id="opRts">—</strong><span>RTS</span><small></small></div>
               <div class="dashboard-status-card exemptions"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span><small>Current exemption list</small></div>
             </div>
@@ -9944,6 +9944,7 @@ window.updateOperationProgress=function(){
   };
   const todayManilaKey=dateKey(nowManila);
   const postCutoffPickupDispatchedTnKeys=new Set();
+  const postCutoffRedeliverTnKeys=new Set();
 
   // Dispatched is a cumulative daily metric: once a TN reaches Delivering,
   // Delivered, or On-Hold during this operating cycle, later status regressions
@@ -10009,17 +10010,21 @@ window.updateOperationProgress=function(){
       if(key)latestByTn.set(key,row);
     });
 
-    // A currently Received / LMHub_Received parcel qualifies as Dispatched
-    // when its Pick Up Time is today before 3 PM Manila time. The Received
-    // timestamp may be today after cutoff or an earlier date (including
-    // yesterday); Pickup Time determines today's dispatch eligibility.
-    // Pickups at/after 3 PM, older pickup dates, and missing/invalid timestamps
-    // do not qualify through this exception.
+    // A currently Received / LMHub_Received parcel received after 3 PM
+    // today and with a Pick Up Time dated today is classified as Redeliver,
+    // not Received Today. Pickup Time may be any time today for this bucket.
+    // Separately, a pickup today before 3 PM qualifies for Dispatched even
+    // when its Received timestamp is yesterday or later today.
     latestByTn.forEach((row,key)=>{
       if(!key||isExceptionRow(row))return;
       const currentStatus=statusKey(statusTo(row));
       if(currentStatus!=="RECEIVED"&&currentStatus!=="LMHUBRECEIVED")return;
       const pickupAt=manilaStamp(rowTimestamp(row,"pickup"));
+      const receivedAt=manilaStamp(rowTimestamp(row,"received"));
+      if(receivedAt?.dateKey===todayManilaKey&&receivedAt.minutes>=900&&
+         pickupAt?.dateKey===todayManilaKey){
+        postCutoffRedeliverTnKeys.add(key);
+      }
       if(pickupAt?.dateKey===todayManilaKey&&pickupAt.minutes<900){
         postCutoffPickupDispatchedTnKeys.add(key);
       }
@@ -10182,8 +10187,11 @@ window.updateOperationProgress=function(){
     // Read the raw status directly and normalize it here. This avoids a
     // stale/cached status representation causing RECEIVED to display 0.
     const s=norm(statusTo(r));
-    if(s==="LMHUB RECEIVED" || s==="RECEIVED") counts.RECEIVED++;
-    else if(s==="DELIVERING") counts.DELIVERING++;
+    const tn=tnKey(spxTN(r));
+    if((s==="LMHUB RECEIVED" || s==="RECEIVED") &&
+       !(activeVolumeSnapshot&&postCutoffRedeliverTnKeys.has(tn))){
+      counts.RECEIVED++;
+    }else if(s==="DELIVERING") counts.DELIVERING++;
     else if(s==="DELIVERED") counts.DELIVERED++;
 
   });
@@ -10623,6 +10631,23 @@ window.updateOperationProgress=function(){
   const onHold=onholdTnKeys.size;
   counts.ONHOLD=onHold;
   setText("opOnHold",onHold);
+
+  // Keep the existing EOD-sheet Redelivery total and add the distinct
+  // post-3 PM Received parcels whose Pick Up Time is today.
+  const eodDashboard=window.__badocEodDashboard||{};
+  const eodRedeliveryEntry=Object.entries(eodDashboard).find(([key,value])=>
+    String(key).toLowerCase().replace(/[^a-z0-9]/g,"")==="totalredelivery" &&
+    value!==undefined && value!==null && String(value).trim()!==""
+  );
+  const eodRedeliveryValue=eodRedeliveryEntry
+    ?Number(String(eodRedeliveryEntry[1]).replace(/,/g,"").replace(/%/g,""))
+    :NaN;
+  if(Number.isFinite(eodRedeliveryValue)||postCutoffRedeliverTnKeys.size){
+    setText("opRedelivery",(Number.isFinite(eodRedeliveryValue)?eodRedeliveryValue:0)+postCutoffRedeliverTnKeys.size);
+  }else{
+    const redeliverEl=document.getElementById("opRedelivery");
+    if(redeliverEl)redeliverEl.textContent="—";
+  }
 
   // After 3 PM, show the cumulative unique TNs ever dispatched in this
   // operating cycle. A later regression to Received must not subtract a parcel.
@@ -12321,7 +12346,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       card("Delivered",fmt(m.delivered),delta(m.delivered,prev&&prev.delivered),"is-good"),
       card("On hold",fmt(m.onHold),delta(m.onHold,prev&&prev.onHold,true),"is-warn"),
       card("Success rate",fmt1(sr)+"%",delta(sr,prev&&prev.successRate),"sr-"+(srClass(sr)||"none")),
-      card("Redelivery",fmt(m.redelivery),delta(m.redelivery,prev&&prev.redelivery,true)),
+      card("Redeliver",fmt(m.redelivery),delta(m.redelivery,prev&&prev.redelivery,true)),
       card("RTS",fmt(m.rts),delta(m.rts,prev&&prev.rts,true))
     ].join("");
     const fleet=`<div class="dh2-fleet"><span><b>${fmt(m.threeWcRiders)}</b>3WC</span><span><b>${fmt(m.twoWhRiders)}</b>2WH</span><span><b>${fmt(m.flexiRiders)}</b>Flexi</span><span><b>${fmt(m.totalRiders)}</b>Total riders</span><span><b>${fmt(cfr)}</b>CFR1</span>
