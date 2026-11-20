@@ -10772,22 +10772,9 @@ window.updateOperationProgress=function(){
   counts.ONHOLD=onHold;
   setText("opOnHold",onHold);
 
-  // Keep the existing EOD-sheet Redelivery total and add the distinct
-  // post-3 PM Received parcels whose Pick Up Time is today.
-  const eodDashboard=window.__badocEodDashboard||{};
-  const eodRedeliveryEntry=Object.entries(eodDashboard).find(([key,value])=>
-    String(key).toLowerCase().replace(/[^a-z0-9]/g,"")==="totalredelivery" &&
-    value!==undefined && value!==null && String(value).trim()!==""
-  );
-  const eodRedeliveryValue=eodRedeliveryEntry
-    ?Number(String(eodRedeliveryEntry[1]).replace(/,/g,"").replace(/%/g,""))
-    :NaN;
-  if(Number.isFinite(eodRedeliveryValue)||postCutoffRedeliverTnKeys.size){
-    setText("opRedelivery",(Number.isFinite(eodRedeliveryValue)?eodRedeliveryValue:0)+postCutoffRedeliverTnKeys.size);
-  }else{
-    const redeliverEl=document.getElementById("opRedelivery");
-    if(redeliverEl)redeliverEl.textContent="—";
-  }
+  // Redeliver is sourced only from qualifying SPX parcel records.
+  // The EOD-sheet aggregate is intentionally not included.
+  setText("opRedelivery",postCutoffRedeliverTnKeys.size);
 
   // After 3 PM, show the cumulative unique TNs ever dispatched in this
   // operating cycle. A later regression to Received must not subtract a parcel.
@@ -10948,11 +10935,7 @@ window.updateOperationProgress=function(){
       ?{orderId:match.orderId||"",status:(match.status?match.status+" · EXEMPTED":"EXEMPTED"),town:match.town||"",scannedTime:match.scannedTime||"",rider:""}
       :{orderId:"—",status:"EXEMPTED · parcel record not loaded",town:"—",scannedTime:"",rider:""};
   });
-  const redeliveryNode=document.getElementById("opRedelivery");
-  const redeliveryText=String(redeliveryNode?.textContent||"").replace(/,/g,"").trim();
-  const redeliveryCardTotal=redeliveryText&&redeliveryText!=="—"&&Number.isFinite(Number(redeliveryText))
-    ?Number(redeliveryText):null;
-  const eodRedeliveryIsAggregate=Number.isFinite(eodRedeliveryValue);
+  const redeliveryCardTotal=postCutoffRedeliverTnKeys.size;
   window.__badocDashboardParcelDetails={
     todayVolume:{
       count:todayVolume,rows:collectDashboardDetails(todayVolumeSource),
@@ -10988,9 +10971,7 @@ window.updateOperationProgress=function(){
     },
     redelivery:{
       count:redeliveryCardTotal,rows:redeliveryDetailRows,
-      note:eodRedeliveryIsAggregate
-        ?"The card combines the EOD-sheet Redelivery aggregate with distinct post-3:00 PM Received parcels picked up today. The EOD sheet provides a total only, not parcel-level OIDs/statuses; rows below show the itemized late-received parcels available from SPX data."
-        :"Rows below show the itemized late-received parcels available from SPX data."
+      note:"Counts only unique SPX parcels currently Received or LMHub_Received, with Received Time today at or after 3:00 PM Manila time and Pick Up Time dated today. The table shows the itemized OID/status records available from SPX data."
     },
     rts:{
       count:rtsTnKeys.size,rows:rtsDetailRows,
