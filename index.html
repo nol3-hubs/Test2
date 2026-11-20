@@ -3926,7 +3926,7 @@ function renderTownGrid(id,list,rows,extraCounts={}){
         statuses.className="town-statuses";
         const townMetric=parcelMetricTownSummary([...(rows||[]),...(Array.isArray(window.__badocParcelIncomingMetricRows)?window.__badocParcelIncomingMetricRows:[])])[townKey]||{bulky:0,highValue:0};
         statuses.setAttribute("aria-label",`Received ${ts.received}, Delivering ${ts.delivering}, Delivered ${ts.delivered}, Hold ${ts.hold}, Success Rate ${srText}%`);
-        statuses.innerHTML=`<span class="town-status received" title="Received">R ${ts.received}</span><span class="town-status delivering" title="Delivering">D ${ts.delivering}</span><span class="town-status delivered" title="Delivered">DV ${ts.delivered}</span><span class="town-status hold" title="On Hold">H ${ts.hold}</span><span class="town-status success-rate" title="Success Rate">SR ${srText}%</span><span class="count" title="Total">${c[townKey]||0}</span>`;
+        statuses.innerHTML=`<span class="town-status received" title="Received">R ${ts.received}</span><span class="town-status delivered" title="Delivered">DV ${ts.delivered}</span><span class="town-status delivering" title="Delivering">D ${ts.delivering}</span><span class="town-status hold" title="On Hold">H ${ts.hold}</span><span class="town-status success-rate" title="Success Rate">SR ${srText}%</span><span class="count" title="Total">${c[townKey]||0}</span>`;
         r.append(statuses);
 
         r.addEventListener("click",e=>{
