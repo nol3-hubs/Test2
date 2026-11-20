@@ -87,17 +87,18 @@ const LINEHAUL_CAPTURED_HEADERS = {
 
 
 const badocPorts = new Set();
-// Keep export jobs independent so Sync All can run the two parcel exports in
-// parallel, then start Linehaul while the delivery export is still processing.
+// Allow only the compatible Sync All exports to overlap: Received, Assigned Today,
+// and First Mile start together; Linehaul may join after Received finishes.
 // Other SPX jobs remain mutually exclusive to avoid tab/API collisions.
 const activeJobs = new Map();
 const PARALLEL_JOB_ALLOWLIST = {
-  "parcel-inbound": new Set(["parcel-delivery", "parcel-secondary", "first-mile-orders", "first-mile-tasks", "linehaul"]),
+  "parcel-inbound": new Set(["parcel-delivery", "parcel-secondary", "first-mile-orders", "first-mile-tasks", "linehaul", "assigned-onhold-today"]),
   "parcel-delivery": new Set(["parcel-inbound", "parcel-secondary", "first-mile-orders", "first-mile-tasks", "linehaul"]),
   "parcel-secondary": new Set(["parcel-inbound", "parcel-delivery", "first-mile-orders", "first-mile-tasks", "linehaul"]),
-  "first-mile-orders": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-tasks", "linehaul"]),
-  "first-mile-tasks": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-orders", "linehaul"]),
-  "linehaul": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-orders", "first-mile-tasks"])
+  "first-mile-orders": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-tasks", "linehaul", "assigned-onhold-today"]),
+  "first-mile-tasks": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-orders", "linehaul", "assigned-onhold-today"]),
+  "linehaul": new Set(["parcel-inbound", "parcel-delivery", "parcel-secondary", "first-mile-orders", "first-mile-tasks", "assigned-onhold-today"]),
+  "assigned-onhold-today": new Set(["parcel-inbound", "first-mile-orders", "first-mile-tasks", "linehaul"])
 };
 
 function sendToPort(port, type, data = {}) {
@@ -1885,14 +1886,23 @@ extApi.runtime.onConnect.addListener(port => {
     }
 
     if (type === "BADOC_START_ASSIGNED_ONHOLD_TODAY") {
-      if (activeJobs.size) { sendToPort(port, "BADOC_ASSIGNED_ONHOLD_TODAY_ERROR", { message: "Another SPX sync is already running. Try again after it finishes." }); return; }
+      const job = reserveActiveJob("assigned-onhold-today", port);
+      if (!job) {
+        sendToPort(port, "BADOC_ASSIGNED_ONHOLD_TODAY_ERROR", {
+          kind: "assigned-onhold-today",
+          message: "Assigned Today cannot start because an incompatible SPX job is already running. Try again after it finishes."
+        });
+        return;
+      }
       sendToPort(port, "BADOC_SPX_COMMAND_ACCEPTED", {
         kind: "assigned-onhold-today",
         message: "Extension accepted Assigned Today. Preparing Forward and Return exports…"
       });
       void (async () => {
+        job.startedAt = Date.now();
         try {
-          const result = await exportAssignedParcelsTodayFromSpx(null, { includeCreatedDate: false });
+          const result = await exportAssignedParcelsTodayFromSpx(job, { includeCreatedDate: false });
+          if (job.cancelled) throw new Error("Assigned Today sync was stopped.");
           const forward = result.downloadedData?.find(item => item.source === "Forward Order") || {};
           const returned = result.downloadedData?.find(item => item.source === "Return Order") || {};
           const excludedTotal = value => Object.values(value || {}).reduce((sum,n) => sum + Number(n || 0), 0);
@@ -1911,6 +1921,8 @@ extApi.runtime.onConnect.addListener(port => {
             kind: "assigned-onhold-today",
             message: error?.message || String(error)
           });
+        } finally {
+          releaseActiveJob(job);
         }
       })();
       return;
