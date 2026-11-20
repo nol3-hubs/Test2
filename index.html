@@ -15893,3 +15893,71 @@ html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-fail .sa-state-
   #homeDashboard .dashboard-summary-grid{grid-template-columns:1fr!important}
 }
 </style>
+
+
+<style id="dashboard-forecast-theme-row-v2">
+/* Keep Today's Volume, Dispatched, and next-day forecast in one desktop row. */
+#homeDashboard .dashboard-summary-grid{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  grid-auto-flow:row!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-summary-grid > .dashboard-summary-card.volume,
+#homeDashboard .dashboard-summary-grid > .dashboard-summary-card.dispatched,
+#homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming{
+  grid-column:auto!important;
+  width:auto!important;
+  min-width:0!important;
+  min-height:88px!important;
+  height:100%!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming{
+  opacity:1!important;
+  border-radius:11px!important;
+  box-shadow:0 2px 8px rgba(37,99,235,.08)!important;
+}
+/* Light mode: pale blue card with dark, high-contrast text. */
+html[data-theme="light"] #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming{
+  background:linear-gradient(145deg,#eff6ff 0%,#f8fbff 100%)!important;
+  border:1px solid #bfdbfe!important;
+  border-top:3px solid #2563eb!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming strong{
+  color:#1d4ed8!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming span{
+  color:#1e40af!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming small{
+  color:#52657a!important;
+}
+/* Dark mode: deep blue card with bright, readable text. */
+html[data-theme="dark"] #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming{
+  background:linear-gradient(145deg,#10243a 0%,#132b43 100%)!important;
+  border:1px solid #315b80!important;
+  border-top:3px solid #60a5fa!important;
+  box-shadow:0 2px 10px rgba(0,0,0,.2)!important;
+}
+html[data-theme="dark"] #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming strong{
+  color:#f8fbff!important;
+}
+html[data-theme="dark"] #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming span{
+  color:#dbeafe!important;
+}
+html[data-theme="dark"] #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming small{
+  color:#a9c2dc!important;
+}
+/* Keep the three metrics readable on narrow screens. */
+@media(max-width:700px){
+  #homeDashboard .dashboard-summary-grid{
+    grid-template-columns:1fr!important;
+  }
+  #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.volume,
+  #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.dispatched,
+  #homeDashboard .dashboard-summary-grid > .dashboard-summary-card.incoming{
+    min-height:76px!important;
+  }
+}
+</style>
