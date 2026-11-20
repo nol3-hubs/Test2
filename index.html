@@ -7936,7 +7936,7 @@ function armBadocSyncWatchdog(kind,statusId){
       setLinehaulSpxSyncStatus(message,"error");
       window.__badocOperationModalFinish?.("Linehaul Sync Timed Out",message,[],"error");
     }
-  },12*60*1000);
+  },5*60*1000);
 }
 
 const BADOC_BRIDGE_COMMAND_TIMERS=Object.create(null);
