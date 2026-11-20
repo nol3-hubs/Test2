@@ -1850,7 +1850,7 @@ html[data-theme="light"] .side > .theme-switch-row{
 .dashboard-parcel-detail-close{flex:0 0 auto;border:1px solid var(--c-344454-border);background:var(--c-10161e-bg);color:var(--c-ffffff-text);border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:20px}
 .dashboard-parcel-detail-note{padding:10px 14px;border-bottom:1px solid var(--c-22313d-border);color:var(--c-9fb0bf-text);font-size:12px;line-height:1.45}
 .dashboard-parcel-detail-body{overflow:auto;padding:12px}
-.dashboard-parcel-detail-table{width:100%;min-width:680px;border-collapse:collapse;font-size:13px}
+.dashboard-parcel-detail-table{width:100%;min-width:720px;border-collapse:collapse;font-size:13px}
 .dashboard-parcel-detail-table th,.dashboard-parcel-detail-table td{padding:10px 11px;border-bottom:1px solid var(--c-1c2833-border);text-align:left;vertical-align:top}
 .dashboard-parcel-detail-table th{position:sticky;top:0;background:var(--c-101821-bg);color:var(--c-9fc6d9-text);font-size:10px;letter-spacing:.05em;z-index:1}
 .dashboard-parcel-detail-table td{color:var(--c-edf3f8-text);overflow-wrap:anywhere}
@@ -1990,11 +1990,11 @@ html[data-theme="light"] .side > .theme-switch-row{
         <span id="volumeSnapshotStatus" title="Fixed daily operating cutoff · Manila time" style="display:inline-flex;align-items:center;justify-content:center;padding:6px 11px;border:1px solid var(--c-18b8ff-border);border-radius:999px;background:var(--c-147bd1-bg);color:var(--c-ffffff-text);font-size:11px;font-weight:900;letter-spacing:.5px;white-space:nowrap;flex-shrink:0">COT: 15:00</span>
       </div>
       <div class="dashboard-summary-grid">
-        <div class="dashboard-summary-card volume" data-dashboard-detail="todayVolume" role="button" tabindex="0" aria-label="Today's volume. Click to view OIDs and statuses." title="Click to view OIDs and statuses"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
+        <div class="dashboard-summary-card volume"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
 
-        <div class="dashboard-summary-card dispatched" data-dashboard-detail="dispatched" role="button" tabindex="0" aria-label="Dispatched. Click to view OIDs and statuses." title="Click to view OIDs and statuses"><strong id="opDispatched">0</strong><span>DISPATCHED</span></div>
+        <div class="dashboard-summary-card dispatched"><strong id="opDispatched">0</strong><span>DISPATCHED</span></div>
 
-        <div class="dashboard-summary-card incoming" id="incomingVolumeCard" data-dashboard-detail="forecast" role="button" tabindex="0" aria-label="Volume forecast for next day. Click to view OIDs and statuses." title="Click to view forecast OIDs and statuses"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
+        <div class="dashboard-summary-card incoming" id="incomingVolumeCard"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
       </div>
 
       <div class="dashboard-status-section">
@@ -2004,7 +2004,7 @@ html[data-theme="light"] .side > .theme-switch-row{
             <div class="dashboard-status-grid">
               <div class="dashboard-status-card received" data-dashboard-detail="received" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opReceivedSummary">0</strong><span>RECEIVED</span><small>Current parcel data</small></div>
               <div class="dashboard-status-card delivering" data-dashboard-detail="delivering" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opDelivering">0</strong><span>DELIVERING</span><small>Current parcel data</small></div>
-              <div class="dashboard-status-card delivered" data-dashboard-detail="delivered" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opDelivered">0</strong><span>DELIVERED</span><small>Current parcel data</small></div>
+              <div class="dashboard-status-card delivered"><strong id="opDelivered">0</strong><span>DELIVERED</span><small>Current parcel data</small></div>
               <div class="dashboard-status-card onhold" data-dashboard-detail="onhold" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opOnHold">0</strong><span>ON-HOLD</span><small>Live On-Hold source</small></div>
               <div class="dashboard-status-card cfr1" id="cfr1Card" role="button" tabindex="0" aria-label="CFR1 completion percentage. Click to view scanned and unscanned parcels." title="Click to view CFR1 scanned and unscanned parcels"><strong id="opCfr1Percentage">0.0%</strong><span>CFR1</span><small id="opCfr1Summary" hidden style="display:none!important" aria-hidden="true"></small><span hidden aria-hidden="true" style="display:none!important"><b id="opCfr1Scanned">0</b><em id="opCfr1Total">0</em></span></div>
             </div>
@@ -10798,11 +10798,48 @@ window.updateOperationProgress=function(){
   // Build the OID/status drill-down lists from the same rows and membership
   // sets that drive the dashboard cards above. This is display-only: it does
   // not change any card's count or eligibility rule.
+  const dashboardDetailField=(row,names)=>{
+    const normalizeHeader=value=>String(value??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+    const keys=Object.keys(row||{});
+    for(const name of names){
+      const wanted=normalizeHeader(name);
+      const key=keys.find(candidate=>normalizeHeader(candidate)===wanted&&String(row[candidate]??"").trim()!=="");
+      if(key)return String(row[key]).trim();
+    }
+    return "";
+  };
+  const dashboardRiderName=row=>{
+    const riderName=dashboardDetailField(row,[
+      "Rider Name","Driver Name","Assigned Rider","Assigned Rider Name",
+      "Delivery Rider","Assigned Driver","Assigned Driver Name","Rider",
+      "Delivery Driver Name","Delivery Rider Name"
+    ]);
+    if(riderName)return riderName;
+    const riderId=dashboardDetailField(row,[
+      "Rider ID","Driver ID","Assigned Rider ID","Delivery Rider ID","Assigned Driver ID"
+    ]);
+    const roster=Array.isArray(ridersData)?ridersData:[];
+    if(riderId){
+      const matched=roster.find(r=>String(r?.["Driver ID"]??"").trim()===riderId);
+      if(matched?.["Driver Name"])return String(matched["Driver Name"]).trim();
+    }
+    return "";
+  };
+  const dashboardScannedTime=row=>{
+    const pickup=rowTimestamp(row,"pickup");
+    if(pickup!==undefined&&pickup!==null&&String(pickup).trim()!=="")return String(pickup).trim();
+    return dashboardDetailField(row,[
+      "Pick Up Time","Pickup Time","First Pick Up Time","First Pickup Time",
+      "At Pick Up Time","Pickup Date Time","Pickup Datetime","Pickup Timestamp",
+      "Scanned Time","ScannedTime"
+    ]);
+  };
   const dashboardDetailRow=row=>({
     orderId:String(row?.["Order ID"]??row?.["Order Id"]??"").trim(),
-    tn:String(spxTN(row)||row?.["SLS Tracking Number"]||row?.["SPX TN"]||"").trim(),
     status:String(statusTo(row)||row?.["Status"]||row?.["Parcel Status"]||row?.["Delivery Status"]||row?.["Current Status"]||"").trim(),
-    town:String(row?.["Town Name"]??row?.["Town"]??row?.town??"").trim()
+    town:String(row?.["Town Name"]??row?.["Town"]??row?.town??"").trim(),
+    scannedTime:dashboardScannedTime(row),
+    rider:dashboardRiderName(row)
   });
   const detailLookup=new Map();
   const detailSources=[
@@ -10820,12 +10857,13 @@ window.updateOperationProgress=function(){
       const item=dashboardDetailRow(row);
       const key=tnKey(item.tn);
       if(!key)return;
-      const previous=detailLookup.get(key)||{orderId:"",tn:"",status:"",town:""};
+      const previous=detailLookup.get(key)||{orderId:"",status:"",town:"",scannedTime:"",rider:""};
       detailLookup.set(key,{
         orderId:item.orderId||previous.orderId,
-        tn:item.tn||previous.tn,
         status:item.status||previous.status,
-        town:item.town||previous.town
+        town:item.town||previous.town,
+        scannedTime:item.scannedTime||previous.scannedTime,
+        rider:item.rider||previous.rider
       });
     });
   });
@@ -10840,9 +10878,10 @@ window.updateOperationProgress=function(){
       const latest=detailLookup.get(key)||fallback;
       out.push({
         orderId:latest.orderId||fallback.orderId||"",
-        tn:latest.tn||fallback.tn||"",
         status:latest.status||fallback.status||"",
-        town:latest.town||fallback.town||""
+        town:latest.town||fallback.town||"",
+        scannedTime:latest.scannedTime||fallback.scannedTime||"",
+        rider:latest.rider||fallback.rider||""
       });
     });
     return out;
@@ -10853,7 +10892,7 @@ window.updateOperationProgress=function(){
       const normalized=tnKey(key);
       if(!normalized)return;
       const found=detailLookup.get(normalized);
-      out.push(found?{...found}:{orderId:"",tn:String(key),status:"Latest status not present in loaded rows",town:""});
+      out.push(found?{...found}:{orderId:"",status:"Latest status not present in loaded rows",town:"",scannedTime:"",rider:""});
     });
     return out;
   };
@@ -10896,8 +10935,8 @@ window.updateOperationProgress=function(){
     const key=exceptionKey(raw);
     const match=detailLookup.get(tnKey(raw))||exceptionById.get(key);
     return match
-      ?{orderId:match.orderId||"",tn:match.tn||raw,status:(match.status?match.status+" · EXEMPTED":"EXEMPTED"),town:match.town||""}
-      :{orderId:"—",tn:raw,status:"EXEMPTED · parcel record not loaded",town:"—"};
+      ?{orderId:match.orderId||"",status:(match.status?match.status+" · EXEMPTED":"EXEMPTED"),town:match.town||"",scannedTime:match.scannedTime||"",rider:""}
+      :{orderId:"—",status:"EXEMPTED · parcel record not loaded",town:"—",scannedTime:"",rider:""};
   });
   const redeliveryNode=document.getElementById("opRedelivery");
   const redeliveryText=String(redeliveryNode?.textContent||"").replace(/,/g,"").trim();
@@ -11833,7 +11872,10 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     table.className="dashboard-parcel-detail-table";
     const thead=document.createElement("thead");
     const headerRow=document.createElement("tr");
-    ["OID / ORDER ID","SPX TN","STATUS","TOWN"].forEach(label=>{
+    const showRider=["delivering","onhold"].includes(key);
+    const headers=["OID / ORDER ID","STATUS","TOWN","SCANNED TIME"];
+    if(showRider)headers.push("RIDER");
+    headers.forEach(label=>{
       const th=document.createElement("th");
       th.textContent=label;
       headerRow.appendChild(th);
@@ -11843,7 +11885,9 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     const tbody=document.createElement("tbody");
     rows.forEach(item=>{
       const tr=document.createElement("tr");
-      [item.orderId,item.tn,item.status,item.town].forEach(value=>{
+      const values=[item.orderId,item.status,item.town,item.scannedTime];
+      if(showRider)values.push(item.rider);
+      values.forEach(value=>{
         const td=document.createElement("td");
         td.textContent=String(value??"").trim()||"—";
         tr.appendChild(td);
