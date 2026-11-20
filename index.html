@@ -10009,19 +10009,18 @@ window.updateOperationProgress=function(){
       if(key)latestByTn.set(key,row);
     });
 
-    // A parcel that is currently Received after 3 PM still counts as
-    // Dispatched when SPX proves it was received at the hub after cutoff,
-    // but its Pick Up Time was earlier than 3 PM on this same Manila date.
-    // New post-cutoff pickups (3 PM onward), stale dates, and missing/invalid
-    // timestamps do not qualify through this exception.
+    // A currently Received / LMHub_Received parcel qualifies as Dispatched
+    // when its Pick Up Time is today before 3 PM Manila time. The Received
+    // timestamp may be today after cutoff or an earlier date (including
+    // yesterday); Pickup Time determines today's dispatch eligibility.
+    // Pickups at/after 3 PM, older pickup dates, and missing/invalid timestamps
+    // do not qualify through this exception.
     latestByTn.forEach((row,key)=>{
       if(!key||isExceptionRow(row))return;
       const currentStatus=statusKey(statusTo(row));
       if(currentStatus!=="RECEIVED"&&currentStatus!=="LMHUBRECEIVED")return;
-      const receivedAt=manilaStamp(rowTimestamp(row,"received"));
       const pickupAt=manilaStamp(rowTimestamp(row,"pickup"));
-      if(receivedAt?.dateKey===todayManilaKey&&receivedAt.minutes>=900&&
-         pickupAt?.dateKey===todayManilaKey&&pickupAt.minutes<900){
+      if(pickupAt?.dateKey===todayManilaKey&&pickupAt.minutes<900){
         postCutoffPickupDispatchedTnKeys.add(key);
       }
     });
