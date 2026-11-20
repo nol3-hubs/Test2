@@ -10510,15 +10510,19 @@ window.updateOperationProgress=function(){
   // On-Hold = uploaded Parcel Count rows with an On-Hold status plus
   // SPX Forward/Return On-Hold export rows. Exports override older uploaded
   // rows for the same SPX TN, and duplicates are counted only once.
-  // The 3 PM snapshot freezes Today's Volume only. On-Hold remains live and includes every current SPX Forward/Return export TN, including parcels absent from the snapshot.
-  const onholdRows=badocGetOnholdRows(todayRows,false);
+  // Before 3 PM, exports may add qualifying TNs to the live population.
+  // After the 3 PM snapshot, export status updates are restricted to TNs
+  // already in that frozen population; new TNs cannot enter On-Hold,
+  // Dispatched, or Unscanned for the current operating cycle.
+  const onholdRows=badocGetOnholdRows(todayRows,!!activeVolumeSnapshot);
   const onholdTnKeys=new Set(onholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
   window.__badocOnholdTnKeys=onholdTnKeys;
   const onHold=onholdTnKeys.size;
   counts.ONHOLD=onHold;
   setText("opOnHold",onHold);
 
-  // Count all currently dispatched parcels after On-Hold has been recalculated.
+  // Count dispatched parcels only within the Today's Volume population.
+  // After 3 PM, statuses remain live but the frozen TN population cannot grow.
   setText("opDispatched",(counts.DELIVERING||0)+(counts.DELIVERED||0)+onHold);
 
   // Unscanned: Today's Volume minus Delivering, Delivered and On-Hold.
