@@ -1863,6 +1863,41 @@ html[data-theme="light"] .side > .theme-switch-row{
 @media(max-width:600px){.dashboard-parcel-detail-modal{max-height:92vh}.dashboard-parcel-detail-body{padding:8px}.dashboard-parcel-detail-table{font-size:12px}.dashboard-parcel-detail-table th,.dashboard-parcel-detail-table td{padding:9px 8px}}
 </style>
 
+<style id="dashboard-kpi-needs-attention-style">
+#dashboardKpiSummary .dashboard-kpi-attention-card{
+  grid-column:1/-1;border-color:rgba(220,38,38,.48);
+  background:rgba(220,38,38,.055);
+}
+#dashboardKpiSummary .dashboard-kpi-attention-head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;
+}
+#dashboardKpiSummary .dashboard-kpi-attention-head .label{color:#dc2626}
+#dashboardKpiSummary .dashboard-kpi-attention-head strong{
+  display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;
+  padding:0 8px;margin:0;border-radius:999px;background:rgba(220,38,38,.14);
+  color:#dc2626;font-size:14px;line-height:1;
+}
+#dashboardKpiSummary .dashboard-kpi-attention-list{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;
+}
+#dashboardKpiSummary .dashboard-kpi-attention-item{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0;
+  padding:10px 11px;border:1px solid rgba(220,38,38,.28);border-left:3px solid #dc2626;
+  border-radius:9px;background:rgba(220,38,38,.075);
+}
+#dashboardKpiSummary .dashboard-kpi-attention-details{display:grid;gap:3px;min-width:0}
+#dashboardKpiSummary .dashboard-kpi-attention-group{color:var(--muted);font-size:8px;font-weight:800;letter-spacing:.06em}
+#dashboardKpiSummary .dashboard-kpi-attention-name{color:var(--c-f3f7fa-text);font-size:11px;font-weight:750;line-height:1.3}
+#dashboardKpiSummary .dashboard-kpi-attention-value{flex:0 0 auto;color:#dc2626;font-size:15px;font-weight:900}
+#dashboardKpiSummary .dashboard-kpi-attention-empty{
+  grid-column:1/-1;padding:10px 11px;color:var(--muted);font-size:11px;
+  border:1px dashed rgba(220,38,38,.3);border-radius:9px;
+}
+html[data-theme="light"] #dashboardKpiSummary .dashboard-kpi-attention-name{color:#7f1d1d}
+html[data-theme="dark"] #dashboardKpiSummary .dashboard-kpi-attention-item{background:rgba(220,38,38,.12)}
+html[data-theme="dark"] #dashboardKpiSummary .dashboard-kpi-attention-name{color:#fecaca}
+@media(max-width:650px){#dashboardKpiSummary .dashboard-kpi-attention-list{grid-template-columns:1fr}}
+</style>
 </head>
 <body data-app-version="21">
 
@@ -2043,6 +2078,15 @@ html[data-theme="light"] .side > .theme-switch-row{
     <div class="dashboard-kpi-card">
       <span class="label">GRADE</span>
       <strong id="dashboardKpiGrade">—</strong>
+    </div>
+    <div class="dashboard-kpi-card dashboard-kpi-attention-card">
+      <div class="dashboard-kpi-attention-head">
+        <span class="label">NEEDS ATTENTION</span>
+        <strong id="dashboardKpiAttentionCount">0</strong>
+      </div>
+      <div class="dashboard-kpi-attention-list" id="dashboardKpiAttentionList">
+        <div class="dashboard-kpi-attention-empty">Waiting for KPI data…</div>
+      </div>
     </div>
   </div>
 </div>
@@ -11076,6 +11120,78 @@ __badocEvery(()=>window.updateOperationProgress?.(),30000);
 })();
 </script>
 
+<script id="dashboard-kpi-needs-attention-sync">
+(function(){
+  if(window.__badocKpiNeedsAttentionSync)return;
+  window.__badocKpiNeedsAttentionSync=true;
+
+  function syncNeedsAttention(){
+    var source=document.querySelector("#kpiCategories > .kpi-month-section");
+    var list=document.getElementById("dashboardKpiAttentionList");
+    var count=document.getElementById("dashboardKpiAttentionCount");
+    if(!list||!count)return;
+
+    // Reuse the KPI menu's exact red status. Read current month only.
+    var cards=source
+      ? Array.from(source.querySelectorAll(".v3-kpi-card.kpi-status-below-b"))
+      : [];
+    count.textContent=String(cards.length);
+    list.replaceChildren();
+
+    if(!cards.length){
+      var empty=document.createElement("div");
+      empty.className="dashboard-kpi-attention-empty";
+      empty.textContent=source?"No red KPI items.":"Waiting for KPI data…";
+      list.appendChild(empty);
+      return;
+    }
+
+    cards.forEach(function(card){
+      var name=card.querySelector("h3");
+      var actual=card.querySelector(".kpi-actual");
+      var category=card.closest(".kpi-category");
+      var categoryTitle=category&&category.querySelector(".kpi-category-title");
+      var item=document.createElement("div");
+      item.className="dashboard-kpi-attention-item";
+
+      var details=document.createElement("div");
+      details.className="dashboard-kpi-attention-details";
+      if(categoryTitle){
+        var group=document.createElement("span");
+        group.className="dashboard-kpi-attention-group";
+        group.textContent=categoryTitle.textContent.trim();
+        details.appendChild(group);
+      }
+      var title=document.createElement("span");
+      title.className="dashboard-kpi-attention-name";
+      title.textContent=name?name.textContent.trim():"KPI";
+      details.appendChild(title);
+
+      var value=document.createElement("strong");
+      value.className="dashboard-kpi-attention-value";
+      value.textContent=actual&&actual.textContent.trim()?actual.textContent.trim():"—";
+      item.append(details,value);
+      list.appendChild(item);
+    });
+  }
+
+  function observe(){
+    var source=document.getElementById("kpiCategories");
+    if(!source)return;
+    new MutationObserver(syncNeedsAttention).observe(source,{
+      childList:true,subtree:true,characterData:true,attributes:true,
+      attributeFilter:["class"]
+    });
+    syncNeedsAttention();
+  }
+  window.__badocSyncKpiNeedsAttention=syncNeedsAttention;
+  if(document.readyState==="loading"){
+    document.addEventListener("DOMContentLoaded",observe,{once:true});
+  }else{
+    observe();
+  }
+})();
+</script>
 <script id="dashboard-default-startup">
 (function(){
   function openDashboard(){
