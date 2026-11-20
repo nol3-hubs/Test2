@@ -9906,13 +9906,13 @@ window.updateOperationProgress=function(){
   const manilaStamp=value=>{
     const raw=String(value??"").trim();
     if(!raw)return null;
-    let m=raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.\\d+)?)?\\s*(AM|PM)?$/i);
+    let m=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?\s*(AM|PM)?$/i);
     if(m){
       let hour=Number(m[4]),mer=String(m[7]||"").toUpperCase();
       if(mer==="AM"&&hour===12)hour=0;else if(mer==="PM"&&hour<12)hour+=12;
       return {dateKey:[m[1],String(Number(m[2])).padStart(2,"0"),String(Number(m[3])).padStart(2,"0")].join("-"),minutes:hour*60+Number(m[5])+Number(m[6]||0)/60};
     }
-    m=raw.match(/^(\\d{1,2})[\\/-](\\d{1,2})[\\/-](\\d{2,4}),?\\s+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(AM|PM)?$/i);
+    m=raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
     if(m){
       let year=Number(m[3]);if(year<100)year+=2000;
       let hour=Number(m[4]),mer=String(m[7]||"").toUpperCase();
