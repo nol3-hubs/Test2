@@ -9940,6 +9940,14 @@ window.updateOperationProgress=function(){
       const key=keys.find(name=>normalized(name)===target&&String(row[name]??"").trim()!=="");
       if(key)return row[key];
     }
+    // Accept SPX headers that append qualifiers to the Pickup Time label.
+    if(kind==="pickup"){
+      const key=keys.find(name=>{
+        const header=normalized(name);
+        return header.includes("pickuptime")&&String(row[name]??"").trim()!=="";
+      });
+      if(key)return row[key];
+    }
     return "";
   };
   const todayManilaKey=dateKey(nowManila);
@@ -10608,12 +10616,13 @@ window.updateOperationProgress=function(){
   // already in that frozen population; new TNs cannot enter On-Hold,
   // Dispatched, or Unscanned for the current operating cycle.
   const onholdRows=badocGetOnholdRows(todayRows,!!activeVolumeSnapshot);
-  // Backlogs = unique parcels in today's operating population without a
-  // Pick Up Time timestamp dated today in Manila. Blank and prior-day pickup
-  // timestamps both remain in Backlogs. After 3 PM, use the frozen population
-  // with its latest available row data, matching Today's Volume's cutoff.
+  // Backlogs = unique current parcels without a Pick Up Time timestamp
+  // dated today in Manila. This intentionally uses the live Parcel Count +
+  // Assigned Today population, not the 3 PM Today's Volume snapshot: older
+  // parcels and records added after cutoff must still be eligible for Backlogs.
+  // Blank and prior-day pickup timestamps both remain in Backlogs.
   const backlogTnKeys=new Set();
-  todayRows.forEach(row=>{
+  liveTodayRows.forEach(row=>{
     if(!row||isExceptionRow(row))return;
     const key=tnKey(spxTN(row));
     if(!key)return;
