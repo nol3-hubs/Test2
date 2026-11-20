@@ -10291,9 +10291,10 @@ window.updateOperationProgress=function(){
 
   // RTS = unique parcels whose current status begins with Return and whose
   // Pick Up Time is dated today in Philippine time. No 3:00 PM cutoff applies.
-  // todayRows already applies the active daily population / snapshot rules.
+  // Use the live daily rows, not the frozen 3:00 PM volume snapshot, so later
+  // same-day Return status updates remain eligible for the RTS count.
   const rtsTnKeys=new Set();
-  todayRows.forEach(row=>{
+  liveTodayRows.forEach(row=>{
     if(!row||isExceptionRow(row))return;
     const key=tnKey(spxTN(row));
     if(!key||rtsTnKeys.has(key))return;
