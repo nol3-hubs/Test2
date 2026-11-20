@@ -1944,7 +1944,7 @@ html[data-theme="light"] .side > .theme-switch-row{
   <div class="syncall-head">
     <div><strong>SPX Data</strong><span id="syncAllLast">Not synced on this device yet</span></div>
     <div class="syncall-actions">
-      <button type="button" class="syncall-btn" id="syncAllBtn" title="Sync shared cloud data, Received / Transported, Assigned Today, Incoming Linehaul, and Pickup (First Mile Orders and Tasks)">⟳ Sync Now</button>
+      <button type="button" class="syncall-btn" id="syncAllBtn" title="Sync shared cloud data, Received / Transported / Transporting, Assigned Today, Incoming linehaul, and Pickup">⟳ Sync Now</button>
     </div>
   </div>
   <div class="syncall-progress" id="syncAllProgress" hidden aria-live="polite">
@@ -13558,10 +13558,10 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       await sleep(300);
       return ok("Shared settings and lists loaded; parcel, Assigned Today, and linehaul data are refreshed by the SPX steps.");
     }},
-    {id:"inbound",label:"Received / Transported (SPX)",run:spxButtonStep("syncParcelInboundFromSPX","parcelInboundSpxSyncStatus")},
-    {id:"assignedToday",label:"Assigned Today (Forward + Return SPX)",run:assignedTodayStep()},
-    {id:"linehaul",label:"Incoming linehaul (SPX)",run:spxButtonStep("syncLinehaulFromSPX","linehaulSpxSyncStatus")},
-    {id:"firstMile",label:"Pickup / First Mile Orders and Tasks (SPX)",run:firstMileButtonStep()}
+    {id:"inbound",label:"Received / Transported / Transporting",run:spxButtonStep("syncParcelInboundFromSPX","parcelInboundSpxSyncStatus")},
+    {id:"assignedToday",label:"Assigned Today",run:assignedTodayStep()},
+    {id:"linehaul",label:"Incoming linehaul",run:spxButtonStep("syncLinehaulFromSPX","linehaulSpxSyncStatus")},
+    {id:"firstMile",label:"Pickup",run:firstMileButtonStep()}
   ];
 
   const ICON={wait:"○",run:"↻",ok:"✓",skip:"–",fail:"✕"};
@@ -13771,7 +13771,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     const button=$("syncAllBtn");if(!button||button.dataset.bound)return;
     button.dataset.bound="1";
     button.addEventListener("click",()=>run());
-    button.title="Sync shared cloud data, Received / Transported, Assigned Today, Incoming Linehaul, and Pickup (First Mile Orders and Tasks).";
+    button.title="Sync shared cloud data, Received / Transported / Transporting, Assigned Today, Incoming linehaul, and Pickup.";
     const last=$("syncAllLast");if(last)last.textContent=lastText();
     startSchedule();
   }
@@ -15833,4 +15833,12 @@ html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-run .sa-ico,htm
 html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-ok .sa-state-pill{background:rgba(22,163,74,.16)!important;border-color:rgba(74,222,128,.3)!important;color:#86efac!important}
 html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-fail{background:rgba(127,29,29,.12)!important;border-color:#7f1d1d!important}
 html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-fail .sa-state-pill{background:rgba(127,29,29,.18)!important;border-color:#7f1d1d!important;color:#fca5a5!important}
+</style>
+<style id="sync-all-card-order-v1">
+/* Visual-only swap: keep SPX step indexes and execution dependencies unchanged. */
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step[data-step="1"]{order:1!important}
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step[data-step="2"]{order:2!important}
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step[data-step="3"]{order:3!important}
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step[data-step="4"]{order:5!important}
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step[data-step="5"]{order:4!important}
 </style>
