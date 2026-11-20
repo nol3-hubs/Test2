@@ -1967,7 +1967,7 @@ html[data-theme="light"] .side > .theme-switch-row{
       <div class="dashboard-summary-grid">
         <div class="dashboard-summary-card volume"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
 
-        <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST</span><small>Expected final by 3 AM</small></div>
+        <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
       </div>
 
       <div class="dashboard-status-section">
@@ -9851,11 +9851,7 @@ window.updateOperationProgress=function(){
   const status=r=>badocRowMeta(r).status;
   const statusKey=v=>String(v??"").toUpperCase().replace(/[\s\-_\.]/g,"");
   const tnKey=v=>norm(v).replace(/[\s\-_.]/g,"");
-  const now=__badocTime.manilaDate(), mins=now.getHours()*60+now.getMinutes();
-  // New operating cutoffs: 3:00 AM and 3:00 PM.
-  const after3am=mins>=180;
-  const after3pm=mins>=900;
-  const forecastWindow=mins>=900 || mins<180;
+  // The next-day volume forecast remains available throughout the day.
   const stations=["BADOC HUB","CAGAYAN DC","SOC 6"];
   // Exact 58-town allowlist: 30 Badoc + 28 Pinili.
   // Normalize punctuation/case so CSV values such as AR-ARUSIP and
@@ -9989,8 +9985,8 @@ window.updateOperationProgress=function(){
       });
   }
 
-  // Volume Forecast: from 3 PM through 3 AM next day, estimate the final
-  // volume by counting unique SPX TNs that meet the exact forecast criteria.
+  // Volume Forecast: keep the next-day estimate available all day, counting
+  // unique SPX TNs that meet the exact forecast criteria for the 3 PM cutoff today.
   // Destination Station must be BADOC HUB. Current Station must be BADOC HUB,
   // SOC 6, or CAGAYAN DC. Town must be in the configured Badoc/Pinili list.
   // Exceptions are excluded and only the forecast statuses below qualify.
@@ -10037,9 +10033,8 @@ window.updateOperationProgress=function(){
     allDaySeenTnKeys.add(tn);
     allDayForecastRows.push({station:station(r),status:status(r),tn,town:townName(r),record:r});
   });
-  // Keep the original time-window-only population for the Dashboard card and
-  // card. This preserves its 3 PM–3 AM behavior while the submenu remains all-day.
-  const forecastDetailRows=forecastWindow?allDayForecastRows.slice():[];
+  // Use the all-day eligible population for both the Dashboard card and Planning Board.
+  const forecastDetailRows=allDayForecastRows.slice();
   const forecastStationStatusCounts={};
   forecastDetailRows.forEach(item=>{
     const st=item.station||"UNKNOWN";
@@ -10060,18 +10055,18 @@ window.updateOperationProgress=function(){
     if(forecastGroupEnabled(item.station,item.status)) forecastSelectedTnKeys.add(item.tn);
   });
   window.__badocForecastDetails={
-    // Time-boxed fields remain dedicated to the Dashboard forecast feature.
+    // Dashboard forecast fields remain populated throughout the day.
     rows:forecastDetailRows,
     counts:forecastStationStatusCounts,
     total:forecastSelectedTnKeys.size,
     allTotal:forecastDetailRows.length,
-    active:!!forecastWindow,
-    // All-day fields are consumed only by Planning Board → Volume Forecast.
+    active:true,
+    // All-day fields are also consumed by Planning Board → Volume Forecast.
     allDayRows:allDayForecastRows,
     allDayCounts:allDayStationStatusCounts,
     allDayTotal:allDayForecastRows.length
   };
-  const estimatedTomorrow=forecastWindow?forecastSelectedTnKeys.size:0;
+  const estimatedTomorrow=forecastSelectedTnKeys.size;
 
   const counts={TRANSPORTING:0,TRANSPORTED:0,RECEIVED:0,ASSIGNING:0,ASSIGNED:0,DELIVERING:0,DELIVERED:0,ONHOLD:0};
   // Keep the IN HUB STATUS counters on their original station/status logic,
@@ -10124,7 +10119,7 @@ window.updateOperationProgress=function(){
 
   setText("opTodayVolume",todayVolume);
   setText("opIncomingVolume",estimatedTomorrow);
-  const card=document.getElementById("incomingVolumeCard");if(card)card.style.display=forecastWindow?"":"none";
+  const card=document.getElementById("incomingVolumeCard");if(card)card.style.display="";
   setProgress("Transporting",counts.TRANSPORTING);setProgress("Transported",counts.TRANSPORTED);setProgress("Received",counts.RECEIVED);setProgress("Assigning",counts.ASSIGNING);setProgress("Assigned",counts.ASSIGNED);
   setText("opDelivering",counts.DELIVERING);setText("opDelivered",counts.DELIVERED);setText("opReceivedSummary",counts.RECEIVED);
 
