@@ -9901,6 +9901,50 @@ window.updateOperationProgress=function(){
   const activeVolumeSnapshot=savedVolumeSnapshot?.cycleKey===volumeCycleKey &&
     Array.isArray(savedVolumeSnapshot.rows) ? savedVolumeSnapshot : null;
 
+  // Interpret pickup/received timestamps in Philippine time. Offset-less SPX
+  // CSV timestamps are treated as Asia/Manila wall-clock values.
+  const manilaStamp=value=>{
+    const raw=String(value??"").trim();
+    if(!raw)return null;
+    let m=raw.match(/^(\\d{4})-(\\d{1,2})-(\\d{1,2})[ T](\\d{1,2}):(\\d{2})(?::(\\d{2})(?:\\.\\d+)?)?\\s*(AM|PM)?$/i);
+    if(m){
+      let hour=Number(m[4]),mer=String(m[7]||"").toUpperCase();
+      if(mer==="AM"&&hour===12)hour=0;else if(mer==="PM"&&hour<12)hour+=12;
+      return {dateKey:[m[1],String(Number(m[2])).padStart(2,"0"),String(Number(m[3])).padStart(2,"0")].join("-"),minutes:hour*60+Number(m[5])+Number(m[6]||0)/60};
+    }
+    m=raw.match(/^(\\d{1,2})[\\/-](\\d{1,2})[\\/-](\\d{2,4}),?\\s+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*(AM|PM)?$/i);
+    if(m){
+      let year=Number(m[3]);if(year<100)year+=2000;
+      let hour=Number(m[4]),mer=String(m[7]||"").toUpperCase();
+      if(mer==="AM"&&hour===12)hour=0;else if(mer==="PM"&&hour<12)hour+=12;
+      return {dateKey:[String(year),String(Number(m[1])).padStart(2,"0"),String(Number(m[2])).padStart(2,"0")].join("-"),minutes:hour*60+Number(m[5])+Number(m[6]||0)/60};
+    }
+    // Zoned ISO / native timestamp: convert the actual instant to Manila time.
+    const parsed=new Date(raw);
+    if(Number.isNaN(parsed.getTime()))return null;
+    const parts=new Intl.DateTimeFormat("en-CA",{
+      timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit",
+      hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"
+    }).formatToParts(parsed);
+    const values={};parts.forEach(part=>{if(part.type!=="literal")values[part.type]=part.value;});
+    if(!values.year||!values.hour)return null;
+    return {dateKey:values.year+"-"+values.month+"-"+values.day,minutes:Number(values.hour)*60+Number(values.minute||0)+Number(values.second||0)/60};
+  };
+  const rowTimestamp=(row,kind)=>{
+    const keys=Object.keys(row||{});
+    const normalized=key=>String(key).toLowerCase().replace(/[^a-z0-9]/g,"");
+    const wanted=kind==="pickup"
+      ?["pickuptime","firstpickuptime","atpickuptime","scannedtime"]
+      :["currentstationreceivedtime","stationreceivedtime","currentreceivedtime","receivedtime"];
+    for(const target of wanted){
+      const key=keys.find(name=>normalized(name)===target&&String(row[name]??"").trim()!=="");
+      if(key)return row[key];
+    }
+    return "";
+  };
+  const todayManilaKey=dateKey(nowManila);
+  const postCutoffPickupDispatchedTnKeys=new Set();
+
   // Dispatched is a cumulative daily metric: once a TN reaches Delivering,
   // Delivered, or On-Hold during this operating cycle, later status regressions
   // (for example, a post-3 PM export returning it to Received) must not remove it.
@@ -9964,6 +10008,24 @@ window.updateOperationProgress=function(){
       const key=tnKey(spxTN(row));
       if(key)latestByTn.set(key,row);
     });
+
+    // A parcel that is currently Received after 3 PM still counts as
+    // Dispatched when SPX proves it was received at the hub after cutoff,
+    // but its Pick Up Time was earlier than 3 PM on this same Manila date.
+    // New post-cutoff pickups (3 PM onward), stale dates, and missing/invalid
+    // timestamps do not qualify through this exception.
+    latestByTn.forEach((row,key)=>{
+      if(!key||isExceptionRow(row))return;
+      const currentStatus=statusKey(statusTo(row));
+      if(currentStatus!=="RECEIVED"&&currentStatus!=="LMHUBRECEIVED")return;
+      const receivedAt=manilaStamp(rowTimestamp(row,"received"));
+      const pickupAt=manilaStamp(rowTimestamp(row,"pickup"));
+      if(receivedAt?.dateKey===todayManilaKey&&receivedAt.minutes>=900&&
+         pickupAt?.dateKey===todayManilaKey&&pickupAt.minutes<900){
+        postCutoffPickupDispatchedTnKeys.add(key);
+      }
+    });
+
     todayRows=activeVolumeSnapshot.rows.map(item=>{
       const key=tnKey(item?.tn);
       const live=key?latestByTn.get(key):null;
@@ -10547,6 +10609,9 @@ window.updateOperationProgress=function(){
       const state=statusKey(statusTo(row));
       if(key&&["DELIVERING","DELIVERED"].includes(state))dispatchedTnKeys.add(key);
     });
+    // Include post-cutoff Received rows whose pickup time proves a pre-3 PM
+    // pickup on today's Manila date.
+    postCutoffPickupDispatchedTnKeys.forEach(key=>dispatchedTnKeys.add(key));
     onholdRows.forEach(row=>{
       const key=tnKey(spxTN(row));
       if(key)dispatchedTnKeys.add(key);
