@@ -1834,6 +1834,11 @@ html[data-theme="light"] .side > .theme-switch-row{
 </style>
 </style>
 
+<style id="dashboard-forecast-card-navigation-style">
+#incomingVolumeCard{cursor:pointer!important;user-select:none}
+#incomingVolumeCard:hover{transform:translateY(-2px);filter:brightness(1.025);box-shadow:0 5px 16px rgba(35,105,190,.12)}
+#incomingVolumeCard:focus-visible{outline:2px solid var(--c-1683ff-border);outline-offset:3px}
+</style>
 <style id="dashboard-parcel-detail-style">
 .dashboard-summary-card[data-dashboard-detail],
 .dashboard-status-card[data-dashboard-detail]{cursor:pointer;user-select:none}
@@ -1994,7 +1999,7 @@ html[data-theme="light"] .side > .theme-switch-row{
 
         <div class="dashboard-summary-card dispatched"><strong id="opDispatched">0</strong><span>DISPATCHED</span></div>
 
-        <div class="dashboard-summary-card incoming" id="incomingVolumeCard"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
+        <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" aria-label="Open Planning Board Volume Forecast" title="Open Planning Board → Volume Forecast"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
       </div>
 
       <div class="dashboard-status-section">
@@ -10795,6 +10800,9 @@ window.updateOperationProgress=function(){
   const unscanned=Math.max(0,todayVolume-(counts.DELIVERING||0)-(counts.DELIVERED||0)-onHold);
   setText("opUnscanned",unscanned);
 
+  let dashboardDetailsCache=null;
+  window.__badocBuildDashboardParcelDetails=function(){
+    if(dashboardDetailsCache)return dashboardDetailsCache;
   // Build the OID/status drill-down lists from the same rows and membership
   // sets that drive the dashboard cards above. This is display-only: it does
   // not change any card's count or eligibility rule.
@@ -10993,6 +11001,9 @@ window.updateOperationProgress=function(){
       rows:exemptionDetailRows,
       note:"Shows every entry in the shared exemption list. When a matching parcel row is loaded, its current OID and status are shown; otherwise the stored exemption identifier is displayed as the SPX TN."
     }
+  };
+    dashboardDetailsCache=window.__badocDashboardParcelDetails;
+    return dashboardDetailsCache;
   };
 
 };
@@ -11800,7 +11811,28 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 </script>
 
 <script id="dashboard-volume-forecast-navigation">
-/* The Volume Forecast dashboard card now opens its parcel OID/status detail list. */
+(function(){
+  if(window.__badocVolumeForecastCardNavigation)return;
+  window.__badocVolumeForecastCardNavigation=true;
+  function openAllDayVolumeForecast(){
+    // Use the same real submenu control the user would click so its page state
+    // and expanded Planning Board navigation stay in sync.
+    const submenuButton=document.querySelector('#planningBoardSubmenu button[data-page="volumeForecastBoard"]');
+    if(submenuButton){submenuButton.click();return;}
+    if(typeof window.showPage==="function")window.showPage("volumeForecastBoard");
+  }
+  document.addEventListener("click",event=>{
+    const card=event.target?.closest?.("#incomingVolumeCard");
+    if(card)openAllDayVolumeForecast();
+  });
+  document.addEventListener("keydown",event=>{
+    const card=event.target?.closest?.("#incomingVolumeCard");
+    if(card&&(event.key==="Enter"||event.key===" ")){
+      event.preventDefault();
+      openAllDayVolumeForecast();
+    }
+  });
+})();
 </script>
 
 
@@ -11840,6 +11872,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   const closeButton=byId("dashboardParcelDetailClose");
 
   function render(key){
+    try{window.__badocBuildDashboardParcelDetails?.()}catch(error){console.warn("Dashboard parcel details could not be built:",error)}
     const data=window.__badocDashboardParcelDetails?.[key]||{rows:[],count:null,note:"Dashboard detail data is not ready yet."};
     const rows=Array.isArray(data.rows)?data.rows:[];
     const title=byId("dashboardParcelDetailTitle");
