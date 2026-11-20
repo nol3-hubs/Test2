@@ -3,9 +3,9 @@
 Independent test repository merged from the newer `nol3-hubs/test` project while retaining Test2's extension-version validation and GitHub Actions workflows.
 
 ## Included
-- BADOC Hub dashboard v96
-- Chrome extension v1.4.9, including Downloaded Data display in the POD/POOH Checker
-- Firefox extension v69.5.7
+- BADOC Hub dashboard v104
+- Chrome extension v1.5.0, including Downloaded Data display in the POD/POOH Checker
+- Firefox extension v69.5.8
 - First Mile XLSX-to-CSV support
 - On-demand Pickup Info lookup from the signed-in SPX tab, including pickup attempts, geofence, remarks, photos, and seller signature
 - Integrated POD/POOH checker with an Assigned Parcels Today button that exports Forward and Return Orders across all statuses and filters the CSV Pick Up Time (SPX Assigned Time field) to the current Philippine calendar day

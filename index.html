@@ -11045,7 +11045,6 @@ __badocEvery(()=>window.updateOperationProgress?.(),30000);
     if(dg)dg.textContent=(grade&&grade.textContent.trim())||"—";
   }
   sync();
-  __badocEvery(sync,500);
 })();
 </script>
 
@@ -11871,43 +11870,37 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   const overlay=byId("dashboardParcelDetailOverlay");
   const closeButton=byId("dashboardParcelDetailClose");
 
-  function render(key){
-    try{window.__badocBuildDashboardParcelDetails?.()}catch(error){console.warn("Dashboard parcel details could not be built:",error)}
-    const data=window.__badocDashboardParcelDetails?.[key]||{rows:[],count:null,note:"Dashboard detail data is not ready yet."};
-    const rows=Array.isArray(data.rows)?data.rows:[];
-    const title=byId("dashboardParcelDetailTitle");
-    const summary=byId("dashboardParcelDetailSummary");
-    const note=byId("dashboardParcelDetailNote");
+  const DETAIL_PAGE_SIZE=100;
+  let activeDetailRows=[];
+  let activeDetailKey="";
+  let activeDetailPage=1;
+
+  function renderRowsPage(){
     const body=byId("dashboardParcelDetailBody");
-    if(title)title.textContent=titles[key]||"Parcel Details";
-    const total=data.count!==null&&data.count!==undefined&&Number.isFinite(Number(data.count))?Number(data.count):null;
-    if(summary){
-      summary.textContent=total===null
-        ?rows.length.toLocaleString()+" OID records available"
-        :rows.length.toLocaleString()+" OID records shown · Card total "+total.toLocaleString();
-    }
-    if(note){
-      note.textContent=String(data.note||"");
-      note.hidden=!data.note;
-    }
     if(!body)return;
+    const rows=activeDetailRows;
     body.replaceChildren();
+
     if(!rows.length){
       const empty=document.createElement("div");
       empty.className="dashboard-parcel-detail-empty";
-      empty.textContent=total>0
-        ?"No parcel-level OID records are available from the current source for this card."
-        :"No matching parcel records.";
+      empty.textContent="No matching parcel records.";
       body.appendChild(empty);
       return;
     }
+
+    const totalPages=Math.max(1,Math.ceil(rows.length/DETAIL_PAGE_SIZE));
+    activeDetailPage=Math.max(1,Math.min(activeDetailPage,totalPages));
+    const start=(activeDetailPage-1)*DETAIL_PAGE_SIZE;
+    const end=Math.min(start+DETAIL_PAGE_SIZE,rows.length);
+
     const wrap=document.createElement("div");
     wrap.style.overflowX="auto";
     const table=document.createElement("table");
     table.className="dashboard-parcel-detail-table";
     const thead=document.createElement("thead");
     const headerRow=document.createElement("tr");
-    const showRider=["delivering","onhold"].includes(key);
+    const showRider=["delivering","onhold"].includes(activeDetailKey);
     const headers=["OID / ORDER ID","STATUS","TOWN","SCANNED TIME"];
     if(showRider)headers.push("RIDER");
     headers.forEach(label=>{
@@ -11917,8 +11910,9 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     });
     thead.appendChild(headerRow);
     table.appendChild(thead);
+
     const tbody=document.createElement("tbody");
-    rows.forEach(item=>{
+    rows.slice(start,end).forEach(item=>{
       const tr=document.createElement("tr");
       const values=[item.orderId,item.status,item.town,item.scannedTime];
       if(showRider)values.push(item.rider);
@@ -11932,7 +11926,65 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     table.appendChild(tbody);
     wrap.appendChild(table);
     body.appendChild(wrap);
+
+    const pager=document.createElement("div");
+    pager.className="dashboard-parcel-detail-pagination";
+    pager.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 2px 2px;color:var(--c-9fb0bf-text);font-size:12px";
+
+    const pageInfo=document.createElement("span");
+    pageInfo.textContent="Showing "+(start+1).toLocaleString()+"–"+end.toLocaleString()+" of "+rows.length.toLocaleString()+" records · Page "+activeDetailPage.toLocaleString()+" of "+totalPages.toLocaleString();
+    pager.appendChild(pageInfo);
+
+    const controls=document.createElement("div");
+    controls.style.cssText="display:flex;gap:6px;align-items:center";
+    const makePageButton=(label,page,disabled)=>{
+      const button=document.createElement("button");
+      button.type="button";
+      button.textContent=label;
+      button.dataset.dashboardDetailPage=String(page);
+      button.disabled=disabled;
+      button.style.cssText="border:1px solid var(--c-344454-border);background:var(--c-10161e-bg);color:var(--c-f4f9fc-text);border-radius:7px;padding:6px 10px;cursor:pointer";
+      if(disabled)button.style.opacity=".45";
+      return button;
+    };
+    controls.appendChild(makePageButton("← Previous",activeDetailPage-1,activeDetailPage<=1));
+    controls.appendChild(makePageButton("Next →",activeDetailPage+1,activeDetailPage>=totalPages));
+    pager.appendChild(controls);
+    body.appendChild(pager);
   }
+
+  function render(key){
+    try{window.__badocBuildDashboardParcelDetails?.()}catch(error){console.warn("Dashboard parcel details could not be built:",error)}
+    const data=window.__badocDashboardParcelDetails?.[key]||{rows:[],count:null,note:"Dashboard detail data is not ready yet."};
+    activeDetailRows=Array.isArray(data.rows)?data.rows:[];
+    activeDetailKey=key;
+    activeDetailPage=1;
+
+    const title=byId("dashboardParcelDetailTitle");
+    const summary=byId("dashboardParcelDetailSummary");
+    const note=byId("dashboardParcelDetailNote");
+    const total=data.count!==null&&data.count!==undefined&&Number.isFinite(Number(data.count))?Number(data.count):null;
+    if(title)title.textContent=titles[key]||"Parcel Details";
+    if(summary){
+      summary.textContent=activeDetailRows.length.toLocaleString()+" OID records available"+
+        (total===null?"":" · Card total "+total.toLocaleString());
+    }
+    if(note){
+      note.textContent=String(data.note||"");
+      note.hidden=!data.note;
+    }
+    renderRowsPage();
+  }
+
+  const detailBody=byId("dashboardParcelDetailBody");
+  detailBody?.addEventListener("click",event=>{
+    const button=event.target?.closest?.("[data-dashboard-detail-page]");
+    if(!button||!detailBody.contains(button)||button.disabled)return;
+    const nextPage=Number(button.dataset.dashboardDetailPage);
+    if(!Number.isFinite(nextPage))return;
+    activeDetailPage=nextPage;
+    renderRowsPage();
+  });
 
   function open(key,trigger){
     if(!overlay)return;
@@ -13541,8 +13593,9 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 <!-- BADOC HUB: Parcel Count volume fix v1.1 -->
 <script id="badoc-parcel-volume-fix-v11">
 (function(){
-  // Re-render the Parcel Count/dashboard after the live parcel dataset changes.
-  // getParcelCountRows() now includes qualifying MISROUTED rows in Total Volume.
+  // One startup refresh is enough: the normal data-render path calls
+  // renderRecords(), which refreshes updateDashboardFromParcelFilters().
+  // Do not poll/rebuild all dashboard metrics every 1.5 seconds.
   if(window.__badocParcelVolumeFixV11)return;
   window.__badocParcelVolumeFixV11=true;
   const refresh=()=>{
@@ -13552,11 +13605,6 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     }catch(e){console.warn("Parcel volume refresh:",e)}
   };
   setTimeout(refresh,0);
-  __badocEvery(()=>{
-    try{
-      if(typeof updateDashboardFromParcelFilters==="function")updateDashboardFromParcelFilters();
-    }catch(e){}
-  },1500);
 })();
 </script>
 
