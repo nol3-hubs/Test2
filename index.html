@@ -1833,6 +1833,31 @@ html[data-theme="light"] .side > .theme-switch-row{
 }
 </style>
 </style>
+
+<style id="dashboard-parcel-detail-style">
+.dashboard-summary-card[data-dashboard-detail],
+.dashboard-status-card[data-dashboard-detail]{cursor:pointer;user-select:none}
+.dashboard-summary-card[data-dashboard-detail]:hover,
+.dashboard-status-card[data-dashboard-detail]:hover{transform:translateY(-2px);filter:brightness(1.025);box-shadow:0 5px 16px rgba(35,105,190,.12)}
+.dashboard-summary-card[data-dashboard-detail]:focus-visible,
+.dashboard-status-card[data-dashboard-detail]:focus-visible{outline:2px solid var(--c-1683ff-border);outline-offset:3px}
+.dashboard-parcel-detail-overlay{position:fixed;inset:0;z-index:10060;background:var(--c-000000b8-bg);display:none;align-items:center;justify-content:center;padding:16px}
+.dashboard-parcel-detail-overlay.open{display:flex}
+.dashboard-parcel-detail-modal{width:min(1040px,96vw);max-height:88vh;display:flex;flex-direction:column;background:var(--c-080c11-bg);border:1px solid var(--c-2c3947-border);border-radius:14px;box-shadow:0 18px 55px rgba(0,0,0,.28);overflow:hidden}
+.dashboard-parcel-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:15px 16px;border-bottom:1px solid var(--c-22313d-border)}
+.dashboard-parcel-detail-head strong{display:block;font-size:16px;color:var(--c-f4f9fc-text)}
+.dashboard-parcel-detail-summary{display:block;margin-top:4px;color:var(--c-9fb0bf-text);font-size:11px}
+.dashboard-parcel-detail-close{flex:0 0 auto;border:1px solid var(--c-344454-border);background:var(--c-10161e-bg);color:var(--c-ffffff-text);border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:20px}
+.dashboard-parcel-detail-note{padding:10px 14px;border-bottom:1px solid var(--c-22313d-border);color:var(--c-9fb0bf-text);font-size:12px;line-height:1.45}
+.dashboard-parcel-detail-body{overflow:auto;padding:12px}
+.dashboard-parcel-detail-table{width:100%;min-width:680px;border-collapse:collapse;font-size:13px}
+.dashboard-parcel-detail-table th,.dashboard-parcel-detail-table td{padding:10px 11px;border-bottom:1px solid var(--c-1c2833-border);text-align:left;vertical-align:top}
+.dashboard-parcel-detail-table th{position:sticky;top:0;background:var(--c-101821-bg);color:var(--c-9fc6d9-text);font-size:10px;letter-spacing:.05em;z-index:1}
+.dashboard-parcel-detail-table td{color:var(--c-edf3f8-text);overflow-wrap:anywhere}
+.dashboard-parcel-detail-empty{padding:28px 12px;text-align:center;color:var(--c-8fa0ad-text);font-size:13px}
+@media(max-width:600px){.dashboard-parcel-detail-modal{max-height:92vh}.dashboard-parcel-detail-body{padding:8px}.dashboard-parcel-detail-table{font-size:12px}.dashboard-parcel-detail-table th,.dashboard-parcel-detail-table td{padding:9px 8px}}
+</style>
+
 </head>
 <body data-app-version="21">
 
@@ -1965,11 +1990,11 @@ html[data-theme="light"] .side > .theme-switch-row{
         <span id="volumeSnapshotStatus" title="Fixed daily operating cutoff · Manila time" style="display:inline-flex;align-items:center;justify-content:center;padding:6px 11px;border:1px solid var(--c-18b8ff-border);border-radius:999px;background:var(--c-147bd1-bg);color:var(--c-ffffff-text);font-size:11px;font-weight:900;letter-spacing:.5px;white-space:nowrap;flex-shrink:0">COT: 15:00</span>
       </div>
       <div class="dashboard-summary-grid">
-        <div class="dashboard-summary-card volume"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
+        <div class="dashboard-summary-card volume" data-dashboard-detail="todayVolume" role="button" tabindex="0" aria-label="Today's volume. Click to view OIDs and statuses." title="Click to view OIDs and statuses"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
 
-        <div class="dashboard-summary-card dispatched"><strong id="opDispatched">0</strong><span>DISPATCHED</span></div>
+        <div class="dashboard-summary-card dispatched" data-dashboard-detail="dispatched" role="button" tabindex="0" aria-label="Dispatched. Click to view OIDs and statuses." title="Click to view OIDs and statuses"><strong id="opDispatched">0</strong><span>DISPATCHED</span></div>
 
-        <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
+        <div class="dashboard-summary-card incoming" id="incomingVolumeCard" data-dashboard-detail="forecast" role="button" tabindex="0" aria-label="Volume forecast for next day. Click to view OIDs and statuses." title="Click to view forecast OIDs and statuses"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
       </div>
 
       <div class="dashboard-status-section">
@@ -1977,20 +2002,20 @@ html[data-theme="light"] .side > .theme-switch-row{
           <section class="dashboard-card-group parcel-overview-group" aria-label="Parcel Overview">
             <div class="dashboard-card-group-head"><div><strong>Parcel Overview</strong><small>Live parcel status totals</small></div></div>
             <div class="dashboard-status-grid">
-              <div class="dashboard-status-card received"><strong id="opReceivedSummary">0</strong><span>RECEIVED</span><small>Current parcel data</small></div>
-              <div class="dashboard-status-card delivering"><strong id="opDelivering">0</strong><span>DELIVERING</span><small>Current parcel data</small></div>
-              <div class="dashboard-status-card delivered"><strong id="opDelivered">0</strong><span>DELIVERED</span><small>Current parcel data</small></div>
-              <div class="dashboard-status-card onhold"><strong id="opOnHold">0</strong><span>ON-HOLD</span><small>Live On-Hold source</small></div>
+              <div class="dashboard-status-card received" data-dashboard-detail="received" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opReceivedSummary">0</strong><span>RECEIVED</span><small>Current parcel data</small></div>
+              <div class="dashboard-status-card delivering" data-dashboard-detail="delivering" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opDelivering">0</strong><span>DELIVERING</span><small>Current parcel data</small></div>
+              <div class="dashboard-status-card delivered" data-dashboard-detail="delivered" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opDelivered">0</strong><span>DELIVERED</span><small>Current parcel data</small></div>
+              <div class="dashboard-status-card onhold" data-dashboard-detail="onhold" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opOnHold">0</strong><span>ON-HOLD</span><small>Live On-Hold source</small></div>
               <div class="dashboard-status-card cfr1" id="cfr1Card" role="button" tabindex="0" aria-label="CFR1 completion percentage. Click to view scanned and unscanned parcels." title="Click to view CFR1 scanned and unscanned parcels"><strong id="opCfr1Percentage">0.0%</strong><span>CFR1</span><small id="opCfr1Summary" hidden style="display:none!important" aria-hidden="true"></small><span hidden aria-hidden="true" style="display:none!important"><b id="opCfr1Scanned">0</b><em id="opCfr1Total">0</em></span></div>
             </div>
           </section>
           <section class="dashboard-card-group delivery-status-group" aria-label="Delivery Status">
             <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Backlogs and exception tracking</small></div></div>
             <div class="dashboard-status-grid">
-              <div class="dashboard-status-card backlogs"><strong id="opBacklogs">0</strong><span>BACKLOGS</span><small>No pickup time today</small></div>
-              <div class="dashboard-status-card redelivery"><strong id="opRedelivery">—</strong><span>REDELIVER</span><small>EOD + late-received pickups</small></div>
-              <div class="dashboard-status-card rts"><strong id="opRts">—</strong><span>RTS</span><small></small></div>
-              <div class="dashboard-status-card exemptions"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span><small>Current exemption list</small></div>
+              <div class="dashboard-status-card backlogs" data-dashboard-detail="backlogs" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opBacklogs">0</strong><span>BACKLOGS</span><small>No pickup time today</small></div>
+              <div class="dashboard-status-card redelivery" data-dashboard-detail="redelivery" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opRedelivery">—</strong><span>REDELIVER</span><small>EOD + late-received pickups</small></div>
+              <div class="dashboard-status-card rts" data-dashboard-detail="rts" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opRts">—</strong><span>RTS</span><small></small></div>
+              <div class="dashboard-status-card exemptions" data-dashboard-detail="exemptions" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span><small>Current exemption list</small></div>
             </div>
           </section>
 
@@ -10769,6 +10794,166 @@ window.updateOperationProgress=function(){
   // Unscanned: Today's Volume minus Delivering, Delivered and On-Hold.
   const unscanned=Math.max(0,todayVolume-(counts.DELIVERING||0)-(counts.DELIVERED||0)-onHold);
   setText("opUnscanned",unscanned);
+
+  // Build the OID/status drill-down lists from the same rows and membership
+  // sets that drive the dashboard cards above. This is display-only: it does
+  // not change any card's count or eligibility rule.
+  const dashboardDetailRow=row=>({
+    orderId:String(row?.["Order ID"]??row?.["Order Id"]??"").trim(),
+    tn:String(spxTN(row)||row?.["SLS Tracking Number"]||row?.["SPX TN"]||"").trim(),
+    status:String(statusTo(row)||row?.["Status"]||row?.["Parcel Status"]||row?.["Delivery Status"]||row?.["Current Status"]||"").trim(),
+    town:String(row?.["Town Name"]??row?.["Town"]??row?.town??"").trim()
+  });
+  const detailLookup=new Map();
+  const detailSources=[
+    ...(Array.isArray(current?.rows)?[current.rows]:[]),
+    ...(Array.isArray(current?.valid)?[current.valid]:[]),
+    ...(Array.isArray(current?.mis)?[current.mis]:[]),
+    liveTodayRows,
+    Array.isArray(incomingForToday?.rows)?incomingForToday.rows:[],
+    todayRows,
+    Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:[]
+  ];
+  detailSources.forEach(source=>{
+    (source||[]).forEach(row=>{
+      if(!row)return;
+      const item=dashboardDetailRow(row);
+      const key=tnKey(item.tn);
+      if(!key)return;
+      const previous=detailLookup.get(key)||{orderId:"",tn:"",status:"",town:""};
+      detailLookup.set(key,{
+        orderId:item.orderId||previous.orderId,
+        tn:item.tn||previous.tn,
+        status:item.status||previous.status,
+        town:item.town||previous.town
+      });
+    });
+  });
+  const collectDashboardDetails=(rows,predicate=()=>true)=>{
+    const seen=new Set(),out=[];
+    (rows||[]).forEach(row=>{
+      if(!row)return;
+      const key=tnKey(spxTN(row));
+      if(!key||seen.has(key)||!predicate(row,key))return;
+      seen.add(key);
+      const fallback=dashboardDetailRow(row);
+      const latest=detailLookup.get(key)||fallback;
+      out.push({
+        orderId:latest.orderId||fallback.orderId||"",
+        tn:latest.tn||fallback.tn||"",
+        status:latest.status||fallback.status||"",
+        town:latest.town||fallback.town||""
+      });
+    });
+    return out;
+  };
+  const collectDashboardKeys=keys=>{
+    const out=[];
+    (keys||[]).forEach(key=>{
+      const normalized=tnKey(key);
+      if(!normalized)return;
+      const found=detailLookup.get(normalized);
+      out.push(found?{...found}:{orderId:"",tn:String(key),status:"Latest status not present in loaded rows",town:""});
+    });
+    return out;
+  };
+
+  const todayVolumeSource=activeVolumeSnapshot
+    ?todayRows
+    :[...liveTodayRows,...(tvLinehaulEnabled&&Array.isArray(incomingForToday?.rows)?incomingForToday.rows:[])];
+  const forecastParcelRows=forecastDetailRows
+    .filter(item=>forecastGroupEnabled(item.station,item.status))
+    .map(item=>item.record)
+    .filter(Boolean);
+  const receivedDetailRows=collectDashboardDetails(todayRows,row=>{
+    const state=statusKey(statusTo(row));
+    const key=tnKey(spxTN(row));
+    return (state==="RECEIVED"||state==="LMHUBRECEIVED") &&
+      !(activeVolumeSnapshot&&postCutoffRedeliverTnKeys.has(key));
+  });
+  const deliveringDetailRows=collectDashboardDetails(todayRows,row=>statusKey(statusTo(row))==="DELIVERING");
+  const deliveredDetailRows=collectDashboardDetails(todayRows,row=>statusKey(statusTo(row))==="DELIVERED");
+  const dispatchedDetailKeys=activeVolumeSnapshot
+    ?[...dispatchedTnKeys]
+    :[
+      ...collectDashboardDetails(todayRows,row=>["DELIVERING","DELIVERED"].includes(statusKey(statusTo(row)))).map(item=>item.tn),
+      ...onholdRows.map(row=>spxTN(row))
+    ];
+  const dispatchedDetailRows=collectDashboardKeys([...new Set(dispatchedDetailKeys.map(tnKey).filter(Boolean))]);
+  const backlogDetailRows=collectDashboardDetails(liveTodayRows,(row,key)=>backlogTnKeys.has(key));
+  const rtsDetailRows=collectDashboardDetails(liveTodayRows,(row,key)=>rtsTnKeys.has(key));
+  const redeliveryDetailRows=collectDashboardDetails(
+    [...liveTodayRows,...todayRows,...(Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:[])],
+    (row,key)=>postCutoffRedeliverTnKeys.has(key)
+  );
+  const exceptionById=new Map();
+  detailLookup.forEach(item=>{
+    const id=exceptionKey(item.orderId);
+    if(id)exceptionById.set(id,item);
+  });
+  const exemptionDetailRows=(Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers:[]).map(value=>{
+    const raw=String(value??"").trim();
+    const key=exceptionKey(raw);
+    const match=detailLookup.get(tnKey(raw))||exceptionById.get(key);
+    return match
+      ?{orderId:match.orderId||"",tn:match.tn||raw,status:(match.status?match.status+" · EXEMPTED":"EXEMPTED"),town:match.town||""}
+      :{orderId:"—",tn:raw,status:"EXEMPTED · parcel record not loaded",town:"—"};
+  });
+  const redeliveryNode=document.getElementById("opRedelivery");
+  const redeliveryText=String(redeliveryNode?.textContent||"").replace(/,/g,"").trim();
+  const redeliveryCardTotal=redeliveryText&&redeliveryText!=="—"&&Number.isFinite(Number(redeliveryText))
+    ?Number(redeliveryText):null;
+  const eodRedeliveryIsAggregate=Number.isFinite(eodRedeliveryValue);
+  window.__badocDashboardParcelDetails={
+    todayVolume:{
+      count:todayVolume,rows:collectDashboardDetails(todayVolumeSource),
+      note:activeVolumeSnapshot
+        ?"Uses the saved 3:00 PM Manila operating-volume population. Statuses shown are the latest statuses available in the loaded data."
+        :(tvLinehaulEnabled
+          ?"Includes the live Parcel Count population and enabled Incoming Linehaul parcel rows. Any source count without a matching SPX TN cannot be shown as an individual OID."
+          :"Uses the live Parcel Count population.")
+    },
+    dispatched:{
+      count:dispatchedTotal,rows:dispatchedDetailRows,
+      note:activeVolumeSnapshot
+        ?"Uses the cumulative dispatched-TN ledger for this operating cycle. A parcel remains listed if its status later changes back to Received; the table shows its latest available status."
+        :"Includes the current Delivering, Delivered, and On-Hold populations."
+    },
+    forecast:{
+      count:estimatedTomorrow,rows:collectDashboardDetails(forecastParcelRows),
+      note:"Shows only forecast station/status groups currently enabled in Forecast Breakdown. This is the same selected population used by the dashboard forecast total."
+    },
+    received:{
+      count:counts.RECEIVED,rows:receivedDetailRows,
+      note:"Same status and 3:00 PM snapshot handling used by the Received card. Post-cutoff Received parcels classified as Redeliver are excluded."
+    },
+    delivering:{count:counts.DELIVERING,rows:deliveringDetailRows,note:"Current Delivering records in the dashboard's Today's Volume population."},
+    delivered:{count:counts.DELIVERED,rows:deliveredDetailRows,note:"Current Delivered records in the dashboard's Today's Volume population."},
+    onhold:{
+      count:onHold,rows:collectDashboardDetails(onholdRows),
+      note:"Same On-Hold result used by the card: qualifying status, same-day Pick Up Time before 3:00 PM Manila time, Delivering and Delivered excluded, and newer export rows taking precedence."
+    },
+    backlogs:{
+      count:backlogTnKeys.size,rows:backlogDetailRows,
+      note:"Unique current parcel TNs without a Pick Up Time dated today in Manila. Blank and prior-day pickup timestamps remain in Backlogs."
+    },
+    redelivery:{
+      count:redeliveryCardTotal,rows:redeliveryDetailRows,
+      note:eodRedeliveryIsAggregate
+        ?"The card combines the EOD-sheet Redelivery aggregate with distinct post-3:00 PM Received parcels picked up today. The EOD sheet provides a total only, not parcel-level OIDs/statuses; rows below show the itemized late-received parcels available from SPX data."
+        :"Rows below show the itemized late-received parcels available from SPX data."
+    },
+    rts:{
+      count:rtsTnKeys.size,rows:rtsDetailRows,
+      note:"Unique parcels with a current status beginning with Return and a Pick Up Time dated today in Manila."
+    },
+    exemptions:{
+      count:Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers.length:0,
+      rows:exemptionDetailRows,
+      note:"Shows every entry in the shared exemption list. When a matching parcel row is loaded, its current OID and status are shown; otherwise the stored exemption identifier is displayed as the SPX TN."
+    }
+  };
+
 };
 __badocEvery(()=>window.updateOperationProgress?.(),30000);
 </script>
@@ -11574,24 +11759,138 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 </script>
 
 <script id="dashboard-volume-forecast-navigation">
+/* The Volume Forecast dashboard card now opens its parcel OID/status detail list. */
+</script>
+
+
+<div class="dashboard-parcel-detail-overlay" id="dashboardParcelDetailOverlay" aria-hidden="true">
+  <section class="dashboard-parcel-detail-modal" role="dialog" aria-modal="true" aria-labelledby="dashboardParcelDetailTitle">
+    <header class="dashboard-parcel-detail-head">
+      <div>
+        <strong id="dashboardParcelDetailTitle">Parcel Details</strong>
+        <span class="dashboard-parcel-detail-summary" id="dashboardParcelDetailSummary"></span>
+      </div>
+      <button class="dashboard-parcel-detail-close" id="dashboardParcelDetailClose" type="button" aria-label="Close">×</button>
+    </header>
+    <div class="dashboard-parcel-detail-note" id="dashboardParcelDetailNote" hidden></div>
+    <div class="dashboard-parcel-detail-body" id="dashboardParcelDetailBody"></div>
+  </section>
+</div>
+
+<script id="dashboard-parcel-details-script">
 (function(){
-  function openAllDayVolumeForecast(){
-    if(typeof showPage === "function"){
-      showPage("volumeForecastBoard");
+  "use strict";
+  const byId=id=>document.getElementById(id);
+  const titles={
+    todayVolume:"Today's Volume — Parcel OIDs",
+    dispatched:"Dispatched — Parcel OIDs",
+    forecast:"Volume Forecast — Parcel OIDs",
+    received:"Received — Parcel OIDs",
+    delivering:"Delivering — Parcel OIDs",
+    delivered:"Delivered — Parcel OIDs",
+    onhold:"On-Hold — Parcel OIDs",
+    backlogs:"Backlogs — Parcel OIDs",
+    redelivery:"Redelivery — Parcel OIDs",
+    rts:"RTS — Parcel OIDs",
+    exemptions:"Exemptions — Parcel OIDs"
+  };
+  let lastTrigger=null;
+  const overlay=byId("dashboardParcelDetailOverlay");
+  const closeButton=byId("dashboardParcelDetailClose");
+
+  function render(key){
+    const data=window.__badocDashboardParcelDetails?.[key]||{rows:[],count:null,note:"Dashboard detail data is not ready yet."};
+    const rows=Array.isArray(data.rows)?data.rows:[];
+    const title=byId("dashboardParcelDetailTitle");
+    const summary=byId("dashboardParcelDetailSummary");
+    const note=byId("dashboardParcelDetailNote");
+    const body=byId("dashboardParcelDetailBody");
+    if(title)title.textContent=titles[key]||"Parcel Details";
+    const total=Number.isFinite(Number(data.count))?Number(data.count):null;
+    if(summary){
+      summary.textContent=total===null
+        ?rows.length.toLocaleString()+" OID records available"
+        :rows.length.toLocaleString()+" OID records shown · Card total "+total.toLocaleString();
+    }
+    if(note){
+      note.textContent=String(data.note||"");
+      note.hidden=!data.note;
+    }
+    if(!body)return;
+    body.replaceChildren();
+    if(!rows.length){
+      const empty=document.createElement("div");
+      empty.className="dashboard-parcel-detail-empty";
+      empty.textContent=total>0
+        ?"No parcel-level OID records are available from the current source for this card."
+        :"No matching parcel records.";
+      body.appendChild(empty);
       return;
     }
-    const submenuButton=document.querySelector('.planning-board-submenu [data-page="volumeForecastBoard"]');
-    if(submenuButton)submenuButton.click();
+    const wrap=document.createElement("div");
+    wrap.style.overflowX="auto";
+    const table=document.createElement("table");
+    table.className="dashboard-parcel-detail-table";
+    const thead=document.createElement("thead");
+    const headerRow=document.createElement("tr");
+    ["OID / ORDER ID","SPX TN","STATUS","TOWN"].forEach(label=>{
+      const th=document.createElement("th");
+      th.textContent=label;
+      headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    const tbody=document.createElement("tbody");
+    rows.forEach(item=>{
+      const tr=document.createElement("tr");
+      [item.orderId,item.tn,item.status,item.town].forEach(value=>{
+        const td=document.createElement("td");
+        td.textContent=String(value??"").trim()||"—";
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    body.appendChild(wrap);
   }
+
+  function open(key,trigger){
+    if(!overlay)return;
+    lastTrigger=trigger||document.activeElement;
+    render(key);
+    overlay.classList.add("open");
+    overlay.setAttribute("aria-hidden","false");
+    closeButton?.focus();
+  }
+  function close(){
+    if(!overlay)return;
+    overlay.classList.remove("open");
+    overlay.setAttribute("aria-hidden","true");
+    if(lastTrigger&&typeof lastTrigger.focus==="function")lastTrigger.focus();
+    lastTrigger=null;
+  }
+  window.__badocOpenDashboardParcelDetails=open;
+
   document.addEventListener("click",event=>{
-    if(event.target.closest("#incomingVolumeCard"))openAllDayVolumeForecast();
+    const card=event.target?.closest?.("[data-dashboard-detail]");
+    if(!card)return;
+    open(card.dataset.dashboardDetail,card);
   });
   document.addEventListener("keydown",event=>{
-    const card=event.target.closest&&event.target.closest("#incomingVolumeCard");
+    if(event.key==="Escape"&&overlay?.classList.contains("open")){
+      close();
+      return;
+    }
+    const card=event.target?.closest?.("[data-dashboard-detail]");
     if(card&&(event.key==="Enter"||event.key===" ")){
       event.preventDefault();
-      openAllDayVolumeForecast();
+      open(card.dataset.dashboardDetail,card);
     }
+  });
+  closeButton?.addEventListener("click",close);
+  overlay?.addEventListener("click",event=>{
+    if(event.target===overlay)close();
   });
 })();
 </script>
