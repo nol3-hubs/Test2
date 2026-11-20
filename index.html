@@ -9901,6 +9901,30 @@ window.updateOperationProgress=function(){
   const activeVolumeSnapshot=savedVolumeSnapshot?.cycleKey===volumeCycleKey &&
     Array.isArray(savedVolumeSnapshot.rows) ? savedVolumeSnapshot : null;
 
+  // Dispatched is a cumulative daily metric: once a TN reaches Delivering,
+  // Delivered, or On-Hold during this operating cycle, later status regressions
+  // (for example, a post-3 PM export returning it to Received) must not remove it.
+  // The 3 PM snapshot seeds parcels already dispatched at cutoff; local storage
+  // preserves parcels that become dispatched after cutoff across page reloads.
+  const dispatchedLedgerKey="badoc_dispatched_tn_ledger_v1_"+volumeCycleKey;
+  const dispatchedTnKeys=new Set();
+  if(activeVolumeSnapshot){
+    activeVolumeSnapshot.rows.forEach(item=>{
+      const key=tnKey(item?.tn);
+      const initial=statusKey(item?.initialStatus);
+      if(key&&["DELIVERING","DELIVERED","ONHOLD","LMHUBONHOLD"].includes(initial)){
+        dispatchedTnKeys.add(key);
+      }
+    });
+    try{
+      const saved=JSON.parse(localStorage.getItem(dispatchedLedgerKey)||"[]");
+      if(Array.isArray(saved))saved.forEach(value=>{
+        const key=tnKey(value);
+        if(key)dispatchedTnKeys.add(key);
+      });
+    }catch(e){console.warn("Dispatched history ledger could not be read:",e)}
+  }
+
   // Build the population once by SPX TN. Incoming Linehaul is included only
   // when its existing checkbox is enabled; duplicates across sources are removed.
   const baselineByTn=new Map();
@@ -10515,15 +10539,33 @@ window.updateOperationProgress=function(){
   // already in that frozen population; new TNs cannot enter On-Hold,
   // Dispatched, or Unscanned for the current operating cycle.
   const onholdRows=badocGetOnholdRows(todayRows,!!activeVolumeSnapshot);
+  // Add every TN that is currently in a dispatched bucket. This ledger is
+  // cumulative for the operating day, so a later Received status cannot undo it.
+  if(activeVolumeSnapshot){
+    todayRows.forEach(row=>{
+      const key=tnKey(spxTN(row));
+      const state=statusKey(statusTo(row));
+      if(key&&["DELIVERING","DELIVERED"].includes(state))dispatchedTnKeys.add(key);
+    });
+    onholdRows.forEach(row=>{
+      const key=tnKey(spxTN(row));
+      if(key)dispatchedTnKeys.add(key);
+    });
+    try{localStorage.setItem(dispatchedLedgerKey,JSON.stringify([...dispatchedTnKeys]));}
+    catch(e){console.warn("Dispatched history ledger could not be saved:",e)}
+  }
   const onholdTnKeys=new Set(onholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
   window.__badocOnholdTnKeys=onholdTnKeys;
   const onHold=onholdTnKeys.size;
   counts.ONHOLD=onHold;
   setText("opOnHold",onHold);
 
-  // Count dispatched parcels only within the Today's Volume population.
-  // After 3 PM, statuses remain live but the frozen TN population cannot grow.
-  setText("opDispatched",(counts.DELIVERING||0)+(counts.DELIVERED||0)+onHold);
+  // After 3 PM, show the cumulative unique TNs ever dispatched in this
+  // operating cycle. A later regression to Received must not subtract a parcel.
+  const dispatchedTotal=activeVolumeSnapshot
+    ?dispatchedTnKeys.size
+    :(counts.DELIVERING||0)+(counts.DELIVERED||0)+onHold;
+  setText("opDispatched",dispatchedTotal);
 
   // Unscanned: Today's Volume minus Delivering, Delivered and On-Hold.
   const unscanned=Math.max(0,todayVolume-(counts.DELIVERING||0)-(counts.DELIVERED||0)-onHold);
