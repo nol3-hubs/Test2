@@ -15844,4 +15844,11 @@ html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-fail .sa-state-
 
 /* Hide the descriptive status prompts under all Sync All card titles. */
 #homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step .sa-content>small{display:none!important}
+
+/* Compact SPX sync cards: use title and status badge height instead of a tall empty tile. */
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps{gap:8px!important}
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step{align-items:center!important;min-height:0!important;padding:8px 10px!important}
+#homeDashboard #syncAll .syncall-step .sa-ico{flex-basis:24px!important;width:24px!important;height:24px!important;font-size:12px!important}
+#homeDashboard #syncAll .syncall-step .sa-content{gap:0!important}
+#homeDashboard #syncAll .syncall-step .sa-heading{align-items:center!important}
 </style>
