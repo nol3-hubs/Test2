@@ -157,6 +157,1152 @@ function riderProgress(message, extra = {}) {
 }
 
 
+function withTimeout(promise, ms, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)} seconds.`)), ms);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchSpxFromLoggedInTab(url, init = {}) {
+  const tabs = await extApi.tabs.query({ url: SPX_ORIGIN + "/*" });
+  const tab = tabs
+    .filter(item => Number.isInteger(item?.id))
+    .sort((a, b) => Number(b.lastAccessed || 0) - Number(a.lastAccessed || 0))[0];
+  if (!tab?.id) {
+    throw new Error("No SPX tab is open in Firefox. Open the SPX FMS Portal, sign in, and retry.");
+  }
+
+  const requestInit = {
+    method: String(init.method || "GET"),
+    headers: {
+      "Accept": "application/json, text/plain, */*",
+      ...(init.headers || {})
+    },
+    ...(init.body !== undefined ? { body: init.body } : {})
+  };
+
+  const injected = await extApi.scripting.executeScript({
+    target: { tabId: tab.id },
+    world: "MAIN",
+    args: [String(url), requestInit],
+    func: async (requestUrl, options) => {
+      const response = await window.fetch(requestUrl, {
+        ...options,
+        credentials: "include",
+        cache: "no-store",
+        redirect: "follow"
+      });
+      return {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get("content-type") || "",
+        contentDisposition: response.headers.get("content-disposition") || "",
+        text: await response.text()
+      };
+    }
+  });
+
+  const response = injected?.[0]?.result;
+  if (!response || typeof response.text !== "string") {
+    throw new Error("Firefox did not return the SPX page request result. Reload the SPX tab and retry.");
+  }
+  return response;
+}
+
+async function extensionFetchText(url, init = {}) {
+  let isSpxOrigin = false;
+  try { isSpxOrigin = new URL(url).origin === SPX_ORIGIN; } catch {}
+  if (isSpxOrigin) {
+    return await withTimeout(
+      fetchSpxFromLoggedInTab(url, init),
+      FETCH_TIMEOUT_MS,
+      "SPX page request"
+    );
+  }
+
+  return await withTimeout(
+    fetch(url, {
+      credentials: "include",
+      cache: "no-store",
+      redirect: "follow",
+      ...init,
+      headers: {
+        "Accept": "application/json, text/plain, */*",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        ...(init.headers || {})
+      }
+    }),
+    FETCH_TIMEOUT_MS,
+    "SPX request"
+  ).then(async response => {
+    const text = await response.text();
+    return {
+      status: response.status,
+      ok: response.ok,
+      contentType: response.headers.get("content-type") || "",
+      contentDisposition: response.headers.get("content-disposition") || "",
+      text
+    };
+  });
+}
+
+function parseJsonResponse(label, response) {
+  const raw = String(response?.text || "");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const preview = raw.replace(/\s+/g, " ").slice(0, 260);
+    if (/<!doctype|<html/i.test(preview)) {
+      throw new Error(`${label}: SPX returned the web app HTML instead of JSON (HTTP ${response?.status || 0}).`);
+    }
+    throw new Error(`${label}: SPX returned non-JSON data (HTTP ${response?.status || 0}, ${response?.contentType || "unknown"}).`);
+  }
+}
+
+function getExportTaskId(task, depth = 0) {
+  if (task == null || depth > 4) return 0;
+  if (Array.isArray(task)) { for (const item of task) { const id = getExportTaskId(item, depth + 1); if (id) return id; } return 0; }
+  if (typeof task !== "object") return 0;
+  for (const key of ["task_id", "taskId", "export_task_id", "exportTaskId", "id"]) {
+    const id = Number(task[key] || 0); if (Number.isFinite(id) && id > 0) return id;
+  }
+  for (const key of ["task", "export_task", "exportTask", "data", "result"]) { const id = getExportTaskId(task[key], depth + 1); if (id) return id; }
+  return 0;
+}
+function findExportTaskRows(value, depth = 0) {
+  if (value == null || depth > 6) return null;
+  if (Array.isArray(value)) {
+    if (value.some(item => getExportTaskId(item) > 0)) return value;
+    for (const item of value) { const nested = findExportTaskRows(item, depth + 1); if (nested) return nested; }
+    return null;
+  }
+  if (typeof value !== "object") return null;
+  const entries = Object.entries(value).sort(([a], [b]) => {
+    const score = key => /task/i.test(key) ? 0 : /list|record|result|data/i.test(key) ? 1 : 2;
+    return score(a) - score(b);
+  });
+  for (const [, child] of entries) { const nested = findExportTaskRows(child, depth + 1); if (nested) return nested; }
+  return null;
+}
+async function listTasks(startSec, source = "", page = 1, omitStartTime = false, taskId = 0) {
+  const sourceParam = source ? `&source=${encodeURIComponent(source)}` : "";
+  const startParam = omitStartTime ? "" : `start_time=${encodeURIComponent(startSec)}&`;
+  const taskIdParam = taskId ? `&task_ids=${encodeURIComponent(taskId)}` : "";
+  const url = `${SPX_ORIGIN}${TASK_LIST_PATH}?${startParam}count=100&pageno=${Math.max(1, Number(page) || 1)}${sourceParam}${taskIdParam}`;
+  const response = await extensionFetchText(url);
+  const json = parseJsonResponse("SPX export task list", response);
+  if (Number(json?.retcode) !== 0) throw new Error(json?.message || "SPX task list request failed.");
+  const known = [json?.data?.task_list,json?.data?.list,json?.data?.tasks,json?.task_list,json?.list,json?.tasks,Array.isArray(json?.data)?json.data:null].filter(Array.isArray);
+  const populated = known.find(rows => rows.length && rows.some(row => getExportTaskId(row) > 0));
+  if (populated) return populated;
+  const nested = findExportTaskRows(json?.data) || findExportTaskRows(json);
+  if (nested) return nested;
+  return known[0] || [];
+}
+
+async function getSignedDownloadUrl(taskId, preferredSource = "fms") {
+  let lastError = "";
+  const sources = [...new Set([preferredSource, "fms", "fm", ""])];
+  for (const source of sources) {
+    const query = `${source ? `source=${encodeURIComponent(source)}&` : ""}task_id=${encodeURIComponent(taskId)}`;
+    try {
+      const response = await extensionFetchText(`${SPX_ORIGIN}${SIGNED_URL_PATH}?${query}`);
+      const json = parseJsonResponse("SPX signed download URL", response);
+      if (Number(json?.retcode) !== 0) { lastError = json?.message || "SPX did not return a signed download URL."; continue; }
+      const url = String(json?.data?.download_url || json?.data?.url || json?.download_url || "").trim();
+      if (url) return url;
+      lastError = `SPX returned no signed download URL for the ${source || "default"} queue.`;
+    } catch (error) { lastError = error?.message || String(error); }
+  }
+  throw new Error(lastError || "SPX did not return a signed download URL.");
+}
+
+function fileNameFromSignedUrl(signedUrl) {
+  let fallback = "inbound_to_from_spx.csv";
+  try {
+    const u = new URL(signedUrl);
+    const disposition = u.searchParams.get("response-content-disposition") || "";
+    const match = disposition.match(/filename(?:\*)?=(?:UTF-8''|\"?)([^;\r\n\"]+)/i);
+    if (match?.[1]) return decodeURIComponent(match[1].trim());
+  } catch {}
+  return fallback;
+}
+
+async function downloadCsv(signedUrl) {
+  const response = await extensionFetchText(signedUrl, {
+    headers: { "Accept": "text/csv,text/plain,*/*" }
+  });
+  if (!response.ok) {
+    throw new Error(`CSV download failed (HTTP ${response.status}).`);
+  }
+  const text = String(response.text || "").replace(/^\uFEFF/, "");
+  if (!text.trim()) throw new Error("SPX returned an empty CSV file.");
+  return {
+    text,
+    fileName: fileNameFromSignedUrl(signedUrl)
+  };
+}
+
+
+function parseAssignedExportCsvRows(source) {
+  const input = String(source || "").replace(/^\uFEFF/, "");
+  const rows = [];
+  let row = [], field = "", quoted = false;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (quoted) {
+      if (ch === '"' && input[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else field += ch;
+      continue;
+    }
+    if (ch === '"' && field.length === 0) quoted = true;
+    else if (ch === ",") { row.push(field); field = ""; }
+    else if (ch === "\n" || ch === "\r") {
+      row.push(field);
+      if (row.some(value => String(value).trim())) rows.push(row);
+      row = []; field = "";
+      if (ch === "\r" && input[i + 1] === "\n") i++;
+    } else field += ch;
+  }
+  if (field.length || row.length) {
+    row.push(field);
+    if (row.some(value => String(value).trim())) rows.push(row);
+  }
+  return rows;
+}
+
+function extractAssignedParcelOidsFromRows(headers, rows) {
+  const normalizedHeaders = (Array.isArray(headers) ? headers : [])
+    .map(value => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const orderIdColumns = normalizedHeaders
+    .map((header, index) => ({ header, index }))
+    .filter(item => /^(oid|orderid|orderno|ordernumber|ordersn|shipmentid|shipmentno)$/.test(item.header))
+    .map(item => item.index);
+  const oidPattern = /^(?:PH|SPEPH)[A-Z0-9]{8,}$/i;
+  const found = new Set();
+  const addValues = values => {
+    for (const raw of values) {
+      const value = String(raw ?? "").trim().replace(/\s+/g, "").toUpperCase();
+      if (oidPattern.test(value)) found.add(value);
+    }
+  };
+  for (const row of (Array.isArray(rows) ? rows : [])) {
+    if (orderIdColumns.length) addValues(orderIdColumns.map(index => row[index]));
+    else addValues(row);
+  }
+  if (!found.size && orderIdColumns.length) {
+    for (const row of rows) addValues(row);
+  }
+  return [...found];
+}
+
+function normalizeAssignedExportHeader(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function findAssignedExportColumn(headers, aliases) {
+  const wanted = new Set(aliases.map(normalizeAssignedExportHeader));
+  return (Array.isArray(headers) ? headers : []).findIndex(header =>
+    wanted.has(normalizeAssignedExportHeader(header))
+  );
+}
+
+function philippineDateKey(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^\d{10}$/.test(raw) || /^\d{13}$/.test(raw)) {
+    const millis = raw.length === 10 ? Number(raw) * 1000 : Number(raw);
+    const date = new Date(millis);
+    if (!Number.isFinite(date.getTime())) return "";
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(date);
+    const part = type => parts.find(item => item.type === type)?.value || "";
+    return part("year") + "-" + part("month") + "-" + part("day");
+  }
+
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso && !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return iso[1];
+
+  const slash = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (slash) {
+    const first = Number(slash[1]), second = Number(slash[2]), year = Number(slash[3]);
+    const month = first > 12 ? second : first;
+    const day = first > 12 ? first : second;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+    }
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(parsed);
+  const part = type => parts.find(item => item.type === type)?.value || "";
+  return part("year") + "-" + part("month") + "-" + part("day");
+}
+
+function filterAssignedTodayExportRows(extracted, todayDate, label, rangeCreatedStartDate) {
+  const headers = Array.isArray(extracted?.headers) ? extracted.headers : [];
+  const rows = Array.isArray(extracted?.rows) ? extracted.rows : [];
+  const stationIndex = findAssignedExportColumn(headers, [
+    "current station", "current station name", "current hub", "current hub name"
+  ]);
+  const assignedTimeIndex = findAssignedExportColumn(headers, [
+    "assigned time", "assigned datetime", "assign time", "assignment time", "assigned at",
+    "assigned date", "assign date", "assignment date", "assignment datetime",
+    "pick up time", "pickup time", "pick up datetime", "pickup datetime"
+  ]);
+  const createdDateIndex = findAssignedExportColumn(headers, [
+    "created date", "create date", "order created date", "order create date",
+    "created time", "create time", "order created time", "order create time",
+    "ctime", "order time"
+  ]);
+  const missing = [];
+  if (stationIndex < 0) missing.push("Current Station");
+  if (missing.length) throw new Error(label + " CSV is missing required filter column(s): " + missing.join(", ") + ".");
+  const assignedTimeFilterSource = assignedTimeIndex >= 0 ? "CSV column" : "SPX export request";
+  const createdDateFilterSource = createdDateIndex >= 0 ? "CSV column" : "SPX export request";
+  const kept = [];
+  const excluded = { otherStation: 0, otherAssignedDate: 0, otherCreatedDate: 0 };
+  for (const row of rows) {
+    const station = String(row[stationIndex] ?? "").trim().toLowerCase().replace(/\\s+/g, " ");
+    if (!station.includes("badoc hub")) { excluded.otherStation++; continue; }
+    if (assignedTimeIndex >= 0 && philippineDateKey(row[assignedTimeIndex]) !== todayDate) {
+      excluded.otherAssignedDate++; continue;
+    }
+    if (createdDateIndex >= 0) {
+      const createdDate = philippineDateKey(row[createdDateIndex]);
+      if (!createdDate || createdDate < rangeCreatedStartDate || createdDate > todayDate) {
+        excluded.otherCreatedDate++; continue;
+      }
+    }
+    // These Forward/Return files are On-Hold snapshots. Preserve their status
+    // as exported: it may have changed since the parcel was put On-Hold, and
+    // the export record must supersede the older uploaded Parcel Count row.
+    kept.push(row);
+  }
+  return {
+    headers, rows: kept, rowCount: kept.length, rawRowCount: rows.length,
+    oids: extractAssignedParcelOidsFromRows(headers, kept), excluded,
+    assignedTimeFilterSource, createdDateFilterSource
+  };
+}
+
+function extractAssignedParcelOids(csvText) {
+  const rows = parseAssignedExportCsvRows(csvText);
+  if (!rows.length) throw new Error("SPX returned an empty parcel export.");
+  const headers = rows[0].map(value => String(value ?? "").trim());
+  const dataRows = rows.slice(1).map(row => row.map(value => String(value ?? "")));
+  return {
+    oids: extractAssignedParcelOidsFromRows(headers, dataRows),
+    rowCount: dataRows.length,
+    headers,
+    rows: dataRows
+  };
+}
+
+async function waitForAssignedTodayExportTask(taskId, startSec, job, label) {
+  const deadline = Date.now() + 4 * 60 * 1000, sources = ["fms", "fm", ""];
+  let lastStatus = null, lastQueue = null, lastMessageAt = 0, lastWideScanAt = 0, lastTaskPreview = "", lookupErrors = [];
+  const locate = results => {
+    for (const result of results) {
+      if (result.status !== "fulfilled") continue;
+      const task = (result.value || []).find(item => getExportTaskId(item) === Number(taskId));
+      if (task) return { task, source: result.source };
+    }
+    return null;
+  };
+  while (Date.now() < deadline) {
+    if (job.cancelled) throw new Error("Assigned Parcels Today export cancelled.");
+    const exactRaw = await Promise.allSettled(sources.map(source => listTasks(startSec, source, 1, false, taskId)));
+    const exact = exactRaw.map((result,index)=>({...result,source:sources[index]}));
+    lookupErrors = exact.filter(r=>r.status==="rejected").map(r=>r.reason?.message||"task lookup failed");
+    let located = locate(exact);
+    if (!located && Date.now()-lastWideScanAt >= 12000) {
+      lastWideScanAt=Date.now();
+      const firstRaw=await Promise.allSettled(sources.map(source=>listTasks(startSec,source,1,false,0)));
+      const first=firstRaw.map((result,index)=>({...result,source:sources[index]}));
+      for (const result of first) {
+        if(result.status!=="fulfilled"){lookupErrors.push(result.reason?.message||"unfiltered scan failed");continue;}
+        let rows=result.value||[];
+        let task=rows.find(item=>getExportTaskId(item)===Number(taskId));
+        if(task){located={task,source:result.source};break;}
+        lastTaskPreview=rows.slice(0,8).map(item=>"#"+(getExportTaskId(item)||"?")+" status "+String(item?.export_status??item?.status??"?")).join(" | ");
+        for(let page=2;rows.length>=100&&page<=5;page++){
+          try{rows=await listTasks(startSec,result.source,page,false,0);task=rows.find(item=>getExportTaskId(item)===Number(taskId));if(task){located={task,source:result.source};break;}}
+          catch(error){lookupErrors.push(error?.message||String(error));break;}
+        }
+        if(located)break;
+      }
+    }
+    if(!located && Date.now()-lastWideScanAt<3500){
+      const raw=await Promise.allSettled(sources.map(source=>listTasks(0,source,1,true,taskId)));
+      const results=raw.map((result,index)=>({...result,source:sources[index]}));
+      located=locate(results);
+      for(const r of results)if(r.status==="rejected")lookupErrors.push(r.reason?.message||"unbounded lookup failed");
+    }
+    let message="";
+    if(located?.task){
+      const task=located.task, raw=task?.export_status??task?.status??task?.task_status??"";
+      const status=Number(raw), statusText=String(raw).trim().toLowerCase(), queue=String(task?.queue_position||"");
+      const complete=status===2||/^(complete|completed|success|succeeded|finished)$/.test(statusText);
+      const failed=status===3||/^(failed|failure|error|cancelled|canceled)$/.test(statusText)||!!task?.failed_reason;
+      if(complete)return {task,source:located.source};
+      if(failed)throw new Error(task?.failed_reason||(label+" SPX export task "+taskId+" failed ("+(statusText||status)+")."));
+      const elapsed=Math.floor((Date.now()-job.startedAt)/1000);
+      message=label+" export task "+taskId+" is processing"+(queue?" · queue "+queue:"")+" · "+(located.source||"default")+" queue · elapsed "+String(Math.floor(elapsed/60)).padStart(2,"0")+":"+String(elapsed%60).padStart(2,"0")+"…";
+      if(status!==lastStatus||queue!==lastQueue||Date.now()-lastMessageAt>=5000){lastStatus=status;lastQueue=queue;lastMessageAt=Date.now();}else message="";
+    }else{
+      const elapsed=Math.floor((Date.now()-job.startedAt)/1000);
+      message="SPX accepted "+label+" task "+taskId+"; searching FMS, FM, and default queues (including unfiltered task rows) · elapsed "+String(Math.floor(elapsed/60)).padStart(2,"0")+":"+String(elapsed%60).padStart(2,"0")+"…";
+      if(Date.now()-lastMessageAt<5000)message="";else lastMessageAt=Date.now();
+    }
+    if(message){progress(message,{phase:"pod-assigned-task",kind:job.kind,taskId,source:label});notifyPodCheckerAssignedProgress(message);}
+    await sleep(4000);
+  }
+  const diagnostic=lastStatus!==null?" Last task status: "+String(lastStatus)+(lastQueue?", queue "+lastQueue:"")+".":" The task ID was not found in returned task rows."+(lastTaskPreview?" Recent task rows: "+lastTaskPreview+".":"");
+  const errors=lookupErrors.length?" Lookup errors: "+[...new Set(lookupErrors)].slice(0,3).join("; ")+".":"";
+  throw new Error(label+" task "+taskId+" was accepted by SPX but did not become downloadable within 4 minutes."+diagnostic+errors+" Open the SPX export task monitor to confirm its state.");
+}
+
+async function runAssignedTodayExportSource({ endpoint, label, range, job, isForward = false }) {
+  // Match the FMS Order Export dialog: Assigned Time is today's only date filter.
+  // SPX maps its visible Assigned Time control to pick_up_time; leave On Hold Time unrestricted.
+  // Request all statuses, then remove Delivering / Delivered after the CSV is downloaded.
+  const body = {
+    bulky_type: "1,0,2",
+    ctime: String(range.createdStartSec) + "," + String(range.assignedEndSec),
+    pick_up_time: String(range.assignedStartSec) + "," + String(range.assignedEndSec),
+    format_condition:
+      "Current Station= Badoc Hub; " +
+      "Assigned Time= " + range.todayDate + " 00:00:00," + range.todayDate + " 23:59:59; " +
+      "Created Date= " + range.createdStartDate + " 00:00:00," + range.todayDate + " 23:59:59; " +
+      "Bulky Type= Bulky,N/A,Non-Bulky; " +
+      "Driver= All"
+  };
+
+  progress("Submitting SPX " + label + " export for " + range.todayDate +
+    " (Current Station: Badoc Hub; Assigned Time: today; Created Date: last 14 days; preserving exported statuses)…", {
+    phase: "pod-assigned-today-export", kind: job.kind, source: label,
+    dateStart: range.todayDate, dateEnd: range.todayDate,
+    currentStation: "Badoc Hub", assignedDate: range.todayDate,
+    createdDateStart: range.createdStartDate, createdDateEnd: range.todayDate,
+    preservedExportStatuses: true
+  });
+
+  const response = await extensionFetchText(SPX_ORIGIN + endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json, text/plain, */*" },
+    body: JSON.stringify(body)
+  });
+  const json = parseJsonResponse("SPX " + label + " export", response);
+  if (!response.ok || Number(json?.retcode) !== 0) {
+    throw new Error(label + " export request failed: " +
+      (json?.message || "SPX export failed (HTTP " + response.status + ")."));
+  }
+
+  const taskId = Number(json?.data?.task_id || json?.task_id || 0);
+  if (!taskId) throw new Error("SPX accepted the " + label + " export request but returned no task ID.");
+
+  const waitStartSec = Math.max(0, Math.floor((job.startedAt - 10 * 60 * 1000) / 1000));
+  const completedInfo = await waitForAssignedTodayExportTask(taskId, waitStartSec, job, label);
+  const completed = completedInfo.task;
+
+  if (isForward) {
+    if (String(completed?.export_name || "") !== PARCEL_EXPORT_NAME ||
+        String(completed?.biz_name || "") !== PARCEL_EXPORT_BIZ_NAME) {
+      throw new Error("The completed SPX task is not a Forward Order export.");
+    }
+  } else if (Number(completed?.station_id || 0) !== PARCEL_STATION_ID) {
+    throw new Error("The Return Order export task station did not match BADOC HUB.");
+  }
+
+  progress("SPX " + label + " task " + taskId + " is complete. Downloading the CSV…", {
+    phase: "pod-assigned-today-download", kind: job.kind, source: label, taskId
+  });
+  const signedUrl = await getSignedDownloadUrl(taskId, completedInfo.source);
+  const csv = await downloadCsv(signedUrl);
+  const raw = extractAssignedParcelOids(csv.text);
+  const filtered = filterAssignedTodayExportRows(raw, range.todayDate, label, range.createdStartDate);
+  return {
+    taskId,
+    rowCount: filtered.rowCount,
+    rawRowCount: filtered.rawRowCount,
+    oids: filtered.oids,
+    headers: filtered.headers,
+    rows: filtered.rows,
+    excluded: filtered.excluded,
+    assignedTimeFilterSource: filtered.assignedTimeFilterSource,
+    createdDateFilterSource: filtered.createdDateFilterSource,
+    fileName: csv.fileName
+  };
+}
+
+async function exportAssignedParcelsTodayFromSpx() {
+  const range = parcelDeliveryDateRange();
+  const job = { kind: "pod-assigned-today", startedAt: Date.now(), cancelled: false };
+
+  // Keep the two SPX export types separate, then merge their OIDs below.
+  // Run sequentially to follow the established SPX export-task handling flow.
+  const forward = await runAssignedTodayExportSource({
+    endpoint: PARCEL_FORWARD_EXPORT_PATH,
+    label: "Forward Order",
+    range,
+    job,
+    isForward: true
+  });
+  const returned = await runAssignedTodayExportSource({
+    endpoint: PARCEL_RETURN_EXPORT_PATH,
+    label: "Return Order",
+    range,
+    job,
+    isForward: false
+  });
+
+  const onholdByTn = new Map();
+  const collectOnholdRows = source => {
+    const tnIndex = findAssignedExportColumn(source?.headers || [], [
+      "SPX TN", "SLS Tracking Number", "SPX Tracking Number", "Tracking Number",
+      "SPX TN/Tracking Number", "SPX Tracking No", "SLS Tracking No"
+    ]);
+    if (tnIndex < 0) throw new Error(source?.source + " export is missing the SPX Tracking Number column; cannot safely deduplicate On-Hold records.");
+    (source?.rows || []).forEach(row => {
+      const tn = String(row[tnIndex] ?? "").trim().toUpperCase();
+      const key = tn.replace(/[\\s\\-_.]/g, "");
+      if (key) onholdByTn.set(key, { ...Object.fromEntries((source.headers || []).map((h,i)=>[h,row[i] ?? ""])), _onholdExportSource: source === returned ? "Return Order" : "Forward Order" });
+    });
+  };
+  collectOnholdRows(forward);
+  collectOnholdRows(returned);
+  const onholdRows = [...onholdByTn.values()];
+  const oids = [...new Set([...forward.oids, ...returned.oids])];
+  return {
+    ok: true,
+    todayDate: range.todayDate,
+    taskId: forward.taskId,
+    forwardTaskId: forward.taskId,
+    returnTaskId: returned.taskId,
+    forwardRowCount: forward.rowCount,
+    returnRowCount: returned.rowCount,
+    forwardRawRowCount: forward.rawRowCount,
+    returnRawRowCount: returned.rawRowCount,
+    filterCriteria: {
+      currentStation: "Badoc Hub",
+      assignedDate: range.todayDate,
+      createdDateStart: range.createdStartDate,
+      createdDateEnd: range.todayDate,
+      excludedStatuses: ["all exported statuses"]
+    },
+    forwardOidCount: forward.oids.length,
+    returnOidCount: returned.oids.length,
+    duplicateCount: forward.oids.length + returned.oids.length - oids.length,
+    oids,
+    onholdRows,
+    downloadedData: [
+      { source: "Forward Order", headers: forward.headers, rows: forward.rows, rawRowCount: forward.rawRowCount, excluded: forward.excluded, assignedTimeFilterSource: forward.assignedTimeFilterSource },
+      { source: "Return Order", headers: returned.headers, rows: returned.rows, rawRowCount: returned.rawRowCount, excluded: returned.excluded, assignedTimeFilterSource: returned.assignedTimeFilterSource }],
+    fileName: "Forward_and_Return_Assigned_Today.csv"
+  };
+}
+
+async function ensureToListRoute(tabId) {
+  const tab = await extApi.tabs.get(tabId);
+  const currentUrl = String(tab?.url || "");
+
+  if (/^https:\/\/spx\.shopee\.ph\/\#\/dcToManagement(?:[/?#]|$)/i.test(currentUrl)) {
+    progress("SPX is already on Inbound → TO List.", { phase: "route" });
+    return;
+  }
+
+  progress("Opening SPX Inbound → TO List automatically…", { phase: "route" });
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+
+    const cleanup = () => {
+      extApi.tabs.onUpdated.removeListener(onUpdated);
+      if (timer) clearTimeout(timer);
+    };
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
+
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const onUpdated = (updatedTabId, changeInfo, updatedTab) => {
+      if (updatedTabId !== tabId) return;
+
+      const url = String(updatedTab?.url || "");
+      if (
+        changeInfo.status === "complete" &&
+        /https:\/\/spx\.shopee\.ph\/\#\/dcToManagement/i.test(url)
+      ) {
+        finish();
+      }
+    };
+
+    extApi.tabs.onUpdated.addListener(onUpdated);
+
+    timer = setTimeout(() => {
+      fail(new Error("Timed out opening SPX Inbound → TO List."));
+    }, 20000);
+
+    extApi.tabs.update(tabId, {
+      url: `${SPX_ORIGIN}/#/dcToManagement`
+    }).catch(fail);
+  });
+
+  // Give the SPX Vue application time to mount the TO List component.
+  await sleep(1800);
+}
+
+async function invokeSpxNativeExport(tabId) {
+  const results = await extApi.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: async () => {
+      const visible = el => {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        if (!rect.width || !rect.height) return false;
+        const style = getComputedStyle(el);
+        return style.display !== "none" && style.visibility !== "hidden";
+      };
+
+      const exportButtons = [...document.querySelectorAll("button.ssc-customhook-group-btn")]
+        .filter(btn => (btn.innerText || "").trim() === "Export")
+        .filter(visible)
+        .map(btn => {
+          let el = btn;
+          for (let i = 0; i < 6 && el; i++, el = el.parentElement) {
+            if (el.matches?.(".btns-container.btns-container-left.btns-container-wrapper")) {
+              return { btn, score: 100 };
+            }
+          }
+          return { btn, score: 0 };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      const button = exportButtons[0]?.btn || null;
+      if (!button) {
+        throw new Error("SPX TO List Export control was not found on the current page.");
+      }
+
+      const sButtonVm = button.__vue__;
+      const wrapperVm = sButtonVm?.$parent;
+      const dropdownVm = wrapperVm?.$parent;
+
+      if (!dropdownVm || typeof dropdownVm.handleCommand !== "function") {
+        throw new Error("SPX Export dropdown Vue component was not found.");
+      }
+
+      // This is the exact Vue command path used by SDropdown when the
+      // "Export" menu item is selected. No DOM/mouse click is performed.
+      dropdownVm.handleCommand("Export");
+
+      const deadline = Date.now() + 5000;
+      let confirmBtn = null;
+      let exportVm = null;
+
+      while (Date.now() < deadline) {
+        confirmBtn = [...document.querySelectorAll("button")]
+          .filter(b => (b.innerText || "").trim() === "Confirm")
+          .filter(visible)
+          .pop() || null;
+
+        if (confirmBtn) {
+          let vm = confirmBtn.__vue__;
+          while (vm) {
+            const props = vm.$options?.propsData || {};
+            if (
+              props.contextName === "dcToManagement" &&
+              typeof props.exportFunction === "function" &&
+              typeof vm.confirm === "function"
+            ) {
+              exportVm = vm;
+              break;
+            }
+            vm = vm.$parent;
+          }
+        }
+
+        if (exportVm) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      if (!exportVm) {
+        throw new Error("SPX Receive Task Export component did not open.");
+      }
+
+      // Exact internal values used by the SPX export component.
+      exportVm.form.status = [0];
+      exportVm.form.operator_list = [];
+      exportVm.form.receive_operator = undefined;
+      exportVm.form.receive_time = [];
+      exportVm.form.partially_receive_time = [];
+      exportVm.formatCondition = "Status=Pending Receive;Operator=All";
+
+      const originalExportFunction = exportVm.exportFunction;
+      let apiResult = null;
+
+      exportVm.exportFunction = async function(params) {
+        const response = await originalExportFunction(params);
+        const body = response?.data ?? response ?? null;
+
+        // Never return/capture the Axios response object itself: Axios may
+        // contain circular/non-cloneable properties. Keep only JSON-safe data.
+        try {
+          apiResult = JSON.parse(JSON.stringify(body));
+        } catch {
+          apiResult = {
+            retcode: body?.retcode,
+            message: body?.message,
+            data: body?.data && {
+              task_id: body.data?.task_id
+            }
+          };
+        }
+
+        return response;
+      };
+
+      try {
+        await exportVm.confirm();
+      } finally {
+        exportVm.exportFunction = originalExportFunction;
+      }
+
+      const taskId = Number(
+        apiResult?.data?.task_id ||
+        apiResult?.task_id ||
+        0
+      );
+
+      return {
+        taskId,
+        apiResult: taskId ? apiResult : null
+      };
+    }
+  });
+
+  const result = results?.[0]?.result;
+  if (!result) throw new Error("SPX returned no export result.");
+  return result;
+}
+
+
+function setsEqual(a, b) {
+  const aa = new Set((a || []).map(String));
+  const bb = new Set((b || []).map(String));
+  if (aa.size !== bb.size) return false;
+  for (const x of aa) if (!bb.has(x)) return false;
+  return true;
+}
+
+function parseTaskCondition(task) {
+  const raw = task?.condition;
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try { return JSON.parse(String(raw)); } catch { return {}; }
+}
+
+function normalizeHubName(value) {
+  return String(value || "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+}
+
+function taskMatchesExpectedHub(task, job) {
+  const expected = normalizeHubName(job?.hubName);
+  if (!expected) return true;
+  const actual = normalizeHubName(task?.station_name || task?.stationName);
+  // Some SPX responses omit station_name. The task is already identified by
+  // the task_id returned by our own export request, so absence of the display
+  // name must not reject a valid task. When SPX does return station_name, use
+  // it to prevent an export for a different selected hub from being accepted.
+  return !actual || actual === expected;
+}
+
+function isParcelDeliveryTask(task, job) {
+  if (String(task?.export_name || "") !== PARCEL_EXPORT_NAME) return false;
+  if (String(task?.biz_name || "") !== PARCEL_EXPORT_BIZ_NAME) return false;
+  if (!taskMatchesExpectedHub(task, job)) return false;
+  const condition = parseTaskCondition(task);
+  const trackingStatus = String(condition?.tracking_status || "");
+  if (!trackingStatus) return false;
+  return setsEqual(
+    trackingStatus.split(",").map(x => x.trim()).filter(Boolean),
+    PARCEL_DELIVERY_STATUS_IDS
+  );
+}
+
+function isParcelInboundTask(task, job) {
+  if (String(task?.export_name || "") !== PARCEL_EXPORT_NAME) return false;
+  if (String(task?.biz_name || "") !== PARCEL_EXPORT_BIZ_NAME) return false;
+  if (!taskMatchesExpectedHub(task, job)) return false;
+  const condition = parseTaskCondition(task);
+  const trackingStatus = String(condition?.tracking_status || "");
+  if (!trackingStatus) return false;
+  const expectedIds = job?.receivedChecking ? [1] : PARCEL_INBOUND_STATUS_IDS;
+  return setsEqual(trackingStatus.split(",").map(x => x.trim()).filter(Boolean), expectedIds);
+}
+
+
+function phDateMidnightMs(date) {
+  // SPX date fields are Philippine local dates. Avoid browser-local timezone
+  // differences by constructing the UTC instant for Asia/Manila midnight.
+  const y = date.getUTCFullYear();
+  const m = date.getUTCMonth();
+  const d = date.getUTCDate();
+  return Date.UTC(y, m, d) - (8 * 60 * 60 * 1000);
+}
+
+function parcelForwardDateRange() {
+  const now = new Date();
+  // Work from the current Philippine calendar date, not the machine timezone.
+  const phNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const end = new Date(Date.UTC(phNow.getUTCFullYear(), phNow.getUTCMonth(), phNow.getUTCDate()));
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - PARCEL_FORWARD_EXPORT_LOOKBACK_DAYS);
+
+  const startMs = phDateMidnightMs(start);
+  const endMs = phDateMidnightMs(end);
+
+  const fmt = d =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+
+  return {
+    startSec: Math.floor(startMs / 1000),
+    endSec: Math.floor(endMs / 1000),
+    startDate: fmt(start),
+    endDate: fmt(end)
+  };
+}
+
+async function submitParcelForwardExport(job) {
+  const range = parcelForwardDateRange();
+  const inboundStatusIds = job?.receivedChecking ? [1] : PARCEL_INBOUND_STATUS_IDS;
+  const inboundStatusNames = job?.receivedChecking ? ["LMHub_Received"] : PARCEL_FORWARD_STATUS_NAMES;
+  const body = {
+    tracking_status: inboundStatusIds.join(","),
+    bulky_type: "1,0,2",
+    ctime: `${range.startSec},${range.endSec}`,
+    format_condition:
+      `Status Log= ${inboundStatusNames.join(",")}; ` +
+      `Bulky Type= Bulky,N/A,Non-Bulky; ` +
+      `Created Date= ${range.startDate} 00:00:00,${range.endDate} 00:00:00; ` +
+      `Driver= All`
+  };
+
+  progress(
+    `Submitting direct SPX Forward Order export (${range.startDate} → ${range.endDate})…`,
+    { phase: "parcel-api-export", dateStart: range.startDate, dateEnd: range.endDate }
+  );
+
+  const response = await extensionFetchText(
+    `${SPX_ORIGIN}${PARCEL_FORWARD_EXPORT_PATH}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/plain, */*"
+      },
+      body: JSON.stringify(body)
+    }
+  );
+
+  const json = parseJsonResponse("SPX Forward Order export", response);
+  if (!response.ok || Number(json?.retcode) !== 0) {
+    throw new Error(
+      json?.message ||
+      `SPX Forward Order export request failed (HTTP ${response.status}).`
+    );
+  }
+
+  const taskId = Number(
+    json?.data?.task_id ||
+    json?.task_id ||
+    0
+  );
+
+  if (!taskId) {
+    throw new Error("SPX accepted the Forward Order export request but returned no task ID.");
+  }
+
+  progress(`SPX Forward Order export task ${taskId} created directly.`, {
+    phase: "parcel-task",
+    taskId,
+    dateStart: range.startDate,
+    dateEnd: range.endDate
+  });
+
+  return { taskId, range, requestBody: body, apiResult: json };
+}
+
+function parcelDeliveryDateRange() {
+  const now = new Date();
+  // Always use the Philippine calendar date, regardless of the computer's
+  // local timezone.
+  const phNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const today = new Date(Date.UTC(
+    phNow.getUTCFullYear(),
+    phNow.getUTCMonth(),
+    phNow.getUTCDate()
+  ));
+  const lookback = new Date(today);
+  lookback.setUTCDate(lookback.getUTCDate() - PARCEL_DELIVERY_LOOKBACK_DAYS);
+
+  const startMs = phDateMidnightMs(lookback);
+  const todayStartMs = phDateMidnightMs(today);
+  const todayEndMs = todayStartMs + (24 * 60 * 60 * 1000) - 1;
+
+  const fmt = d =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+
+  return {
+    createdStartSec: Math.floor(startMs / 1000),
+    createdEndSec: Math.floor(todayStartMs / 1000),
+    assignedStartSec: Math.floor(todayStartMs / 1000),
+    assignedEndSec: Math.floor(todayEndMs / 1000),
+    createdStartDate: fmt(lookback),
+    todayDate: fmt(today)
+  };
+}
+
+async function submitParcelDeliveryExport(job) {
+  const range = parcelDeliveryDateRange();
+  const body = {
+    tracking_status: PARCEL_DELIVERY_STATUS_IDS.join(","),
+    bulky_type: "1,0,2",
+    ctime: `${range.createdStartSec},${range.createdEndSec}`,
+    pick_up_time: `${range.assignedStartSec},${range.assignedEndSec}`,
+    format_condition:
+      `Status Log= ${PARCEL_DELIVERY_STATUS_NAMES.join(",")}; ` +
+      `Bulky Type= Bulky,N/A,Non-Bulky; ` +
+      `Created Date= ${range.createdStartDate} 00:00:00,${range.todayDate} 00:00:00; ` +
+      `Assigned Time= ${range.todayDate} 00:00:00,${range.todayDate} 23:59:59; ` +
+      `Driver= All`
+  };
+
+  progress(
+    `Submitting direct SPX Delivering / Delivered / On-Hold export for ${range.todayDate}…`,
+    { phase: "parcel-delivery-api-export", dateStart: range.todayDate, dateEnd: range.todayDate }
+  );
+
+  const response = await extensionFetchText(
+    `${SPX_ORIGIN}${PARCEL_FORWARD_EXPORT_PATH}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/plain, */*"
+      },
+      body: JSON.stringify(body)
+    }
+  );
+
+  const json = parseJsonResponse("SPX Delivering / Delivered / On-Hold export", response);
+  if (!response.ok || Number(json?.retcode) !== 0) {
+    throw new Error(
+      json?.message ||
+      `SPX Delivering / Delivered / On-Hold export failed (HTTP ${response.status}).`
+    );
+  }
+
+  const taskId = Number(json?.data?.task_id || json?.task_id || 0);
+  if (!taskId) {
+    throw new Error("SPX accepted the delivery export request but returned no task ID.");
+  }
+
+  progress(`SPX delivery export task ${taskId} created directly.`, {
+    phase: "parcel-delivery-task",
+    taskId,
+    dateStart: range.todayDate,
+    dateEnd: range.todayDate
+  });
+
+  return { taskId, range, requestBody: body, apiResult: json };
+}
+
+
+function taskMatchesRiderExport(task) {
+  return String(task?.export_name || "") === RIDER_EXPORT_NAME &&
+    String(task?.biz_name || "") === RIDER_EXPORT_BIZ_NAME;
+}
+
+async function listRiderTask(taskId) {
+  const url = `${SPX_ORIGIN}${RIDER_TASK_LIST_PATH}?start_time=${Math.max(0, Math.floor(Date.now()/1000)-3600)}&task_ids=${encodeURIComponent(taskId)}`;
+  const response = await extensionFetchText(url);
+  const json = parseJsonResponse("SPX rider export task", response);
+  if (Number(json?.retcode) !== 0) throw new Error(json?.message || "SPX rider export task lookup failed.");
+  const tasks = Array.isArray(json?.data?.task_list) ? json.data.task_list : [];
+  return tasks.find(t => Number(t?.task_id || 0) === Number(taskId)) || null;
+}
+
+async function submitRiderExport(job) {
+  riderProgress(`Submitting SPX Rider export${job?.hubName ? ` for ${job.hubName}` : ""}…`, {
+    phase: "rider-api-export",
+    kind: "riders",
+    hubName: job?.hubName || "",
+    hubCode: job?.hubCode || ""
+  });
+
+  const csrf = await getSpxCookieValue(["csrftoken", "csrf_token", "csrfToken", "X-CSRFToken"]);
+  const deviceId = await getSpxCookieValue(["spx-admin-device-id", "device-id", "device_id", "deviceId"]);
+  const response = await extensionFetchText(`${SPX_ORIGIN}${RIDER_EXPORT_PATH}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json;charset=UTF-8",
+      "Accept": "application/json, text/plain, */*",
+      "Referer": `${SPX_ORIGIN}/`,
+      "app": "FMS Portal",
+      "X-CSRFToken": csrf,
+      "device-id": deviceId
+    },
+    body: "{}"
+  });
+
+  const json = parseJsonResponse("SPX rider export", response);
+  if (!response.ok || Number(json?.retcode) !== 0) {
+    throw new Error(json?.message || `SPX rider export failed (HTTP ${response.status}).`);
+  }
+
+  const taskId = Number(json?.data?.task_id || json?.task_id || 0);
+  if (!taskId) throw new Error("SPX accepted the rider export request but returned no task ID.");
+
+  riderProgress(`SPX Rider export task ${taskId} created.`, {
+    phase: "rider-task",
+    kind: "riders",
+    taskId,
+    hubName: job?.hubName || "",
+    hubCode: job?.hubCode || ""
+  });
+
+  return { taskId, apiResult: json };
+}
+
+function driverFileNameFromTask(task) {
+  const raw = String(task?.file_name || "").trim();
+  const name = raw.split("/").pop() || "ph_driver.csv";
+  return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_") || "ph_driver.csv";
+}
+
+async function downloadDriverCsv(task) {
+  const rawPath = String(task?.file_name || "").trim().replace(/^\/+/, "");
+  if (!rawPath) throw new Error("SPX completed the rider export but returned no file path.");
+  const url = `${SPX_ORIGIN}/${rawPath}`;
+  riderProgress(`Downloading completed rider CSV ${driverFileNameFromTask(task)}…`, {
+    phase: "rider-download",
+    kind: "riders",
+    taskId: Number(task?.task_id || 0)
+  });
+
+  const response = await extensionFetchText(url, {
+    headers: {
+      "Accept": "text/csv,text/plain,application/octet-stream,*/*",
+      "Referer": `${SPX_ORIGIN}/`
+    }
+  });
+  const text = String(response?.text || "").replace(/^\uFEFF/, "");
+  if (!response.ok) throw new Error(`SPX rider CSV download failed (HTTP ${response.status}).`);
+  if (!text.trim()) throw new Error("SPX returned an empty rider CSV.");
+  if (/<!doctype|<html/i.test(text.slice(0,300))) throw new Error("SPX returned the web app HTML instead of the rider CSV.");
+  return { text, fileName: driverFileNameFromTask(task), url };
+}
+
+async function runRiderJob(job) {
+  try {
+    job.startedAt = Date.now();
+    riderProgress("Starting SPX Rider export…", { phase: "rider-api", kind: "riders", hubName: job.hubName, hubCode: job.hubCode });
+
+    const submitted = await submitRiderExport(job);
+    const taskId = submitted.taskId;
+    const deadline = Date.now() + MAX_WAIT_MS;
+    let lastStatus = null;
+    let lastAt = 0;
+
+    while (Date.now() < deadline) {
+      if (job.cancelled) throw new Error("Sync cancelled.");
+      const task = await listRiderTask(taskId);
+      if (task) {
+        if (!taskMatchesRiderExport(task)) throw new Error("The completed SPX task does not match the rider export.");
+        const status = Number(task?.export_status ?? -1);
+        if (status === 2) {
+          const condition = parseTaskCondition(task);
+          const stationId = Number(condition?.station_id || task?.station_id || 0) || 0;
+          const csv = await downloadDriverCsv(task);
+          const rowCount = csv.text.split(/\r?\n/).filter(x => x.trim()).length;
+          const dataRows = Math.max(0, rowCount - 1);
+          riderProgress(`Downloaded ${dataRows.toLocaleString()} riders. Sending to NOL3 Planning…`, {
+            phase: "rider-import",
+            kind: "riders",
+            taskId,
+            rowCount: dataRows,
+            hubName: job.hubName,
+            hubCode: job.hubCode,
+            stationId,
+            fileName: csv.fileName
+          });
+          sendToBadoc("BADOC_SPX_RIDER_CSV", {
+            taskId,
+            rowCount: dataRows,
+            fileName: csv.fileName,
+            csvText: csv.text,
+            hubId: job.hubId,
+            hubName: job.hubName,
+            hubCode: job.hubCode,
+            stationId,
+            taskStationName: String(task?.station_name || "")
+          });
+          return;
+        }
+        if (status === 3 || task?.failed_reason) throw new Error(task?.failed_reason || "SPX rider export failed.");
+        const now = Date.now();
+        if (status !== lastStatus || now-lastAt >= 10000) {
+          riderProgress(`SPX Rider export task ${taskId} is processing…`, {
+            phase: "rider-processing",
+            kind: "riders",
+            taskId,
+            hubName: job.hubName,
+            hubCode: job.hubCode
+          });
+          lastStatus = status;
+          lastAt = now;
+        }
+      } else {
+        riderProgress(`SPX Rider export task ${taskId} created. Waiting for task status…`, { phase: "rider-processing", kind: "riders", taskId, hubName: job.hubName, hubCode: job.hubCode });
+      }
+      await sleep(POLL_MS);
+    }
+    throw new Error("SPX rider export is still queued after 25 minutes.");
+  } catch (error) {
+    console.error("BADOC SPX rider auto-import failed:", error);
+    sendToBadoc("BADOC_SPX_ERROR", { message: error?.message || String(error), kind: "riders" });
+  } finally {
+    releaseActiveJob(job);
+  }
+}
+
 async function runParcelDeliveryJob(job) {
   try {
     job.startedAt = Date.now();
