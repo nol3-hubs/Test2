@@ -2854,6 +2854,344 @@ html[data-theme="dark"] #dashboardKpiSummary .dashboard-kpi-attention-name{color
   #townPrintArea .town-card-note, #townPrintArea .town-rider-picker, #townPrintArea .town-drag-handle, #townPrintArea .empty-group { display:none !important; }
 }
 </style>
+<style id="dashboard-visual-polish-and-card-equalization-v1">
+/* Dashboard visual polish — presentation only; existing IDs, data and calculations are unchanged. */
+#homeDashboard{
+  display:block;
+  padding:12px!important;
+}
+#homeDashboard .syncall,
+#homeDashboard .dashboard-overview,
+#homeDashboard #dashboardKpiSummary{
+  border:1px solid var(--line,#263544)!important;
+  border-radius:16px!important;
+  box-shadow:0 8px 24px rgba(0,0,0,.08)!important;
+  overflow:hidden;
+}
+#homeDashboard .syncall{
+  margin:0 0 14px!important;
+  background:linear-gradient(135deg,rgba(22,131,255,.09),var(--panel,#101820))!important;
+}
+#homeDashboard .dashboard-overview{
+  margin:0 0 14px!important;
+  padding:0!important;
+  background:linear-gradient(145deg,var(--panel,#101820),var(--bg,#080d12))!important;
+}
+#homeDashboard .dashboard-overview-head{
+  min-height:78px!important;
+  padding:16px 20px!important;
+  background:linear-gradient(110deg,rgba(22,131,255,.14),rgba(22,131,255,.025))!important;
+  border-bottom:1px solid var(--line,#263544)!important;
+}
+#homeDashboard .dashboard-overview-kicker{
+  display:inline-flex!important;
+  align-items:center!important;
+  gap:7px!important;
+  color:var(--blue,#38a7ff)!important;
+  font-size:9px!important;
+  font-weight:900!important;
+  letter-spacing:1.2px!important;
+}
+#homeDashboard .dashboard-overview-kicker:before{
+  content:"";
+  width:6px;height:6px;border-radius:50%;
+  background:currentColor;
+  box-shadow:0 0 0 4px rgba(56,167,255,.12);
+}
+#homeDashboard .dashboard-overview h2{
+  margin:5px 0 0!important;
+  color:var(--text,#f4f7fb)!important;
+  font-size:20px!important;
+  font-weight:850!important;
+  letter-spacing:-.35px!important;
+}
+#homeDashboard .dashboard-summary-grid{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:12px!important;
+  padding:16px 18px!important;
+  align-items:stretch!important;
+  border-bottom:1px solid var(--line,#263544)!important;
+}
+#homeDashboard .dashboard-summary-card,
+#homeDashboard .dashboard-summary-card.volume,
+#homeDashboard .dashboard-summary-card.dispatched,
+#homeDashboard .dashboard-summary-card.clear,
+#homeDashboard .dashboard-summary-card.incoming{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  gap:5px!important;
+  width:100%!important;
+  height:108px!important;
+  min-height:108px!important;
+  margin:0!important;
+  padding:14px 16px!important;
+  box-sizing:border-box!important;
+  border:1px solid var(--line,#263544)!important;
+  border-top:3px solid var(--blue,#38a7ff)!important;
+  border-radius:12px!important;
+  background:linear-gradient(145deg,rgba(56,167,255,.09),var(--panel,#101820))!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.035)!important;
+  transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease!important;
+}
+#homeDashboard .dashboard-summary-card.dispatched{
+  border-top-color:#22c55e!important;
+  background:linear-gradient(145deg,rgba(34,197,94,.09),var(--panel,#101820))!important;
+}
+#homeDashboard .dashboard-summary-card.incoming{
+  border-top-color:#a78bfa!important;
+  background:linear-gradient(145deg,rgba(167,139,250,.10),var(--panel,#101820))!important;
+}
+#homeDashboard .dashboard-summary-card strong{
+  margin:0!important;
+  color:var(--text,#f4f7fb)!important;
+  font-size:clamp(27px,2.1vw,34px)!important;
+  font-weight:900!important;
+  line-height:1!important;
+  letter-spacing:-.8px!important;
+  font-variant-numeric:tabular-nums!important;
+}
+#homeDashboard .dashboard-summary-card.volume strong{color:#38bdf8!important}
+#homeDashboard .dashboard-summary-card.dispatched strong{color:#4ade80!important}
+#homeDashboard .dashboard-summary-card.incoming strong{color:#c4b5fd!important}
+#homeDashboard .dashboard-summary-card span{
+  display:block!important;
+  margin:2px 0 0!important;
+  color:var(--text,#e7edf4)!important;
+  font-size:10px!important;
+  font-weight:850!important;
+  line-height:1.25!important;
+  letter-spacing:.55px!important;
+}
+#homeDashboard .dashboard-summary-card small{
+  display:block!important;
+  min-height:11px!important;
+  margin:0!important;
+  color:var(--muted,#9ba9b7)!important;
+  font-size:9px!important;
+  line-height:1.2!important;
+}
+#homeDashboard .dashboard-summary-card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 18px rgba(0,0,0,.12)!important;
+}
+#homeDashboard .dashboard-status-section{
+  padding:16px 18px 18px!important;
+}
+#homeDashboard .dashboard-card-groups{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:14px!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-card-group{
+  min-width:0!important;
+  padding:14px!important;
+  border:1px solid var(--line,#263544)!important;
+  border-radius:13px!important;
+  background:linear-gradient(145deg,rgba(255,255,255,.025),var(--panel,#101820))!important;
+  box-shadow:0 3px 12px rgba(0,0,0,.05)!important;
+}
+#homeDashboard .dashboard-card-group-head{
+  min-height:35px!important;
+  margin:0 0 12px!important;
+  padding:0 0 10px!important;
+  border-bottom:1px solid var(--line,#263544)!important;
+}
+#homeDashboard .dashboard-card-group-head strong{
+  color:var(--text,#f4f7fb)!important;
+  font-size:12px!important;
+  font-weight:900!important;
+  letter-spacing:.15px!important;
+}
+#homeDashboard .dashboard-card-group-head small{
+  color:var(--muted,#9ba9b7)!important;
+  font-size:9px!important;
+}
+#homeDashboard .dashboard-card-group .dashboard-status-grid{
+  display:grid!important;
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  grid-auto-rows:108px!important;
+  gap:9px!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-card-group .dashboard-status-card{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  gap:5px!important;
+  width:100%!important;
+  height:108px!important;
+  min-height:108px!important;
+  margin:0!important;
+  padding:12px 11px!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+  border:1px solid var(--line,#263544)!important;
+  border-top:3px solid var(--blue,#38a7ff)!important;
+  border-radius:11px!important;
+  background:linear-gradient(145deg,rgba(56,167,255,.07),var(--panel,#101820))!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.035)!important;
+  transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease!important;
+}
+#homeDashboard .dashboard-card-group .dashboard-status-card strong{
+  display:block!important;
+  width:100%!important;
+  margin:0!important;
+  color:var(--text,#f4f7fb)!important;
+  font-size:clamp(20px,1.55vw,26px)!important;
+  font-weight:900!important;
+  line-height:1!important;
+  letter-spacing:-.5px!important;
+  font-variant-numeric:tabular-nums!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:clip!important;
+}
+#homeDashboard .dashboard-card-group .dashboard-status-card span{
+  display:block!important;
+  min-height:12px!important;
+  margin:1px 0 0!important;
+  color:var(--text,#e7edf4)!important;
+  font-size:9px!important;
+  font-weight:850!important;
+  line-height:1.2!important;
+  letter-spacing:.35px!important;
+}
+#homeDashboard .dashboard-card-group .dashboard-status-card small{
+  display:block!important;
+  min-height:10px!important;
+  margin:0!important;
+  color:var(--muted,#9ba9b7)!important;
+  font-size:8px!important;
+  line-height:1.2!important;
+}
+#homeDashboard .dashboard-card-group .dashboard-status-card:hover{
+  transform:translateY(-2px);
+  border-color:rgba(56,167,255,.48)!important;
+  box-shadow:0 7px 16px rgba(0,0,0,.11)!important;
+}
+#homeDashboard .dashboard-card-group .dashboard-status-card.received{border-top-color:#22c55e!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.delivering{border-top-color:#38bdf8!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.delivered{border-top-color:#16a34a!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.onhold{border-top-color:#f59e0b!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.cfr1{border-top-color:#a78bfa!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.backlogs{border-top-color:#ef4444!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.redelivery{border-top-color:#f59e0b!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.rts{border-top-color:#f87171!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.exemptions{border-top-color:#a78bfa!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.received strong{color:#4ade80!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.delivering strong{color:#38bdf8!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.delivered strong{color:#4ade80!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.onhold strong{color:#fbbf24!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.cfr1 strong{
+  display:block!important;
+  text-align:left!important;
+  color:#c4b5fd!important;
+  font-size:clamp(20px,1.5vw,25px)!important;
+  line-height:1!important;
+}
+#homeDashboard .dashboard-card-group .dashboard-status-card.backlogs strong{color:#f87171!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.redelivery strong{color:#fbbf24!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.rts strong{color:#fca5a5!important}
+#homeDashboard .dashboard-card-group .dashboard-status-card.exemptions strong{color:#c4b5fd!important}
+#homeDashboard #dashboardKpiSummary{
+  margin:0 0 14px!important;
+  padding:16px!important;
+  background:linear-gradient(145deg,rgba(56,167,255,.06),var(--panel,#101820))!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-title{
+  color:var(--text,#f4f7fb)!important;
+  font-size:15px!important;
+  font-weight:900!important;
+  letter-spacing:.2px!important;
+}
+@media(max-width:1250px){
+  #homeDashboard .dashboard-card-groups{grid-template-columns:minmax(0,1fr)!important}
+}
+@media(max-width:900px){
+  #homeDashboard .dashboard-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  #homeDashboard .dashboard-card-group .dashboard-status-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+    grid-auto-rows:100px!important;
+  }
+  #homeDashboard .dashboard-card-group .dashboard-status-card{
+    height:100px!important;min-height:100px!important;
+  }
+}
+@media(max-width:700px){
+  #homeDashboard{padding:7px!important}
+  #homeDashboard .dashboard-overview-head{padding:13px 14px!important}
+  #homeDashboard .dashboard-summary-grid{
+    grid-template-columns:1fr!important;
+    gap:8px!important;padding:10px 12px!important;
+  }
+  #homeDashboard .dashboard-summary-card,
+  #homeDashboard .dashboard-summary-card.volume,
+  #homeDashboard .dashboard-summary-card.dispatched,
+  #homeDashboard .dashboard-summary-card.incoming{
+    height:94px!important;min-height:94px!important;padding:12px 14px!important;
+  }
+  #homeDashboard .dashboard-status-section{padding:11px 12px 13px!important}
+  #homeDashboard .dashboard-card-group{padding:11px!important}
+  #homeDashboard .dashboard-card-group .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    grid-auto-rows:94px!important;gap:8px!important;
+  }
+  #homeDashboard .dashboard-card-group .dashboard-status-card{
+    height:94px!important;min-height:94px!important;padding:10px!important;
+  }
+  #homeDashboard .dashboard-card-group .dashboard-status-card strong{font-size:22px!important}
+  #homeDashboard .dashboard-card-group .dashboard-status-card.cfr1 strong{font-size:21px!important}
+}
+@media(max-width:380px){
+  #homeDashboard .dashboard-summary-card strong{font-size:25px!important}
+  #homeDashboard .dashboard-card-group .dashboard-status-card{padding:8px!important}
+  #homeDashboard .dashboard-card-group .dashboard-status-card strong{font-size:20px!important}
+}
+html[data-theme="light"] #homeDashboard .syncall,
+html[data-theme="light"] #homeDashboard .dashboard-overview,
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary{
+  border-color:#dce4ec!important;
+  box-shadow:0 6px 20px rgba(16,24,40,.055)!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-overview{
+  background:linear-gradient(145deg,#ffffff,#f8fbff)!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-overview-head{
+  background:linear-gradient(110deg,#edf6ff,#f8fbff)!important;
+  border-bottom-color:#dce4ec!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-overview h2,
+html[data-theme="light"] #homeDashboard .dashboard-card-group-head strong,
+html[data-theme="light"] #homeDashboard .dashboard-summary-card span,
+html[data-theme="light"] #homeDashboard .dashboard-card-group .dashboard-status-card span{
+  color:#172b3d!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-summary-card,
+html[data-theme="light"] #homeDashboard .dashboard-card-group .dashboard-status-card{
+  background:linear-gradient(145deg,#ffffff,#f6f9fc)!important;
+  border-color:#dce4ec!important;
+  box-shadow:0 2px 6px rgba(16,24,40,.035)!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-card-group{
+  background:linear-gradient(145deg,#ffffff,#f8fafc)!important;
+  border-color:#dce4ec!important;
+  box-shadow:0 3px 12px rgba(16,24,40,.035)!important;
+}
+html[data-theme="light"] #homeDashboard .dashboard-card-group-head{border-bottom-color:#e6ebf1!important}
+html[data-theme="light"] #homeDashboard .dashboard-summary-card strong,
+html[data-theme="light"] #homeDashboard .dashboard-card-group .dashboard-status-card strong{
+  filter:saturate(.9);
+}
+html[data-theme="light"] #homeDashboard .dashboard-card-group .dashboard-status-card small,
+html[data-theme="light"] #homeDashboard .dashboard-summary-card small{
+  color:#69798a!important;
+}
+</style>
 </head>`);
     frame.addEventListener('load', syncReceivedCheckingTheme);
     frame.srcdoc = receivedHtml;
