@@ -1967,13 +1967,15 @@ html[data-theme="light"] .side > .theme-switch-row{
       <div class="dashboard-summary-grid">
         <div class="dashboard-summary-card volume"><strong id="opTodayVolume">0</strong><span>TODAY'S VOLUME</span><small></small></div>
 
+        <div class="dashboard-summary-card dispatched"><strong id="opDispatched">0</strong><span>DISPATCHED</span><small>Delivering + Delivered + On-Hold</small></div>
+
         <div class="dashboard-summary-card incoming" id="incomingVolumeCard" role="button" tabindex="0" title="Click to open the all-day Volume Forecast board"><strong id="opIncomingVolume">0</strong><span>VOLUME FORECAST FOR NEXT DAY</span><small>Expected final volume by 3pm today</small></div>
       </div>
 
       <div class="dashboard-status-section">
         <div class="dashboard-card-groups">
           <section class="dashboard-card-group parcel-overview-group" aria-label="Parcel Overview">
-            <div class="dashboard-card-group-head"><div><strong>Parcel Overview</strong><small>Live parcel status totals</small></div><span>01</span></div>
+            <div class="dashboard-card-group-head"><div><strong>Parcel Overview</strong><small>Live parcel status totals</small></div></div>
             <div class="dashboard-status-grid">
               <div class="dashboard-status-card received"><strong id="opReceivedSummary">0</strong><span>RECEIVED</span><small>Current parcel data</small></div>
               <div class="dashboard-status-card delivering"><strong id="opDelivering">0</strong><span>DELIVERING</span><small>Current parcel data</small></div>
@@ -1983,9 +1985,9 @@ html[data-theme="light"] .side > .theme-switch-row{
             </div>
           </section>
           <section class="dashboard-card-group delivery-status-group" aria-label="Delivery Status">
-            <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Dispatched and exception tracking</small></div><span>02</span></div>
+            <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Backlogs and exception tracking</small></div></div>
             <div class="dashboard-status-grid">
-              <div class="dashboard-status-card assigned"><strong id="opDispatched">0</strong><span>DISPATCHED</span><small>Delivering + Delivered + On-Hold</small></div>
+              <div class="dashboard-status-card backlogs"><strong>—</strong><span>BACKLOGS</span><small></small></div>
               <div class="dashboard-status-card redelivery"><strong id="opRedelivery">—</strong><span>REDELIVERY</span><small>EOD sheet</small></div>
               <div class="dashboard-status-card rts"><strong id="opRts">—</strong><span>RTS</span><small></small></div>
               <div class="dashboard-status-card exemptions"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span><small>Current exemption list</small></div>
@@ -15846,4 +15848,48 @@ html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-fail .sa-state-
 #homeDashboard #syncAll .syncall-step .sa-ico{flex-basis:24px!important;width:24px!important;height:24px!important;font-size:12px!important}
 #homeDashboard #syncAll .syncall-step .sa-content{gap:0!important}
 #homeDashboard #syncAll .syncall-step .sa-heading{align-items:center!important}
+</style>
+
+
+<style id="dashboard-dispatched-backlogs-layout-v1">
+/* Three headline metrics: Today's Volume, Dispatched, and next-day forecast. */
+#homeDashboard .dashboard-summary-grid{
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-summary-card.volume,
+#homeDashboard .dashboard-summary-card.dispatched,
+#homeDashboard .dashboard-summary-card.incoming{
+  grid-column:auto!important;
+  min-width:0!important;
+  min-height:76px!important;
+  height:auto!important;
+  padding:12px 14px!important;
+  display:flex!important;
+  flex-direction:column!important;
+  justify-content:center!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-summary-card.dispatched strong{
+  display:block!important;
+  font-size:30px!important;
+  line-height:1!important;
+}
+#homeDashboard .dashboard-summary-card.dispatched span{
+  display:block!important;
+  margin-top:6px!important;
+  font-size:10px!important;
+  font-weight:900!important;
+  letter-spacing:.55px!important;
+  line-height:1.2!important;
+}
+#homeDashboard .dashboard-summary-card.dispatched small{
+  display:block!important;
+  margin-top:3px!important;
+  font-size:8px!important;
+  line-height:1.25!important;
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-summary-grid{grid-template-columns:1fr!important}
+}
 </style>
