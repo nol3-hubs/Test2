@@ -158,7 +158,7 @@ function riderProgress(message, extra = {}) {
 }
 
 
-function withTimeout(promise, ms, label) {
+async function withTimeout(promise, ms, label) {
   let timer;
   try {
     return await Promise.race([
