@@ -15135,6 +15135,11 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
             if(flushed&&flushed.uploaded){
               const prior=states[0]?.note||"Shared cloud data loaded";
               states[0]={state:states[0]?.state||"ok",note:prior+"; "+flushed.uploaded+" parcel export"+(flushed.uploaded===1?"":"s")+" saved to shared cloud"};
+              const savedSources=new Set(flushed.sources||[]);
+              if(savedSources.has("spx-inbound")&&states[1]?.state==="ok")
+                states[1]={...states[1],note:"Inbound parcel export saved to shared cloud"};
+              if(savedSources.has("spx-delivery")&&states[3]?.state==="ok")
+                states[3]={...states[3],note:"Delivering, Delivered and OnHold export saved to shared cloud"};
               renderSteps(states);
             }
           }catch(error){
