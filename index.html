@@ -1998,6 +1998,77 @@ html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-card-group
   #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-value{font-size:19px!important}
 }
 </style>
+<style id="dashboard-kpi-score-grade-alignment-colors-v1">
+/* Center the Overall Score and Grade cards, and color them by their displayed values. */
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card){
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  min-height:88px!important;
+  padding:16px 18px!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card) .label{
+  display:block!important;
+  width:100%!important;
+  text-align:center!important;
+  font-size:10px!important;
+  font-weight:900!important;
+  letter-spacing:.12em!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card) strong{
+  display:block!important;
+  width:100%!important;
+  margin:8px 0 0!important;
+  text-align:center!important;
+  font-size:30px!important;
+  font-weight:950!important;
+  line-height:1.05!important;
+  font-variant-numeric:tabular-nums!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red,
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-red{
+  background:rgba(220,38,38,.10)!important;
+  border-color:rgba(220,38,38,.55)!important;
+  box-shadow:inset 0 2px 0 #dc2626!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red strong,
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-red strong{
+  color:#ef4444!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange,
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-orange{
+  background:rgba(249,115,22,.10)!important;
+  border-color:rgba(249,115,22,.55)!important;
+  box-shadow:inset 0 2px 0 #f97316!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange strong,
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-orange strong{
+  color:#f97316!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green,
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-green{
+  background:rgba(22,163,74,.10)!important;
+  border-color:rgba(22,163,74,.55)!important;
+  box-shadow:inset 0 2px 0 #16a34a!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green strong,
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-green strong{
+  color:#22c55e!important;
+}
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red,
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-red{background:#fef2f2!important}
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange,
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-orange{background:#fff7ed!important}
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green,
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-green{background:#f0fdf4!important}
+@media(max-width:700px){
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card){min-height:78px!important}
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card) strong{font-size:25px!important}
+}
+</style>
 </head>
 <body data-app-version="21">
 
@@ -11541,17 +11612,55 @@ __badocEvery(()=>window.updateOperationProgress?.(),30000);
 
 <script id="safe-dashboard-kpi-sync">
 (function(){
+  function applyTone(value, card, prefix, toneMap){
+    if(!card)return;
+    var tones=["red","orange","green"];
+    tones.forEach(function(t){card.classList.remove(prefix+"-"+t);});
+    var tone=toneMap(value);
+    if(tone)card.classList.add(prefix+"-"+tone);
+  }
+
+  function scoreTone(value){
+    var raw=String(value==null?"":value).replace(/,/g,"");
+    var match=raw.match(/-?\d+(?:\.\d+)?/);
+    if(!match)return "";
+    var score=Number(match[0]);
+    if(!Number.isFinite(score))return "";
+    if(score<90)return "red";
+    if(score<95)return "orange";
+    return "green";
+  }
+
+  function gradeTone(value){
+    var grade=String(value==null?"":value).trim().toUpperCase().replace(/−/g,"-").replace(/\s+/g,"");
+    if(grade==="A+"||grade==="A-")return "green";
+    if(grade==="B+"||grade==="B-")return "orange";
+    if(grade==="C+"||grade==="C-")return "red";
+    return "";
+  }
+
   function updateDashboardKpiSummary(){
     var score=document.getElementById("sheetScore");
     var grade=document.getElementById("kpiGrade");
-    var remarks=document.getElementById("kpiRemarks");
     var dScore=document.getElementById("dashboardOverallScore");
     var dGrade=document.getElementById("dashboardKpiGrade");
-    if(dScore) dScore.textContent=score && score.textContent.trim() ? score.textContent.trim() : "—";
-    if(dGrade) dGrade.textContent=grade && grade.textContent.trim() ? grade.textContent.trim() : "—";
+
+    var scoreValue=score&&score.textContent?score.textContent.trim():"";
+    var gradeValue=grade&&grade.textContent?grade.textContent.trim():"";
+
+    if(dScore)dScore.textContent=scoreValue||"—";
+    if(dGrade)dGrade.textContent=gradeValue||"—";
+
+    var scoreCard=dScore&&dScore.closest(".dashboard-kpi-card");
+    var gradeCard=dGrade&&dGrade.closest(".dashboard-kpi-card");
+
+    applyTone(scoreValue,scoreCard,"kpi-score",scoreTone);
+    applyTone(gradeValue,gradeCard,"kpi-grade",gradeTone);
   }
+
   updateDashboardKpiSummary();
-  __badocEvery(updateDashboardKpiSummary,5000);
+  if(typeof __badocEvery==="function")__badocEvery(updateDashboardKpiSummary,5000);
+  else setInterval(updateDashboardKpiSummary,5000);
 })();
 </script>
 <script id="dashboard-live-kpi-click">
