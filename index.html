@@ -11874,6 +11874,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   let activeDetailRows=[];
   let activeDetailKey="";
   let activeDetailPage=1;
+  let activeDetailCount=null;
 
   function renderRowsPage(){
     const body=byId("dashboardParcelDetailBody");
@@ -11884,7 +11885,9 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     if(!rows.length){
       const empty=document.createElement("div");
       empty.className="dashboard-parcel-detail-empty";
-      empty.textContent="No matching parcel records.";
+      empty.textContent=Number(activeDetailCount)>0
+        ?"No parcel-level OID records are available from the current source for this card."
+        :"No matching parcel records.";
       body.appendChild(empty);
       return;
     }
@@ -11964,6 +11967,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     const summary=byId("dashboardParcelDetailSummary");
     const note=byId("dashboardParcelDetailNote");
     const total=data.count!==null&&data.count!==undefined&&Number.isFinite(Number(data.count))?Number(data.count):null;
+    activeDetailCount=total;
     if(title)title.textContent=titles[key]||"Parcel Details";
     if(summary){
       summary.textContent=activeDetailRows.length.toLocaleString()+" OID records available"+
