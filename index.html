@@ -1999,74 +1999,146 @@ html[data-theme="dark"] #homeDashboard .dashboard-overview .dashboard-card-group
 }
 </style>
 <style id="dashboard-kpi-score-grade-alignment-colors-v1">
-/* Center the Overall Score and Grade cards, and color them by their displayed values. */
+/* Compact KPI Summary while preserving its layout, score thresholds, and theme support. */
+#homeDashboard #dashboardKpiSummary{
+  margin:12px 0!important;
+  padding:14px!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-head{
+  margin-bottom:10px!important;
+  gap:10px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-title{
+  font-size:16px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid{
+  gap:8px!important;
+}
 #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card){
   display:flex!important;
   flex-direction:column!important;
   align-items:center!important;
   justify-content:center!important;
   text-align:center!important;
-  min-height:88px!important;
-  padding:16px 18px!important;
+  min-height:72px!important;
+  padding:10px 12px!important;
   box-sizing:border-box!important;
 }
 #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card) .label{
   display:block!important;
   width:100%!important;
   text-align:center!important;
-  font-size:10px!important;
+  font-size:9px!important;
   font-weight:900!important;
-  letter-spacing:.12em!important;
+  letter-spacing:.11em!important;
 }
 #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card) strong{
   display:block!important;
   width:100%!important;
-  margin:8px 0 0!important;
+  margin:5px 0 0!important;
   text-align:center!important;
-  font-size:30px!important;
+  font-size:25px!important;
   font-weight:950!important;
   line-height:1.05!important;
   font-variant-numeric:tabular-nums!important;
 }
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red,
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-red{
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red{
   background:rgba(220,38,38,.10)!important;
   border-color:rgba(220,38,38,.55)!important;
   box-shadow:inset 0 2px 0 #dc2626!important;
 }
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red strong,
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-red strong{
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red strong{
   color:#ef4444!important;
 }
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange,
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-orange{
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange{
   background:rgba(249,115,22,.10)!important;
   border-color:rgba(249,115,22,.55)!important;
   box-shadow:inset 0 2px 0 #f97316!important;
 }
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange strong,
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-orange strong{
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange strong{
   color:#f97316!important;
 }
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green,
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-green{
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green{
   background:rgba(22,163,74,.10)!important;
   border-color:rgba(22,163,74,.55)!important;
   box-shadow:inset 0 2px 0 #16a34a!important;
 }
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green strong,
-#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-green strong{
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green strong{
   color:#22c55e!important;
 }
-html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red,
-html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-red{background:#fef2f2!important}
-html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange,
-html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-orange{background:#fff7ed!important}
-html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green,
-html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-grade-green{background:#f0fdf4!important}
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-red{
+  background:#fef2f2!important;
+}
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-orange{
+  background:#fff7ed!important;
+}
+html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card.kpi-score-green{
+  background:#f0fdf4!important;
+}
+/* Reduce the Needs Attention panel and its metric tiles proportionally. */
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-card{
+  padding:14px!important;
+  border-radius:12px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head{
+  margin-bottom:10px!important;
+  gap:12px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head .label{
+  font-size:10px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head strong{
+  min-width:32px!important;
+  height:32px!important;
+  padding:0 9px!important;
+  font-size:17px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-list{
+  gap:8px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-item{
+  min-height:72px!important;
+  padding:10px 12px!important;
+  gap:10px!important;
+  border-radius:10px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-details{
+  gap:4px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-group{
+  font-size:8px!important;
+  line-height:1.2!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-name{
+  font-size:11px!important;
+  line-height:1.3!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-value{
+  font-size:19px!important;
+}
 @media(max-width:700px){
-  #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card){min-height:78px!important}
-  #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card) strong{font-size:25px!important}
+  #homeDashboard #dashboardKpiSummary{
+    padding:11px!important;
+    margin:10px 0!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card){
+    min-height:66px!important;
+    padding:9px 10px!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid > .dashboard-kpi-card:not(.dashboard-kpi-attention-card) strong{
+    font-size:22px!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-card{
+    padding:11px!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-item{
+    min-height:64px!important;
+    padding:9px 10px!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-value{
+    font-size:17px!important;
+  }
 }
 </style>
 </head>
@@ -11622,21 +11694,13 @@ __badocEvery(()=>window.updateOperationProgress?.(),30000);
 
   function scoreTone(value){
     var raw=String(value==null?"":value).replace(/,/g,"");
-    var match=raw.match(/-?\d+(?:\.\d+)?/);
+    var match=raw.match(/-?\\d+(?:\\.\\d+)?/);
     if(!match)return "";
     var score=Number(match[0]);
     if(!Number.isFinite(score))return "";
     if(score<90)return "red";
     if(score<95)return "orange";
     return "green";
-  }
-
-  function gradeTone(value){
-    var grade=String(value==null?"":value).trim().toUpperCase().replace(/−/g,"-").replace(/\s+/g,"");
-    if(grade==="A+"||grade==="A-")return "green";
-    if(grade==="B+"||grade==="B-")return "orange";
-    if(grade==="C+"||grade==="C-")return "red";
-    return "";
   }
 
   function updateDashboardKpiSummary(){
@@ -11654,8 +11718,12 @@ __badocEvery(()=>window.updateOperationProgress?.(),30000);
     var scoreCard=dScore&&dScore.closest(".dashboard-kpi-card");
     var gradeCard=dGrade&&dGrade.closest(".dashboard-kpi-card");
 
+    /* Both cards use the Overall Score threshold, so Grade has no independent color logic. */
     applyTone(scoreValue,scoreCard,"kpi-score",scoreTone);
-    applyTone(gradeValue,gradeCard,"kpi-grade",gradeTone);
+    if(gradeCard){
+      ["red","orange","green"].forEach(function(t){gradeCard.classList.remove("kpi-grade-"+t);});
+      applyTone(scoreValue,gradeCard,"kpi-score",scoreTone);
+    }
   }
 
   updateDashboardKpiSummary();
