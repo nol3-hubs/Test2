@@ -11694,7 +11694,7 @@ __badocEvery(()=>window.updateOperationProgress?.(),30000);
 
   function scoreTone(value){
     var raw=String(value==null?"":value).replace(/,/g,"");
-    var match=raw.match(/-?\\d+(?:\\.\\d+)?/);
+    var match=raw.match(/-?\d+(?:\.\d+)?/);
     if(!match)return "";
     var score=Number(match[0]);
     if(!Number.isFinite(score))return "";
