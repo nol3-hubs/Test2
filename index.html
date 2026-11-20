@@ -8874,6 +8874,7 @@ window.DASHBOARD_V2_READY = true;
     if(typeof parseCSV!=="function"||typeof classify!=="function"||typeof saveBatches!=="function")return;
     const raw=await b.text();let rows=[];
     try{const parsed=JSON.parse(raw);rows=parsed?.schemaVersion===1&&Array.isArray(parsed.rows)?parsed.rows:parseCSV(raw)}catch(_){rows=parseCSV(raw)}
+    if(window.__badocSyncAllInProgress)return;
     const z=classify(rows);
     const batch={name:"cloud-processed-parcels",time:Date.now(),rows,valid:z.valid,mis:z.mis,duplicates:0};
     batches=[batch,...(Array.isArray(batches)?batches:[]).filter(x=>x&&x.name!=="cloud-uploaded.csv"&&x.name!=="cloud-processed-parcels")];
@@ -8895,6 +8896,7 @@ window.DASHBOARD_V2_READY = true;
     }catch(err){console.warn("Linehaul arrival flags load:",err)}
     const previousTasks=new Map((Array.isArray(linehaulTasks)?linehaulTasks:[]).map(x=>[x.blank?"__BLANK_LINEHAUL__":String(x.id||"").trim(),x]));
     const imported=parseLinehaulCSV(await b.text());
+    if(window.__badocSyncAllInProgress)return;
     if(!imported.length)return;
     const parcelRowsForShared=Array.isArray(current?.rows)?current.rows:[];
     const parcelOrderIndexForShared=typeof buildLinehaulParcelOrderIndex==="function"
@@ -9011,6 +9013,7 @@ window.DASHBOARD_V2_READY = true;
     const record=JSON.parse(await b.text());
     if(!record||record.schemaVersion!==1||record.recordType!=="onhold-today-exports"||!Array.isArray(record.rows))
       throw Error("Shared Assigned Today export has an invalid format.");
+    if(window.__badocSyncAllInProgress)return 0;
     const rows=badocSaveOnholdExportRows(record.rows);
     try{await badocPersistOnholdExportRows(rows)}catch(error){console.warn("Assigned Today local cache save failed; cloud copy remains available:",error)}
     const live=badocGetOnholdRows(typeof getParcelCountRows==="function"?getParcelCountRows():[],false);
@@ -9045,24 +9048,26 @@ window.DASHBOARD_V2_READY = true;
       const s=await state();
       if(!s){window.__badocVolumeSnapshotCloudReady=true;status("Shared state not set");return}
       if(kind==="upload"){
-        if(!pendingCloudWrites.has("upload")&&!uploadLocalDirty){
+        if(!window.__badocSyncAllInProgress&&!pendingCloudWrites.has("upload")&&!uploadLocalDirty){
           if(!s.upload_exists)await clearLocalUpload();else await applyUpload();
+          seen.upload=Number(s.upload_version||0);
         }
-        seen.upload=Number(s.upload_version||0);
       }else if(kind==="linehaul"){
         // Do not let a background pull erase a freshly uploaded Linehaul file
         // while its cloud state is still being published.
-        if(!pendingCloudWrites.has("linehaul")&&!linehaulLocalDirty){
+        if(!window.__badocSyncAllInProgress&&!pendingCloudWrites.has("linehaul")&&!linehaulLocalDirty){
           if(!s.linehaul_exists)await clearLocalLinehaul();else await applyLinehaul();
+          seen.linehaul=Number(s.linehaul_version||0);
         }
-        seen.linehaul=Number(s.linehaul_version||0);
       }else if(kind==="volumeSnapshot"){
         await applyVolumeSnapshot();
         seen.upload=Number(s.upload_version||0);
         seen.volumeSnapshot=Number(s.upload_version||0);
       }else if(kind==="onholdExports"){
-        await applyOnholdExports(s);
-        seen.onholdExports=Number(s.onhold_version||0);
+        if(!window.__badocSyncAllInProgress){
+          await applyOnholdExports(s);
+          seen.onholdExports=Number(s.onhold_version||0);
+        }
       }else if(kind==="settings"){
         if(!pendingCloudWrites.has("settings")){
           if(Number(s.settings_version||0)>seen.settings)await applySettings();
@@ -9078,31 +9083,33 @@ window.DASHBOARD_V2_READY = true;
         if(Number(s.notes_version||0)>seen.notes)await applyRiderSelections();
         seen.notes=Math.max(seen.notes,Number(s.notes_version||0));
       }else{
-        if(!pendingCloudWrites.has("upload")&&!uploadLocalDirty){
+        if(!window.__badocSyncAllInProgress&&!pendingCloudWrites.has("upload")&&!uploadLocalDirty){
           if(!s.upload_exists)await clearLocalUpload();else if(Number(s.upload_version||0)>seen.upload)await applyUpload();
         }
-        if(!pendingCloudWrites.has("linehaul")&&!linehaulLocalDirty){
+        if(!window.__badocSyncAllInProgress&&!pendingCloudWrites.has("linehaul")&&!linehaulLocalDirty){
           if(!s.linehaul_exists)await clearLocalLinehaul();else if(Number(s.linehaul_version||0)>seen.linehaul)await applyLinehaul();
         }
         if(Number(s.upload_version||0)>seen.volumeSnapshot){
           await applyVolumeSnapshot();
           seen.volumeSnapshot=Number(s.upload_version||0);
         }
-        const cloudOnholdVersion=Number(s.onhold_version||0);
-        if(cloudOnholdVersion>0&&cloudOnholdVersion>seen.onholdExports){
-          await applyOnholdExports(s);
-          seen.onholdExports=cloudOnholdVersion;
-        }else if(!s.onhold_exists&&cloudOnholdVersion===0&&seen.onholdExports<0){
-          // One-time migration: this browser may have an Assigned Today snapshot
-          // saved locally by the previous IndexedDB-only build. Publish it only
-          // when the shared cloud has never held an Assigned Today version.
-          await window.__badocOnholdExportsReady;
-          const localRows=Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:[];
-          if(localRows.length&&typeof window.__badocCloudSaveOnholdToday==="function"){
-            const migrated=await window.__badocCloudSaveOnholdToday(localRows,{migratedFromLocalCache:true});
-            seen.onholdExports=Number(migrated?.version||cloudOnholdVersion);
-          }else{
+        if(!window.__badocSyncAllInProgress){
+          const cloudOnholdVersion=Number(s.onhold_version||0);
+          if(cloudOnholdVersion>0&&cloudOnholdVersion>seen.onholdExports){
+            await applyOnholdExports(s);
             seen.onholdExports=cloudOnholdVersion;
+          }else if(!s.onhold_exists&&cloudOnholdVersion===0&&seen.onholdExports<0){
+            // One-time migration: this browser may have an Assigned Today snapshot
+            // saved locally by the previous IndexedDB-only build. Publish it only
+            // when the shared cloud has never held an Assigned Today version.
+            await window.__badocOnholdExportsReady;
+            const localRows=Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:[];
+            if(localRows.length&&typeof window.__badocCloudSaveOnholdToday==="function"){
+              const migrated=await window.__badocCloudSaveOnholdToday(localRows,{migratedFromLocalCache:true});
+              seen.onholdExports=Number(migrated?.version||cloudOnholdVersion);
+            }else{
+              seen.onholdExports=cloudOnholdVersion;
+            }
           }
         }
         if(!pendingCloudWrites.has("settings")&&Number(s.settings_version||0)>seen.settings)await applySettings();
@@ -9112,7 +9119,18 @@ window.DASHBOARD_V2_READY = true;
           await applyNotes();
           await applyRiderSelections();
         }
-        seen={upload:Number(s.upload_version||0),linehaul:Number(s.linehaul_version||0),volumeSnapshot:Number(s.upload_version||0),onholdExports:Number(s.onhold_version||0),settings:Number(s.settings_version||0),layout:Number(s.layout_version||0),notes:Number(s.notes_version||0)};
+        seen={
+          ...seen,
+          ...(window.__badocSyncAllInProgress?{}:{
+            upload:Number(s.upload_version||0),
+            linehaul:Number(s.linehaul_version||0),
+            onholdExports:Number(s.onhold_version||0)
+          }),
+          volumeSnapshot:Number(s.upload_version||0),
+          settings:Number(s.settings_version||0),
+          layout:Number(s.layout_version||0),
+          notes:Number(s.notes_version||0)
+        };
       }
       window.__badocVolumeSnapshotCloudReady=true;
       status("All devices synced");
@@ -13501,24 +13519,29 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     };
   }
 
-  async function deliveryStatusesStep(){
-    if(!(await ensureBridgeForSyncAll()))return skip(bridgeHelp());
-    if(cancelled)return skip("Stopped");
-    const btn=$("syncParcelDeliveryAllFromSPX");
-    if(!btn)return fail("Combined Delivering / Delivered / OnHold button is missing.");
-    if(btn.disabled||btn.dataset.busy==="1")return fail("Combined delivery sync is already running.");
-    btn.click();
-    const started=await waitFor(()=>btn.disabled||btn.dataset.busy==="1",15000,100);
-    if(!started){
-      const status=$("parcelDeliverySpxSyncStatus");
-      return fail(((status&&status.textContent)||"").trim()||"Combined delivery sync did not start.");
-    }
-    const done=await waitFor(()=>!btn.disabled&&btn.dataset.busy!=="1",19*60*1000,250);
-    if(cancelled)return skip("Stopped");
-    if(!done)return fail("Timed out waiting for Delivering / Delivered / OnHold exports.");
-    const status=$("parcelDeliverySpxSyncStatus"),message=((status&&status.textContent)||"").trim();
-    if(status&&status.classList.contains("is-error"))return fail(message||"Combined delivery sync failed.");
-    return ok(message||"Delivering, Delivered, and OnHold exports imported.");
+  function assignedTodayStep(){
+    return async()=>{
+      if(!(await ensureBridgeForSyncAll()))return skip(bridgeHelp());
+      if(cancelled)return skip("Stopped");
+      const btn=$("syncAssignedOnholdToday");
+      if(!btn)return fail("Assigned Today button is not available.");
+      if(btn.disabled||btn.dataset.busy==="1")return skip("Assigned Today is already running.");
+      const status=$("assignedOnholdTodayStatus");
+      btn.click();
+      const started=await waitFor(()=>btn.disabled||btn.dataset.busy==="1",15000,100);
+      if(!started){
+        const message=((status&&status.textContent)||"").trim();
+        if(status&&status.classList.contains("is-error"))return fail(message||"Assigned Today failed to start.");
+        return fail(message||"Assigned Today export did not start.");
+      }
+      const done=await waitFor(()=>!btn.disabled&&btn.dataset.busy!=="1",7*60*1000,250);
+      if(cancelled)return skip("Stopped");
+      if(!done)return fail("Timed out waiting for the Assigned Today Forward and Return exports.");
+      const message=((status&&status.textContent)||"").trim();
+      if(status&&status.classList.contains("is-error"))return fail(message||"Assigned Today sync failed.");
+      if(!status||!status.classList.contains("is-success"))return fail(message||"Assigned Today ended without a successful cloud-save confirmation.");
+      return ok(message||"Assigned Today synced.");
+    };
   }
 
   const STEPS=[
@@ -13526,10 +13549,10 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       if(typeof window.__badocSharedPullNow!=="function")return skip("Cloud sync not ready");
       await Promise.race([window.__badocSharedPullNow(),new Promise((_,reject)=>setTimeout(()=>reject(new Error("Shared cloud pull timed out after 20 seconds. SPX imports will continue; cloud data can retry in the background.")),20000))]);
       await sleep(300);
-      return ok("Latest shared data loaded");
+      return ok("Shared settings and lists loaded; parcel, Assigned Today, and linehaul data are refreshed by the SPX steps.");
     }},
     {id:"inbound",label:"Received / Transported (SPX)",run:spxButtonStep("syncParcelInboundFromSPX","parcelInboundSpxSyncStatus")},
-    {id:"delivery",label:"Delivering / Delivered / OnHold (SPX)",run:deliveryStatusesStep},
+    {id:"assignedToday",label:"Assigned Today (Forward + Return SPX)",run:assignedTodayStep()},
     {id:"linehaul",label:"Incoming linehaul (SPX)",run:spxButtonStep("syncLinehaulFromSPX","linehaulSpxSyncStatus")},
     {id:"firstMile",label:"Pickup / First Mile Orders and Tasks (SPX)",run:firstMileButtonStep()}
   ];
@@ -13559,10 +13582,16 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   async function runStep(index,states,last){
     if(cancelled){states[index]=skip("Stopped");renderSteps(states);return states[index]}
     states[index]={state:"run",note:"Working…"};renderSteps(states);
-    if(last)last.textContent="Syncing "+STEPS[index].label+"…";
+    const updateRunningText=()=>{
+      if(!last)return;
+      const active=STEPS.filter((step,i)=>states[i]?.state==="run").map(step=>step.label);
+      last.textContent=active.length?"Syncing "+active.join(" · ")+"…":"Sync steps updating…";
+    };
+    updateRunningText();
     try{states[index]=await STEPS[index].run()}
     catch(error){console.warn("Sync All step failed:",STEPS[index].id,error);states[index]=fail(error&&error.message||"Failed")}
     renderSteps(states);
+    updateRunningText();
     return states[index];
   }
 
@@ -13581,10 +13610,10 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     modalKeys.forEach(key=>{saved[key]=window[key];window[key]=()=>{}});
     setBtn("■ Stop",false,"run");
     let parcelCloudBufferStarted=false;
+    // Avoid cloud pulls overwriting the datasets being refreshed by the parallel SPX steps.
+    window.__badocSyncAllInProgress=true;
     try{
-      // Load the authoritative shared CFR1 membership before Sync All imports
-      // new SPX statuses. If cloud is temporarily unavailable, keep syncing
-      // SPX data but never let a partial ledger replace the shared snapshot.
+      // Load the authoritative shared CFR1 membership before importing new SPX statuses.
       try{
         const cfr1Cloud=window.__badocCfr1CloudSync;
         if(cfr1Cloud&&typeof cfr1Cloud.ensureLoaded==="function"){
@@ -13593,46 +13622,53 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
           window.updateOperationProgress?.();
         }
       }catch(error){console.warn("Sync All: CFR1 cloud preflight failed:",error)}
-      await runStep(0,states,last);
+
       if(!cancelled&&typeof window.__badocBeginSyncAllParcelCloudBuffer==="function"){
         window.__badocBeginSyncAllParcelCloudBuffer();
         parcelCloudBufferStarted=true;
       }
+
       if(cancelled){
-        for(let index=1;index<STEPS.length;index++){states[index]=skip("Stopped");renderSteps(states)}
+        for(let index=0;index<STEPS.length;index++)states[index]=skip("Stopped before this step");
+        renderSteps(states);
       }else{
-        // Received / Transported must finish before Incoming Linehaul starts.
-        // Delivery statuses and Pickup can run alongside Received / Transported.
-        last.textContent="Syncing Received / Transported first…";
-        const parallelSteps = [runStep(2,states,last),runStep(4,states,last)];
-        await Promise.all([runStep(1,states,last), ...parallelSteps]);
+        // Steps 1, 2, 3 and 5 begin together.
+        const sharedCloudPromise=runStep(0,states,last);
+        const inboundPromise=runStep(1,states,last);
+        const assignedTodayPromise=runStep(2,states,last);
+        const firstMilePromise=runStep(4,states,last);
+
+        // Step 4 (Incoming Linehaul) starts as soon as step 2 completes.
+        await inboundPromise;
         if(!cancelled){
-          last.textContent="Received / Transported finished. Starting Incoming Linehaul…";
+          if(last)last.textContent="Received / Transported finished. Starting Incoming Linehaul…";
           await runStep(3,states,last);
         }else{
           states[3]=skip("Stopped before Incoming Linehaul");
           renderSteps(states);
         }
 
-        // Publish the parcel exports only after Received and delivery exports
-        // both finish, so delivery status continues to take precedence.
+        await Promise.all([sharedCloudPromise,assignedTodayPromise,firstMilePromise]);
+
+        // Publish the inbound parcel export only after the other syncs are complete.
         if(parcelCloudBufferStarted&&typeof window.__badocFlushSyncAllParcelCloudBuffer==="function"){
           try{
             const flushed=await window.__badocFlushSyncAllParcelCloudBuffer();
             parcelCloudBufferStarted=false;
             if(flushed&&flushed.uploaded){
-              const prior=states[0]?.note||"Latest shared data loaded";
-              states[0]={state:states[0]?.state||"ok",note:prior+`; ${flushed.uploaded} parcel exports saved to shared cloud`};
+              const prior=states[0]?.note||"Shared cloud data loaded";
+              states[0]={state:states[0]?.state||"ok",note:prior+"; "+flushed.uploaded+" inbound parcel export saved to shared cloud"};
               renderSteps(states);
             }
           }catch(error){
             console.warn("Sync All parcel cloud upload failed:",error);
-            states[0]=fail("Parcel data imported locally, but saving to shared cloud failed: "+(error&&error.message||"Unknown error"));
+            states[0]=fail("Inbound parcel data imported locally, but saving it to shared cloud failed: "+(error&&error.message||"Unknown error"));
             renderSteps(states);
           }
         }
+
         if(cancelled){
-          for(let index=1;index<STEPS.length;index++){
+          for(let index=0;index<STEPS.length;index++){
             if(states[index].state==="wait")states[index]=skip("Stopped");
           }
           renderSteps(states);
@@ -13642,6 +13678,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       if(parcelCloudBufferStarted&&typeof window.__badocFlushSyncAllParcelCloudBuffer==="function"){
         try{await window.__badocFlushSyncAllParcelCloudBuffer()}catch(error){console.warn("Final parcel cloud flush failed:",error)}
       }
+      window.__badocSyncAllInProgress=false;
       modalKeys.forEach(key=>{window[key]=saved[key]});
       running=false;
     }
@@ -13651,7 +13688,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     try{localStorage.setItem(LAST_KEY,JSON.stringify({at:Date.now(),ok:nOk,skip:nSkip,fail:nFail}))}catch(error){}
     if(last)last.textContent=cancelled?"Stopped · "+nOk+" done":"Finished in "+Math.round((Date.now()-startedAt)/1000)+"s · "+nOk+" done"+(nSkip?" · "+nSkip+" skipped":"")+(nFail?" · "+nFail+" failed":"");
     cancelled=false;
-    setBtn("⟳ Sync SPX Data",false,nFail?"warn":"done");
+    setBtn("⟳ Sync Now",false,nFail?"warn":"done");
     setTimeout(()=>{const button=$("syncAllBtn");if(button&&!running)button.dataset.mode=""},4000);
     const success=!cancelled&&nFail===0&&nSkip===0;
     return success;
@@ -13710,7 +13747,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     const button=$("syncAllBtn");if(!button||button.dataset.bound)return;
     button.dataset.bound="1";
     button.addEventListener("click",()=>run());
-    button.title="Sync shared cloud data, Received / Transported, all delivery statuses, Incoming Linehaul, and Pickup (First Mile Orders and Tasks).";
+    button.title="Sync shared cloud data, Received / Transported, Assigned Today, Incoming Linehaul, and Pickup (First Mile Orders and Tasks).";
     const last=$("syncAllLast");if(last)last.textContent=lastText();
     startSchedule();
   }
@@ -15711,3 +15748,20 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 })();
 </script>
 <script src="actual-scanned.js?v=town-breakdown-v1"></script>
+
+<style id="sync-all-layout-fix">
+#homeDashboard #syncAll.syncall{display:flex!important;flex-direction:column!important;gap:12px!important;padding:16px!important;box-sizing:border-box!important}
+#homeDashboard #syncAll .syncall-head{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;flex-wrap:wrap!important;width:100%!important}
+#homeDashboard #syncAll .syncall-head>div:first-child{display:flex!important;flex:1 1 240px!important;flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:3px!important;min-width:0!important}
+#homeDashboard #syncAll .syncall-head strong{display:block!important;margin:0!important;font-size:15px!important;font-weight:800!important;line-height:1.25!important;color:var(--text,#1a202c)!important}
+#homeDashboard #syncAll span#syncAllLast{display:block!important;margin:2px 0 0!important;padding:0!important;color:var(--muted,#667085)!important;font-size:12px!important;line-height:1.4!important;white-space:normal!important}
+#homeDashboard #syncAll .syncall-actions{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:8px!important;margin-left:auto!important;flex:0 0 auto!important}
+#homeDashboard #syncAll button#syncAllBtn{-webkit-appearance:none!important;appearance:none!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;box-sizing:border-box!important;min-width:132px!important;min-height:42px!important;height:auto!important;padding:10px 18px!important;margin:0!important;border:0!important;border-radius:10px!important;background:var(--accent,#2563eb)!important;color:#fff!important;font-family:inherit!important;font-size:13px!important;font-weight:800!important;line-height:1.2!important;letter-spacing:0!important;text-align:center!important;text-decoration:none!important;white-space:nowrap!important;cursor:pointer!important;box-shadow:0 4px 12px rgba(37,99,235,.18)!important}
+#homeDashboard #syncAll button#syncAllBtn:hover:not(:disabled){background:var(--accent-ink,#1d4ed8)!important}
+#homeDashboard #syncAll button#syncAllBtn:disabled{opacity:.65!important;cursor:progress!important}
+#homeDashboard #syncAll button#syncAllBtn[data-mode="run"]{background:#dc2626!important;color:#fff!important}
+#homeDashboard #syncAll button#syncAllBtn[data-mode="done"]{background:#16a34a!important;color:#fff!important}
+#homeDashboard #syncAll button#syncAllBtn[data-mode="warn"]{background:#d97706!important;color:#fff!important}
+#homeDashboard #syncAll .syncall-steps{width:100%!important;margin:0!important}
+@media(max-width:700px){#homeDashboard #syncAll .syncall-head{align-items:stretch!important}#homeDashboard #syncAll .syncall-actions{width:100%!important;margin:0!important;justify-content:flex-end!important}#homeDashboard #syncAll button#syncAllBtn{width:auto!important;min-width:132px!important}}
+</style>
