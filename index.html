@@ -8749,11 +8749,10 @@ window.addEventListener("message",async event=>{
     }
     if(deliveryBusy){
       clearBadocSyncWatchdog("delivery");
-      const combined=badocActiveDeliveryStatus==="2,4,5";
-      const btn=combined?$("syncParcelDeliveryAllFromSPX"):$(BADOC_DELIVERY_STATUS_BUTTONS[badocActiveDeliveryStatus]?.button);
+      const cfg=BADOC_DELIVERY_STATUS_BUTTONS[badocActiveDeliveryStatus];
+      const btn=cfg&&$(cfg.button);
       if(btn){btn.disabled=false;btn.dataset.busy="0";}
-      if(combined)setCombinedDeliverySyncStatus("Extension disconnected — "+reason,"error");
-      else setIndividualDeliveryStatus(badocActiveDeliveryStatus,"Extension disconnected — "+reason,"error");
+      setIndividualDeliveryStatus(badocActiveDeliveryStatus,"Extension disconnected — "+reason,"error");
       badocActiveDeliveryStatus="";
     }
     if(linehaulBusy){
@@ -14976,32 +14975,6 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     };
   }
 
-  function combinedDeliveryButtonStep(){
-    return async()=>{
-      if(!(await ensureBridgeForSyncAll()))return skip(bridgeHelp());
-      if(cancelled)return skip("Stopped");
-      const btn=$("syncParcelDeliveryAllFromSPX");
-      if(!btn)return fail("Combined delivery-status sync button is not available.");
-      if(btn.disabled||btn.dataset.busy==="1")return skip("Combined delivery-status export is already running.");
-      const status=$("parcelDeliverySpxSyncStatus");
-      btn.click();
-      const started=await waitFor(()=>btn.disabled||btn.dataset.busy==="1",15000,100);
-      if(!started){
-        const message=((status&&status.textContent)||"").trim();
-        if(status&&status.classList.contains("is-error"))return fail(message||"Combined delivery-status sync failed to start.");
-        return fail(message||"Combined delivery-status export did not start.");
-      }
-      const done=await waitFor(()=>!btn.disabled&&btn.dataset.busy!=="1",6*60*1000,250);
-      if(cancelled)return skip("Stopped");
-      if(!done)return fail("Timed out waiting for the combined Delivering / Delivered / OnHold export.");
-      const message=((status&&status.textContent)||"").trim();
-      if(status&&status.classList.contains("is-error"))return fail(message||"Combined delivery-status sync failed.");
-      if(!status||!status.classList.contains("is-success"))
-        return fail(message||"Combined delivery-status export ended without a successful import confirmation.");
-      return ok(message||"Delivering, Delivered and OnHold imported; cloud upload queued for verification.");
-    };
-  }
-
   const STEPS=[
     {id:"cloud",label:"Shared cloud data",run:async()=>{
       if(typeof window.__badocSharedPullNow!=="function")return skip("Cloud sync not ready");
@@ -15011,7 +14984,6 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     }},
     {id:"inbound",label:"Received / Transported / Transporting",run:spxButtonStep("syncParcelInboundFromSPX","parcelInboundSpxSyncStatus")},
     {id:"assignedToday",label:"Assigned Today",run:assignedTodayStep()},
-    {id:"delivery",label:"Delivering / Delivered / OnHold",run:combinedDeliveryButtonStep()},
     {id:"linehaul",label:"Incoming linehaul",run:spxButtonStep("syncLinehaulFromSPX","linehaulSpxSyncStatus")},
     {id:"firstMile",label:"Pickup",run:firstMileButtonStep()}
   ];
@@ -15108,46 +15080,37 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         for(let index=0;index<STEPS.length;index++)states[index]=skip("Stopped before this step");
         renderSteps(states);
       }else{
-        // Shared cloud, inbound, Assigned Today, delivery statuses and Pickup start together.
+        // Steps 1, 2, 3 and 5 begin together.
         const sharedCloudPromise=runStep(0,states,last);
         const inboundPromise=runStep(1,states,last);
         const assignedTodayPromise=runStep(2,states,last);
-        const deliveryPromise=runStep(3,states,last);
-        const firstMilePromise=runStep(5,states,last);
+        const firstMilePromise=runStep(4,states,last);
 
-        // Incoming Linehaul starts as soon as the inbound export finishes.
+        // Step 4 (Incoming Linehaul) starts as soon as step 2 completes.
         await inboundPromise;
         if(!cancelled){
           if(last)last.textContent="Received / Transported finished. Starting Incoming Linehaul…";
-          await runStep(4,states,last);
+          await runStep(3,states,last);
         }else{
-          states[4]=skip("Stopped before Incoming Linehaul");
+          states[3]=skip("Stopped before Incoming Linehaul");
           renderSteps(states);
         }
 
-        await Promise.all([sharedCloudPromise,assignedTodayPromise,deliveryPromise,firstMilePromise]);
+        await Promise.all([sharedCloudPromise,assignedTodayPromise,firstMilePromise]);
 
-        // Publish both buffered parcel exports only after the parallel SPX imports finish.
+        // Publish the inbound parcel export only after the other syncs are complete.
         if(parcelCloudBufferStarted&&typeof window.__badocFlushSyncAllParcelCloudBuffer==="function"){
           try{
             const flushed=await window.__badocFlushSyncAllParcelCloudBuffer();
             parcelCloudBufferStarted=false;
             if(flushed&&flushed.uploaded){
               const prior=states[0]?.note||"Shared cloud data loaded";
-              states[0]={state:states[0]?.state||"ok",note:prior+"; "+flushed.uploaded+" parcel export"+(flushed.uploaded===1?"":"s")+" saved to shared cloud"};
-              const savedSources=new Set(flushed.sources||[]);
-              if(savedSources.has("spx-inbound")&&states[1]?.state==="ok")
-                states[1]={...states[1],note:"Inbound parcel export saved to shared cloud"};
-              if(savedSources.has("spx-delivery")&&states[3]?.state==="ok")
-                states[3]={...states[3],note:"Delivering, Delivered and OnHold export saved to shared cloud"};
+              states[0]={state:states[0]?.state||"ok",note:prior+"; "+flushed.uploaded+" inbound parcel export saved to shared cloud"};
               renderSteps(states);
             }
           }catch(error){
             console.warn("Sync All parcel cloud upload failed:",error);
-            const reason=error&&error.message||"Unknown error";
-            states[0]=fail("Shared parcel cloud upload failed: "+reason);
-            if(states[1]?.state==="ok")states[1]=fail("Inbound export imported locally, but its shared cloud upload failed.");
-            if(states[3]?.state==="ok")states[3]=fail("Delivery-status export imported locally, but its shared cloud upload failed.");
+            states[0]=fail("Inbound parcel data imported locally, but saving it to shared cloud failed: "+(error&&error.message||"Unknown error"));
             renderSteps(states);
           }
         }
@@ -15161,7 +15124,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       }
     }finally{
       if(parcelCloudBufferStarted&&typeof window.__badocFlushSyncAllParcelCloudBuffer==="function"){
-        try{await window.__badocFlushSyncAllParcelCloudBuffer()}catch(error){console.warn("Final parcel cloud flush failed for inbound/delivery exports:",error)}
+        try{await window.__badocFlushSyncAllParcelCloudBuffer()}catch(error){console.warn("Final parcel cloud flush failed:",error)}
       }
       window.__badocSyncAllInProgress=false;
       modalKeys.forEach(key=>{window[key]=saved[key]});
