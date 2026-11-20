@@ -4371,7 +4371,10 @@ window.__badocOnholdExportsReady=badocRestoreOnholdExportRows().then(count=>{
   return count;
 });
 
-function getParcelCountRows(){
+function getParcelCountRows(options={}){
+  // Callers can opt into exemption-inclusive rows for metrics that must be
+  // independent of the Exemptions list (currently Backlogs only).
+  const includeExemptions=options?.includeExemptions===true;
   // Start with the uploaded Parcel Count rows, preserving the existing
   // Badoc/Pinili routing and one-row-per-SPX-TN behavior.
   const valid=Array.isArray(current?.valid)?current.valid:[];
@@ -4390,7 +4393,7 @@ function getParcelCountRows(){
     "ONHOLD","ON HOLD","LMHUB ONHOLD","LMHUB ON HOLD",
     "ASSIGNING","ASSIGNED","LMHUB ASSIGNING","LMHUB ASSIGNED"
   ]);
-  const qualifies=r=>allowedStatuses.has(statusNorm(statusOf(r))) && !isExceptionRow(r);
+  const qualifies=r=>allowedStatuses.has(statusNorm(statusOf(r))) && (includeExemptions || !isExceptionRow(r));
   const keyOf=v=>norm(v).replace(/[\s\-_.]/g,"");
   const rows=[];
   const seen=new Set();
@@ -4423,7 +4426,7 @@ function getParcelCountRows(){
   const areaByTown=allowedMap();
 
   exported.forEach(exportRow=>{
-    if(!exportRow||isExceptionRow(exportRow))return;
+    if(!exportRow||(!includeExemptions&&isExceptionRow(exportRow)))return;
     const key=keyOf(spxTN(exportRow));
     if(!key)return;
     const rawStatus=String(badocRowMeta(exportRow)?.status||statusOf(exportRow)||"").trim();
@@ -9974,6 +9977,12 @@ window.updateOperationProgress=function(){
   const liveTodayRows=typeof getParcelCountRows==="function"
     ?getParcelCountRows()
     :allRows.filter(r=>!isExceptionRow(r));
+  // Backlogs has its own Parcel Count view so adding an exemption never
+  // removes the parcel from this metric. All other dashboard populations keep
+  // using liveTodayRows with their existing exemption handling.
+  const backlogSourceRows=typeof getParcelCountRows==="function"
+    ?getParcelCountRows({includeExemptions:true})
+    :allRows;
   const TV_LINEHAUL_KEY=typeof PARCEL_INCOMING_KEY!=="undefined"
     ?PARCEL_INCOMING_KEY
     :"badoc_parcel_incoming_linehaul_v1";
@@ -10746,7 +10755,7 @@ window.updateOperationProgress=function(){
   // Blank and prior-day pickup timestamps both remain in Backlogs.
   // Exemptions do not remove parcels from the Backlogs population.
   const backlogTnKeys=new Set();
-  liveTodayRows.forEach(row=>{
+  backlogSourceRows.forEach(row=>{
     if(!row)return;
     const key=tnKey(spxTN(row));
     if(!key)return;
@@ -10853,6 +10862,7 @@ window.updateOperationProgress=function(){
     ...(Array.isArray(current?.valid)?[current.valid]:[]),
     ...(Array.isArray(current?.mis)?[current.mis]:[]),
     liveTodayRows,
+    backlogSourceRows,
     Array.isArray(incomingForToday?.rows)?incomingForToday.rows:[],
     todayRows,
     Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:[]
@@ -10928,7 +10938,7 @@ window.updateOperationProgress=function(){
       ...onholdRows.map(row=>spxTN(row))
     ];
   const dispatchedDetailRows=collectDashboardKeys([...new Set(dispatchedDetailKeys.map(tnKey).filter(Boolean))]);
-  const backlogDetailRows=collectDashboardDetails(liveTodayRows,(row,key)=>backlogTnKeys.has(key));
+  const backlogDetailRows=collectDashboardDetails(backlogSourceRows,(row,key)=>backlogTnKeys.has(key));
   const rtsDetailRows=collectDashboardDetails(liveTodayRows,(row,key)=>rtsTnKeys.has(key));
   const redeliveryDetailRows=collectDashboardDetails(
     [...liveTodayRows,...todayRows,...(Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:[])],
