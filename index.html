@@ -10366,7 +10366,9 @@ window.updateOperationProgress=function(){
   function cfr1IsExempt(r){
     if(!r)return false;
     const set=exceptionTrackingSet();
-    const keys=["SPX TN","SLS Tracking Number","SPX TN/Tracking Number","Tracking Number","Order ID"];
+    // CFR1 records may be stored in the ledger shape, where the tracking
+    // number is held in "tn" rather than an SPX export header.
+    const keys=["SPX TN","SLS Tracking Number","SPX TN/Tracking Number","Tracking Number","Order ID","tn"];
     return keys.some(k=>{const v=exceptionKey(r?.[k]);return !!v && set.has(v);});
   }
   const cfr1Now=__badocTime.manilaDate();
@@ -10571,7 +10573,9 @@ window.updateOperationProgress=function(){
     const batchTime=Number(x.btime||0);
     if(cfr1Ledger.frozen===true && !cfr1RestoringFrozenLedger)return;
     if(cfr1Now>=cfr1Seven && !cfr1RecoveringEmptyLedger && !cfr1RestoringFrozenLedger)return;
-    const r=x.r,key=cfr1Key(r); if(!key || cfr1IsExempt(r))return;
+    // Exemptions are display-only for CFR1; they must not remove eligible
+    // parcels from the daily CFR1 membership ledger.
+    const r=x.r,key=cfr1Key(r); if(!key)return;
     const stationRaw=r?.["Current Station"] ?? r?.["Current station"] ?? r?.["CURRENT STATION"] ?? Object.entries(r||{}).find(([k,v])=>/^(current\s*station)$/i.test(String(k).trim())&&String(v??"").trim()!=="")?.[1] ?? "";
     const station=norm(stationRaw);
     const status=cfr1Status(r);
@@ -10637,28 +10641,29 @@ window.updateOperationProgress=function(){
     const latest=latestByKey.get(key);
     if(latest){
       const r=latest.r;
-      if(!cfr1IsExempt(r)){
-        rec.orderId=String(r?.["Order ID"]??rec.orderId??"").trim();
-        rec.tn=String(spxTN(r)??rec.tn??"").trim();
-        rec.town=String(r?.["Town Name"]??r?.["Town"]??rec.town??"").trim();
-        rec.status=String(statusTo(r)||r?.["Status"]||r?.["Parcel Status"]||r?.["Current Status"]||"").trim();
-        // Capture Pick Up Time once whenever it is present, even when SPX
-        // still reports LMHub_Received. Rule B is explicitly unscanned.
-        if(rec.ruleBUnscanned===true){
-          rec.scannedTime="";
-        }else if(cfr1PickUpTime(r)){
-          // Refresh a stale prior-day pickup timestamp from the latest upload.
-          rec.scannedTime=cfr1PickUpTime(r);
-        }
-        const latestStation=norm(r?.["Current Station"]||"");
-        const latestStatus=cfr1Status(r);
-        rec.noTownFilter=!!rec.noTownFilter || (
-          latestStatus.includes("TRANSPORTED") &&
-          latestStation==="CAGAYAN DC" &&
-          destination(r)==="BADOC HUB"
-        );
-        rec.latestBatchTime=latest.btime;
+      // Keep the latest parcel data live even when it is listed in Exemptions.
+      // Exemptions only add an INTERCEPT cue to unscanned details; they do not
+      // suppress membership, status refreshes, or the scanned/unscanned split.
+      rec.orderId=String(r?.["Order ID"]??rec.orderId??"").trim();
+      rec.tn=String(spxTN(r)??rec.tn??"").trim();
+      rec.town=String(r?.["Town Name"]??r?.["Town"]??rec.town??"").trim();
+      rec.status=String(statusTo(r)||r?.["Status"]||r?.["Parcel Status"]||r?.["Current Status"]||"").trim();
+      // Capture Pick Up Time once whenever it is present, even when SPX
+      // still reports LMHub_Received. Rule B is explicitly unscanned.
+      if(rec.ruleBUnscanned===true){
+        rec.scannedTime="";
+      }else if(cfr1PickUpTime(r)){
+        // Refresh a stale prior-day pickup timestamp from the latest upload.
+        rec.scannedTime=cfr1PickUpTime(r);
       }
+      const latestStation=norm(r?.["Current Station"]||"");
+      const latestStatus=cfr1Status(r);
+      rec.noTownFilter=!!rec.noTownFilter || (
+        latestStatus.includes("TRANSPORTED") &&
+        latestStation==="CAGAYAN DC" &&
+        destination(r)==="BADOC HUB"
+      );
+      rec.latestBatchTime=latest.btime;
     }
   });
   // Keep the latest CFR1 ledger in memory only. Cloud Storage is the sole
@@ -10673,9 +10678,9 @@ window.updateOperationProgress=function(){
   Object.values(cfr1Ledger.records).forEach(rec=>{
     const key=rec.key;
     const latest=latestByKey.get(key)?.r;
-    // Exceptions remain live even after 7:00 AM: adding a parcel to the
-    // exception list removes it from CFR1 totals/details immediately.
-    if(cfr1IsExempt(latest||rec))return;
+    // Exemptions never remove a parcel from CFR1. They are only marked as
+    // INTERCEPT in the Unscanned details when the current parcel is unscanned.
+    const isIntercept=cfr1IsExempt(latest||rec);
     const latestTown=cfr1TownOf(latest||rec);
     const specialNoTownFilter=!!rec.noTownFilter;
     if(!specialNoTownFilter && (!latestTown || !cfr1AllowedTowns.has(latestTown)))return;
@@ -10701,7 +10706,7 @@ window.updateOperationProgress=function(){
       cfr1UnscannedRows.push({
         orderId:rec.orderId||rec.tn||"",
         town:rec.town||"",
-        status:rawStatus,
+        status:isIntercept?"INTERCEPT · "+(rawStatus||"UNSCANNED"):rawStatus,
         receivedTime:rec.ruleBUnscanned===true?"Transported before 4AM":(rec.receivedMs!==null && rec.receivedMs!==undefined && rec.receivedMs!=="" && Number.isFinite(Number(rec.receivedMs))?new Date(Number(rec.receivedMs)).toLocaleString("en-PH", {year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:true}):"")
       });
     }
@@ -10739,9 +10744,10 @@ window.updateOperationProgress=function(){
   // Assigned Today population, not the 3 PM Today's Volume snapshot: older
   // parcels and records added after cutoff must still be eligible for Backlogs.
   // Blank and prior-day pickup timestamps both remain in Backlogs.
+  // Exemptions do not remove parcels from the Backlogs population.
   const backlogTnKeys=new Set();
   liveTodayRows.forEach(row=>{
-    if(!row||isExceptionRow(row))return;
+    if(!row)return;
     const key=tnKey(spxTN(row));
     if(!key)return;
     const pickupAt=manilaStamp(rowTimestamp(row,"pickup"));
