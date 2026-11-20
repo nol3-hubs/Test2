@@ -168,7 +168,6 @@
 
     const supported = new Set([
       "BADOC_START_LINEHAUL_SYNC",
-      "BADOC_START_DELIVERING_RECONCILE",
       "BADOC_START_PARCEL_DELIVERY_SYNC",
       "BADOC_START_RIDER_SYNC",
       "BADOC_START_PARCEL_INBOUND_SYNC",
@@ -180,7 +179,7 @@
     ]);
     if (!supported.has(data.type)) return;
     if (!port) {
-      const errorKind = data.type === "BADOC_START_DELIVERING_RECONCILE" ? "delivering-reconcile" :
+      const errorKind =
         data.type === "BADOC_START_PARCEL_SECONDARY_SYNC" ? "parcel-secondary" :
         data.type === "BADOC_START_PARCEL_DELIVERY_SYNC" ? "parcel-delivery" :
         data.type === "BADOC_START_LINEHAUL_SYNC" ? "linehaul" :
@@ -194,7 +193,6 @@
     try {
       const payload = { type: data.type };
       if (data.type === "BADOC_LOOKUP_PICKUP_INFO") { payload.reqId=String(data.reqId||""); payload.orderId=String(data.orderId||"").trim(); }
-      if (data.type === "BADOC_START_DELIVERING_RECONCILE") payload.trackingNumbers = Array.isArray(data.trackingNumbers) ? data.trackingNumbers.map(v => String(v || "").trim()).filter(Boolean) : [];
       if (data.type === "BADOC_START_RIDER_SYNC") {
         payload.hubId = Number(data.hubId || 0) || 0;
         payload.hubName = String(data.hubName || "").trim();
