@@ -1947,7 +1947,14 @@ html[data-theme="light"] .side > .theme-switch-row{
       <button type="button" class="syncall-btn" id="syncAllBtn" title="Sync shared cloud data, Received / Transported, Assigned Today, Incoming Linehaul, and Pickup (First Mile Orders and Tasks)">⟳ Sync Now</button>
     </div>
   </div>
-  <ol class="syncall-steps" id="syncAllSteps" hidden></ol>
+  <div class="syncall-progress" id="syncAllProgress" hidden aria-live="polite">
+    <div class="syncall-progress-meta">
+      <div class="syncall-progress-copy"><strong id="syncAllProgressLabel">Preparing synchronization</strong><span id="syncAllProgressDetail">Waiting for the SPX tasks to start</span></div>
+      <strong class="syncall-progress-count" id="syncAllProgressCount">0 / 5 complete</strong>
+    </div>
+    <div class="syncall-progress-track" id="syncAllProgressTrack" role="progressbar" aria-label="SPX synchronization progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="syncAllProgressFill"></span></div>
+  </div>
+  <ol class="syncall-steps" id="syncAllSteps" aria-label="SPX synchronization steps" aria-live="polite" hidden></ol>
 </div>
 <div class="section dashboard-overview">
       <div class="dashboard-overview-head">
@@ -13557,14 +13564,29 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     {id:"firstMile",label:"Pickup / First Mile Orders and Tasks (SPX)",run:firstMileButtonStep()}
   ];
 
-  const ICON={wait:"○",run:"",ok:"✓",skip:"–",fail:"✕"};
+  const ICON={wait:"○",run:"↻",ok:"✓",skip:"–",fail:"✕"};
+  const STATE_LABEL={wait:"Waiting",run:"In progress",ok:"Complete",skip:"Skipped",fail:"Failed"};
   function renderSteps(states){
-    const list=$("syncAllSteps");if(!list)return;
-    list.hidden=false;
+    const list=$("syncAllSteps"),panel=$("syncAll"),progress=$("syncAllProgress");
+    if(!list||!progress)return;
+    list.hidden=false;progress.hidden=false;
+    const completed=states.filter(state=>["ok","skip","fail"].includes(state&&state.state)).length;
+    const active=states.filter(state=>state&&state.state==="run").length;
+    const failed=states.filter(state=>state&&state.state==="fail").length;
+    const skipped=states.filter(state=>state&&state.state==="skip").length;
+    const percent=Math.round(completed/STEPS.length*100);
+    const label=$("syncAllProgressLabel"),detail=$("syncAllProgressDetail");
+    const count=$("syncAllProgressCount"),track=$("syncAllProgressTrack"),fill=$("syncAllProgressFill");
+    if(label)label.textContent=completed===STEPS.length?(failed?"Sync finished with errors":skipped?"Sync finished with skipped tasks":"All synchronization steps complete"):active===1?"Synchronizing SPX data":active>1?"Synchronizing "+active+" tasks in parallel":"Preparing synchronization";
+    if(detail)detail.textContent=completed===STEPS.length?(failed?failed+" failed"+(skipped?" · "+skipped+" skipped":""):"All requested tasks have finished"):active?active+" active · "+(STEPS.length-completed)+" remaining":"Waiting for the SPX tasks to start";
+    if(count)count.textContent=completed+" / "+STEPS.length+" complete";
+    if(fill)fill.style.width=percent+"%";
+    if(track)track.setAttribute("aria-valuenow",String(percent));
+    if(panel)panel.dataset.syncState=completed===STEPS.length?(failed?"error":skipped?"warning":"done"):active?"running":"waiting";
     list.innerHTML=STEPS.map((step,index)=>{
       const state=states[index]||{state:"wait"};
-      const note=state.note?`<small>${String(state.note).replace(/[&<>]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[char]))}</small>`:"";
-      return `<li class="sa-${state.state}"><i class="sa-ico" aria-hidden="true">${ICON[state.state]||""}</i><div><strong>${step.label}</strong>${note}</div></li>`;
+      const safeNote=state.note?String(state.note).replace(/[&<>]/g,function(char){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[char];}):(state.state==="wait"?"Waiting to start":state.state==="run"?"Working…":STATE_LABEL[state.state]||"");
+      return '<li class="syncall-step sa-'+state.state+'" data-step="'+(index+1)+'"><span class="sa-ico" aria-hidden="true">'+(ICON[state.state]||"○")+'</span><div class="sa-content"><div class="sa-heading"><strong>'+step.label+'</strong><span class="sa-state-pill">'+(STATE_LABEL[state.state]||"Waiting")+'</span></div><small>'+safeNote+'</small></div></li>';
     }).join("");
   }
   function lastText(){
@@ -13578,6 +13600,8 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   function setBtn(label,disabled,mode){
     const button=$("syncAllBtn");if(!button)return;
     button.textContent=label;button.disabled=!!disabled;button.dataset.mode=mode||"";
+    const panel=$("syncAll");
+    if(panel)panel.dataset.syncState=mode==="run"?"running":mode==="done"?"done":mode==="warn"?"warning":"idle";
   }
   async function runStep(index,states,last){
     if(cancelled){states[index]=skip("Stopped");renderSteps(states);return states[index]}
@@ -13754,7 +13778,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   window.__badocSyncAll=run;
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
 })();
-</script>
+
 <script id="rate-colors">
 /* Success-rate colours: update only affected rate labels instead of rescanning the full dashboard after every DOM mutation. */
 (function(){
@@ -15764,4 +15788,48 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 #homeDashboard #syncAll button#syncAllBtn[data-mode="warn"]{background:#d97706!important;color:#fff!important}
 #homeDashboard #syncAll .syncall-steps{width:100%!important;margin:0!important}
 @media(max-width:700px){#homeDashboard #syncAll .syncall-head{align-items:stretch!important}#homeDashboard #syncAll .syncall-actions{width:100%!important;margin:0!important;justify-content:flex-end!important}#homeDashboard #syncAll button#syncAllBtn{width:auto!important;min-width:132px!important}}
+</style>
+
+<style id="sync-all-loading-upgrade-v1">
+#homeDashboard #syncAll #syncAllProgress[hidden],#homeDashboard #syncAll ol#syncAllSteps[hidden]{display:none!important}
+#homeDashboard #syncAll #syncAllProgress{display:flex!important;flex-direction:column!important;gap:9px!important;width:100%!important;box-sizing:border-box!important;padding:12px 14px!important;margin:0!important;border:1px solid var(--line,#e3e7ec)!important;border-radius:11px!important;background:var(--panel2,#f8fafc)!important}
+#homeDashboard #syncAll .syncall-progress-meta{display:flex!important;align-items:center!important;justify-content:space-between!important;flex-wrap:wrap!important;gap:8px 14px!important;width:100%!important}
+#homeDashboard #syncAll .syncall-progress-copy{display:flex!important;flex-direction:column!important;gap:3px!important;min-width:0!important}
+#homeDashboard #syncAll .syncall-progress-copy strong{display:block!important;color:var(--text,#1a202c)!important;font-size:12px!important;font-weight:800!important;line-height:1.25!important}
+#homeDashboard #syncAll .syncall-progress-copy span{color:var(--muted,#667085)!important;font-size:11px!important;line-height:1.35!important}
+#homeDashboard #syncAll .syncall-progress-count{display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:5px 9px!important;border:1px solid var(--line,#d0d5dd)!important;border-radius:999px!important;background:var(--panel,#fff)!important;color:var(--text,#344054)!important;font-size:10px!important;font-weight:800!important;white-space:nowrap!important}
+#homeDashboard #syncAll .syncall-progress-track{display:block!important;position:relative!important;overflow:hidden!important;width:100%!important;height:7px!important;min-height:7px!important;border:0!important;border-radius:999px!important;background:var(--line,#e3e7ec)!important}
+#homeDashboard #syncAll .syncall-progress-track>span{display:block!important;position:relative!important;overflow:hidden!important;width:0;height:100%!important;min-height:7px!important;border:0!important;border-radius:999px!important;background:var(--accent,#2563eb)!important;transition:width .28s ease!important}
+#homeDashboard #syncAll[data-sync-state="running"] .syncall-progress-track>span:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.38),transparent);transform:translateX(-100%);animation:syncAllProgressShimmer 1.4s ease-in-out infinite}
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;align-items:stretch!important;gap:9px!important;width:100%!important;min-width:0!important;margin:0!important;padding:0!important;list-style:none!important;counter-reset:none!important}
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step{display:flex!important;align-items:flex-start!important;gap:10px!important;box-sizing:border-box!important;min-width:0!important;min-height:76px!important;margin:0!important;padding:11px 12px!important;border:1px solid var(--line,#e3e7ec)!important;border-radius:10px!important;background:var(--panel,#fff)!important;list-style:none!important;list-style-type:none!important;counter-increment:none!important}
+#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step:before,#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step:after{content:none!important;display:none!important}
+#homeDashboard #syncAll .syncall-step .sa-ico{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 28px!important;width:28px!important;height:28px!important;box-sizing:border-box!important;margin:0!important;padding:0!important;border:1px solid var(--line,#d0d5dd)!important;border-radius:50%!important;background:var(--panel2,#f8fafc)!important;color:var(--muted,#667085)!important;font-size:13px!important;font-style:normal!important;font-weight:900!important;line-height:1!important}
+#homeDashboard #syncAll .syncall-step .sa-content{display:flex!important;flex:1 1 auto!important;flex-direction:column!important;gap:6px!important;min-width:0!important}
+#homeDashboard #syncAll .syncall-step .sa-heading{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:7px!important;min-width:0!important}
+#homeDashboard #syncAll .syncall-step .sa-heading strong{display:block!important;min-width:0!important;margin:0!important;color:var(--text,#1a202c)!important;font-size:11.5px!important;font-weight:800!important;line-height:1.35!important;overflow-wrap:anywhere!important}
+#homeDashboard #syncAll .syncall-step .sa-state-pill{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;padding:3px 7px!important;margin:0!important;border:1px solid var(--line,#e3e7ec)!important;border-radius:999px!important;background:var(--panel2,#f8fafc)!important;color:var(--muted,#667085)!important;font-size:9px!important;font-weight:800!important;line-height:1.2!important;white-space:nowrap!important}
+#homeDashboard #syncAll .syncall-step .sa-content small{display:block!important;min-width:0!important;margin:0!important;padding:0!important;color:var(--muted,#667085)!important;font-size:10.5px!important;font-weight:500!important;line-height:1.45!important;white-space:normal!important;overflow-wrap:anywhere!important}
+#homeDashboard #syncAll .syncall-step.sa-run{border-color:#93c5fd!important;background:rgba(239,246,255,.68)!important}
+#homeDashboard #syncAll .syncall-step.sa-run .sa-ico{border:2px solid #bfdbfe!important;border-top-color:#2563eb!important;background:#eff6ff!important;color:#1d4ed8!important;animation:syncAllStepSpin .85s linear infinite!important}
+#homeDashboard #syncAll .syncall-step.sa-run .sa-state-pill{border-color:#bfdbfe!important;background:#eff6ff!important;color:#1d4ed8!important}
+#homeDashboard #syncAll .syncall-step.sa-ok .sa-ico{border-color:#16a34a!important;background:#16a34a!important;color:#fff!important}
+#homeDashboard #syncAll .syncall-step.sa-ok .sa-state-pill{border-color:#bbf7d0!important;background:#f0fdf4!important;color:#15803d!important}
+#homeDashboard #syncAll .syncall-step.sa-fail{border-color:#fecaca!important;background:#fffafa!important}
+#homeDashboard #syncAll .syncall-step.sa-fail .sa-ico{border-color:#dc2626!important;background:#dc2626!important;color:#fff!important}
+#homeDashboard #syncAll .syncall-step.sa-fail .sa-state-pill{border-color:#fecaca!important;background:#fef2f2!important;color:#b91c1c!important}
+#homeDashboard #syncAll .syncall-step.sa-skip .sa-state-pill{border-color:#e5e7eb!important;background:#f9fafb!important;color:#6b7280!important}
+#homeDashboard #syncAll[data-sync-state="done"] .syncall-progress-track>span{background:#16a34a!important}
+#homeDashboard #syncAll[data-sync-state="error"] .syncall-progress-track>span{background:#dc2626!important}
+#homeDashboard #syncAll[data-sync-state="warning"] .syncall-progress-track>span{background:#d97706!important}
+#homeDashboard #syncAll span#syncAllLast{max-width:min(75vw,900px)!important;line-height:1.4!important;overflow-wrap:anywhere!important}
+@keyframes syncAllStepSpin{to{transform:rotate(360deg)}}
+@keyframes syncAllProgressShimmer{to{transform:translateX(100%)}}
+@media(max-width:760px){#homeDashboard #syncAll ol#syncAllSteps.syncall-steps{grid-template-columns:1fr!important}#homeDashboard #syncAll ol#syncAllSteps.syncall-steps>li.syncall-step{min-height:0!important}#homeDashboard #syncAll .syncall-progress-meta{align-items:flex-start!important}#homeDashboard #syncAll span#syncAllLast{max-width:100%!important}}
+@media(prefers-reduced-motion:reduce){#homeDashboard #syncAll .syncall-step.sa-run .sa-ico{animation:none!important;border-top-color:#2563eb!important}#homeDashboard #syncAll .syncall-progress-track>span{transition:none!important}#homeDashboard #syncAll[data-sync-state="running"] .syncall-progress-track>span:after{animation:none!important}}
+html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-run{background:rgba(30,64,175,.16)!important;border-color:#31558a!important}
+html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-run .sa-ico,html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-run .sa-state-pill{background:rgba(30,64,175,.22)!important;border-color:#31558a!important;color:#93c5fd!important}
+html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-ok .sa-state-pill{background:rgba(22,163,74,.16)!important;border-color:rgba(74,222,128,.3)!important;color:#86efac!important}
+html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-fail{background:rgba(127,29,29,.12)!important;border-color:#7f1d1d!important}
+html[data-theme="dark"] #homeDashboard #syncAll .syncall-step.sa-fail .sa-state-pill{background:rgba(127,29,29,.18)!important;border-color:#7f1d1d!important;color:#fca5a5!important}
 </style>
