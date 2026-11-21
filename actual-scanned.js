@@ -41,21 +41,6 @@ function activityDate(row,status){
   if(!d||Number.isNaN(d.getTime()))return "";
   try{return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit"}).format(d)}catch(_){return ""}
 }
-function isOnholdStatus(v){
-  const s=norm(v).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
-  return s==="5"||/^(?:ONHOLD|ON HOLD|LM ?HUB ONHOLD|LM ?HUB ON HOLD)$/.test(s);
-}
-function tnAliases(tn){
-  const raw=String(tn??"").trim(),values=[];
-  if(raw){values.push(raw,norm(raw),key(raw));}
-  if(typeof window.badocOnholdKey==="function"){
-    try{const normalized=String(window.badocOnholdKey(raw)||"").trim();if(normalized)values.push(normalized);}catch(_){}
-  }
-  return [...new Set(values.filter(Boolean))];
-}
-function hasTnAlias(set,tn){
-  return set instanceof Set&&tnAliases(tn).some(alias=>set.has(alias));
-}
 function rosterIndexes(){
   const byId=new Map(),byName=new Map();
   (typeof ridersData!=="undefined"&&Array.isArray(ridersData)?ridersData:[]).forEach(r=>{
@@ -82,20 +67,18 @@ function build(){
   const source=typeof getParcelCountRows==="function"?getParcelCountRows():(typeof current!=="undefined"&&Array.isArray(current?.rows)?current.rows:[]);
   const sourceRows=Array.isArray(source)?source:[];
   const roster=rosterIndexes(),assignments=assignmentMap(roster);
-  const holdKeys=window.__badocOnholdTnKeys instanceof Set?window.__badocOnholdTnKeys:new Set();
-  const statusFields=["Parcel Status To","Status To","TO Status","To Status","Status To (Current)","Status","Parcel Status","Delivery Status","Current Status","Tracking Status","Tracking Status ID","Tracking Status Id","Tracking Status Code","Current Tracking Status","Current Tracking Status ID"];
-  // Pre-scan all rows before deduplication so a current OnHold row cannot be hidden
-  // by an earlier stale Delivered/Delivering row with the same tracking number.
-  const onholdAliasesFromRows=new Set(),onholdRowsByTn=new Map();
-  sourceRows.forEach(row=>{
-    const tn=typeof window.spxTN==="function"?String(window.spxTN(row)||"").trim():"";
-    if(tn&&statusFields.some(name=>isOnholdStatus(value(row,[name])))){
-      tnAliases(tn).forEach(alias=>onholdAliasesFromRows.add(alias));
-      const tnKey=key(tn),existing=onholdRowsByTn.get(tnKey);
-      const rowHasHoldTime=!!value(row,["OnHold Time","On Hold Time"]);
-      const existingHasHoldTime=!!(existing&&value(existing,["OnHold Time","On Hold Time"]));
-      if(!existing||(!existingHasHoldTime&&rowHasHoldTime))onholdRowsByTn.set(tnKey,row);
-    }
+  // Use the exact same OnHold population as Dashboard / Planning Board:
+  // status + Pick Up Time cutoff, current export precedence, exceptions and TN dedup.
+  // Do not infer OnHold from raw status text in this rider view.
+  const sharedOnholdRows=typeof window.__badocGetOnholdRows==="function"
+    ?window.__badocGetOnholdRows(sourceRows,false):[];
+  const onholdRowsByTn=new Map();
+  (Array.isArray(sharedOnholdRows)?sharedOnholdRows:[]).forEach(row=>{
+    const tn=typeof window.spxTN==="function"
+      ?String(window.spxTN(row)||"").trim()
+      :String(row?.["SPX TN"]||row?.["SLS Tracking Number"]||row?.["Tracking Number"]||"").trim();
+    const tnKey=key(tn);
+    if(tnKey&&!onholdRowsByTn.has(tnKey))onholdRowsByTn.set(tnKey,row);
   });
   const seen=new Set(),records=[];
   sourceRows.forEach(row=>{
@@ -124,16 +107,11 @@ function build(){
       const assignedId=String(assignedRider?.["Driver ID"]||"").trim();
       comparison=actualId&&assignedId?(key(actualId)===key(assignedId)?"Match":"Mismatch"):(key(actualName)===key(assigned)?"Match":"Mismatch");
     }
-    const status=value(row,statusFields)||"Unknown";
+    const status=value(row,["Parcel Status To","Status To","TO Status","To Status","Status To (Current)","Status","Parcel Status","Delivery Status","Current Status"])||"Unknown";
     const statusNorm=norm(status).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
-    // An SPX tracking status ID of 5 is OnHold. Check every recognized current-status
-    // field because different Forward/Return exports expose different header names.
-    const onholdStatus=statusFields.some(name=>isOnholdStatus(value(row,[name])));
-    // An OnHold record wins over stale Delivered/Delivering duplicates. Match the
-    // separate OnHold set using raw, normalized, and alphanumeric TN forms.
-    const onhold=!!(hasTnAlias(holdKeys,tn)||hasTnAlias(onholdAliasesFromRows,tn)||onholdStatus);
+    // OnHold alone comes from the canonical Dashboard / Planning Board classifier.
+    const onhold=onholdRowsByTn.has(tnKey);
     const displayStatus=onhold?"OnHold":status;
-    // Use the OnHold timestamp when the current OnHold state overrides a stale status.
     const activityStatusKey=onhold?"ONHOLD":key(status);
     const delivered=!onhold&&statusNorm==="DELIVERED";
     const delivering=!onhold&&statusNorm==="DELIVERING";
