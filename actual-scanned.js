@@ -96,6 +96,8 @@ function build(){
     }
     const status=value(row,["Parcel Status To","Status To","TO Status","To Status","Status To (Current)","Status","Parcel Status","Delivery Status","Current Status"])||"Unknown";
     const statusNorm=norm(status).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
+    // Keep the compact key for activityDate() (it selects the relevant status timestamp).
+    const statusKey=key(status);
     const onholdStatus=/^(?:ONHOLD|ON HOLD|LMHUB ONHOLD|LMHUB ON HOLD)$/.test(statusNorm);
     // A current OnHold export takes precedence over a stale Delivered/Delivering status.
     // Use exact operational status labels: substring matching would also treat
