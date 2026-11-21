@@ -217,6 +217,9 @@ function render(){
   }));
 }
 window.__badocRenderActualScannedByRiders=render;
+// Shared read-only data contract for EOD Data: use the exact same deduplicated
+// Parcel Count rows and actual scanner attribution as the Actual Scanned page.
+window.__badocGetActualScannedByRidersData=function(){return build()};
 window.addEventListener("badoc:parcel-data-updated",function(){if(byId("actualScannedByRiders")?.classList.contains("active"))render()});
 document.addEventListener("input",function(e){if(e.target?.closest?.("#actualScannedByRiders .actual-scan-filters"))render()});
 document.addEventListener("change",function(e){if(e.target?.closest?.("#actualScannedByRiders .actual-scan-filters"))render()});
