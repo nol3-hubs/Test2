@@ -1718,11 +1718,11 @@ html[data-theme="light"] .side > .theme-switch-row{
 #actualScannedByRiders .actual-scan-town-dropdown-empty{padding:10px;color:var(--muted);font-size:10px}
 </style>
 
-<style id="volume-forecast-hub-performance-style">
-#volumeForecastBoard .forecast-board-hub-performance{padding:0;border:0;background:transparent;box-shadow:none;margin:0 0 12px}
-#volumeForecastBoard .forecast-board-hub-performance .hub-performance-group{margin:0}
-#volumeForecastBoard .forecast-board-hub-performance .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-@media(max-width:650px){#volumeForecastBoard .forecast-board-hub-performance .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+<style id="dashboard-hub-performance-style">
+#homeDashboard .dashboard-hub-performance{margin:0 0 15px}
+#homeDashboard .dashboard-hub-performance .hub-performance-group{margin:0}
+#homeDashboard .dashboard-hub-performance .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:650px){#homeDashboard .dashboard-hub-performance .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 
 <style id="dashboard-two-column-layout-fix-v1">
@@ -2306,6 +2306,17 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
       </div>
     </div>
 
+    <div class="dashboard-hub-performance">
+      <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
+        <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div><span>03</span></div>
+        <div class="dashboard-status-grid">
+          <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small></small></div>
+          <div class="dashboard-status-card linehaul"><strong id="opIncomingLinehaul">0</strong><span>INCOMING LINEHAUL</span><small>Unique eligible SPX TNs</small></div>
+          <div class="dashboard-status-card success"><strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span><small></small></div>
+        </div>
+      </section>
+    </div>
+
     <div class="section dashboard-kpi-summary" id="dashboardKpiSummary">
   <div class="dashboard-kpi-summary-head">
     <div>
@@ -2576,16 +2587,6 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
     <button class="btn primary" id="syncVolumeForecastFromSPX" type="button" title="Run the same SPX inbound import used by Planning Board: Received, Transporting, Transported, LH Packed, and Packing">↻ Sync Volume Forecast</button>
     <span id="forecastBoardSyncStatus" class="hint" aria-live="polite" hidden>Not yet synced</span>
     <span id="forecastBoardState" hidden>Loading all-day parcel data…</span>
-  </div>
-  <div class="section forecast-board-hub-performance">
-          <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
-            <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div><span>03</span></div>
-            <div class="dashboard-status-grid">
-              <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small></small></div>
-              <div class="dashboard-status-card linehaul"><strong id="opIncomingLinehaul">0</strong><span>INCOMING LINEHAUL</span><small>Unique eligible SPX TNs</small></div>
-              <div class="dashboard-status-card success"><strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span><small></small></div>
-            </div>
-          </section>
   </div>
   <div class="kpis forecast-board-kpis">
     <div class="kpi"><div class="num" id="forecastBoardTotal">0</div><div class="lab">TOTAL PARCELS</div><div class="desc">Unique SPX tracking numbers · all day</div></div>
