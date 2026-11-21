@@ -16770,6 +16770,27 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   }
 }
 </style>
+
+<style id="dashboard-hub-performance-tile-size-override">
+/* Final override: keep Hub Performance metric tiles the same compact
+   height as the tiles in Parcel Overview and Delivery Status at every width. */
+#homeDashboard .dashboard-overview .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-grid{
+  grid-auto-rows:78px!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-card{
+  height:78px!important;
+  min-height:78px!important;
+  max-height:78px!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-card.riders{
+  border-top:3px solid #22d3ee!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-card.success{
+  border-top:3px solid #4ade80!important;
+}
+</style>
 </body>
 
 
