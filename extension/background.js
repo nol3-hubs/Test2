@@ -892,7 +892,7 @@ async function exportOnHoldOidsFromSpx(jobOverride = null) {
   });
   const json = parseJsonResponse("SPX OnHold export", response);
   if (!response.ok || Number(json?.retcode) !== 0) {
-    throw new Error("SPX OnHold export request failed: " +
+    throw new Error("OnHold export request failed: " +
       (json?.message || "SPX export failed (HTTP " + response.status + ")."));
   }
 
@@ -2243,13 +2243,13 @@ chrome.runtime.onConnect.addListener(port => {
       if (!job) {
         sendToPort(port, "BADOC_POD_CHECKER_ONHOLD_ERROR", {
           requestId,
-          message: "Another SPX export is already running. Try SPX OnHold again after it finishes."
+          message: "Another SPX export is already running. Try OnHold again after it finishes."
         });
         return;
       }
       sendToPort(port, "BADOC_POD_CHECKER_ONHOLD_ACCEPTED", {
         requestId,
-        message: "Extension accepted SPX OnHold. Preparing an OnHold-only export…"
+        message: "Extension accepted OnHold. Preparing an OnHold-only export…"
       });
       void (async () => {
         try {
