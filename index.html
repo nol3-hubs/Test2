@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v105">
+<meta name="badoc-app-version" content="v106">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -6523,13 +6523,36 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       ...[...groups.values()].flatMap(group=>
         (group.eligibleOrders||[]).map(order=>{
           const orderTaskNo=fmNorm(fmPickupTaskNumber(order));
-          const exactTasks=orderTaskNo
-            ?(group.tasks||[]).filter(task=>fmNorm(fmPickupTaskNumber(task))===orderTaskNo)
-            :[];
-          const noTaskNumberFallback=(group.tasks||[]).length===1&&!fmPickupTaskNumber((group.tasks||[])[0]);
-          const matchedTasks=orderTaskNo
-            ?(exactTasks.length?exactTasks:(noTaskNumberFallback?group.tasks:[]))
-            :group.tasks;
+          const orderStatusKey=fmNorm(fmPickupOrderStatus(order)||fmOrderSheetStatus(order)||"");
+          const isCanceledOrder=["canceled","cancelled","disabled"].includes(orderStatusKey);
+          const pointTasks=group.tasks||[];
+          let matchedTasks=[];
+
+          // Never attach a point-level task to an order already canceled/disabled.
+          if(!isCanceledOrder){
+            if(orderTaskNo){
+              const exactTasks=pointTasks.filter(task=>fmNorm(fmPickupTaskNumber(task))===orderTaskNo);
+              const noTaskNumberFallback=pointTasks.length===1&&!fmPickupTaskNumber(pointTasks[0]);
+              matchedTasks=exactTasks.length?exactTasks:(noTaskNumberFallback?pointTasks:[]);
+            }else if((group.eligibleOrders||[]).length===1){
+              // A single order at this pickup point is an unambiguous point-ID match.
+              matchedTasks=pointTasks;
+            }else{
+              // Multiple orders can share one Pickup Point ID. In that case,
+              // only link a task when its Create Time exactly matches this
+              // order's Assigned Time; otherwise leave the task unassigned
+              // rather than copying one rider/task across unrelated orders.
+              const assignedRaw=fmValue(order,["Assigned Time","Pickup Assigned Time","Assign Time","Assigned At","assigned_time"]);
+              const assignedStamp=assignedRaw?Date.parse(String(assignedRaw).replace(/\\//g,"-").replace(/\\s+/,"T")):NaN;
+              if(Number.isFinite(assignedStamp)){
+                matchedTasks=pointTasks.filter(task=>{
+                  const createdRaw=fmValue(task,["Create Time","Created Time","Task Create Time","create_time","ctime"]);
+                  const createdStamp=createdRaw?Date.parse(String(createdRaw).replace(/\\//g,"-").replace(/\\s+/,"T")):NaN;
+                  return Number.isFinite(createdStamp)&&createdStamp===assignedStamp;
+                });
+              }
+            }
+          }
           return {...group,orders:[order],eligibleOrders:[order],tasks:matchedTasks};
         })
       ),
