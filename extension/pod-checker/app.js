@@ -223,18 +223,18 @@ function startSpxOnHoldExportOverPort(requestId) {
       else resolve(result);
     };
     const timer = setTimeout(() => finish(new Error(
-      "SPX OnHold export did not finish within 10 minutes. Check the SPX export task monitor and retry."
+      "OnHold export did not finish within 10 minutes. Check the SPX export task monitor and retry."
     )), 10 * 60 * 1000);
     const onMessage = event => {
       if (event.source !== window || event.data?.source !== "BADOC_SPX_BRIDGE") return;
       const data = event.data;
       if (String(data.requestId || "") !== requestId) return;
       if (data.type === "BADOC_POD_CHECKER_ONHOLD_ACCEPTED") {
-        setStatus(String(data.message || "SPX OnHold export accepted…"));
+        setStatus(String(data.message || "OnHold export accepted…"));
       } else if (data.type === "BADOC_POD_CHECKER_ONHOLD_COMPLETE") {
         finish(null, data.result || null);
       } else if (data.type === "BADOC_POD_CHECKER_ONHOLD_ERROR") {
-        finish(new Error(String(data.message || "SPX OnHold data could not be loaded.")));
+        finish(new Error(String(data.message || "OnHold data could not be loaded.")));
       }
     };
     window.addEventListener("message", onMessage);
@@ -315,7 +315,7 @@ $('spxOnhold')?.addEventListener("click", async () => {
   const assignedButton = $("onholdToday");
   if (assignedButton) assignedButton.disabled = true;
   const originalLabel = button.textContent;
-  button.textContent = "Loading SPX OnHold…";
+  button.textContent = "Loading OnHold…";
   setStatus("Getting current OnHold parcels from the SPX Forward Order export for Badoc Hub…");
   try {
     const requestId = "pod-checker-onhold-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
@@ -326,7 +326,7 @@ $('spxOnhold')?.addEventListener("click", async () => {
           action: "EXPORT_ONHOLD_OIDS_FROM_SPX"
         });
     if (!reply) throw new Error("The extension returned an empty SPX OnHold result. Reload the extension and refresh BADOC HUB.");
-    if (reply.ok !== true) throw new Error(reply.error || "SPX OnHold data could not be loaded.");
+    if (reply.ok !== true) throw new Error(reply.error || "OnHold data could not be loaded.");
     const oids = [...new Set((Array.isArray(reply.oids) ? reply.oids : [])
       .map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
     $("oids").value = oids.join("\n");
