@@ -13674,7 +13674,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       <button type="button" class="dh2-alert${townBelow?"":" is-disabled"}" data-action="daily-history-below90-towns">${fmt(townBelow)} towns below 90%</button></div>`;
     const pts=trendPoints(s);
     const charts=`<div class="dh2-charts">${chart(pts,"totalVolume","Volume · last "+pts.length+" days","bars",date)}${chart(pts,"successRate","Success rate","line",date,"%")}</div>`;
-    const tabs=[["riders","Riders",groups.length],["towns","Towns",towns.length],["cfr1","CFR1",null],["board","Leaderboard",Array.isArray(s.eodLeaderboard)?s.eodLeaderboard.length:0],["exceptions","Exemptions",n(m.misrouted)+n(m.exemptions)]];
+    const tabs=[["riders","Riders",n(m.totalRiders)],["towns","Towns",towns.length],["cfr1","CFR1",null],["board","Leaderboard",Array.isArray(s.eodLeaderboard)?s.eodLeaderboard.length:0],["exceptions","Exemptions",n(m.misrouted)+n(m.exemptions)]];
     const bar=`<nav class="dh2-tabs" role="tablist">${tabs.map(t=>`<button type="button" role="tab" data-dh-tab="${t[0]}" class="${ui.tab===t[0]?"is-on":""}" aria-selected="${ui.tab===t[0]}">${t[1]}${t[2]?`<em>${fmt(t[2])}</em>`:""}</button>`).join("")}</nav>`;
     const body={riders:tabRiders,towns:tabTowns,cfr1:tabCfr1,board:tabBoard,exceptions:tabExceptions}[ui.tab](s);
     const meta=live?`<div class="dh2-meta is-live"><i></i>Live view of today — not saved until you tap Capture Now.</div>`:`<div class="dh2-meta">Saved snapshot${s.capturedAt?" · captured "+escH(prettyDate(String(s.capturedAt).slice(0,10)))+" "+escH(timeOf(s.capturedAt)):""}${s.captureReason?" · "+escH(s.captureReason):""}</div>`;
