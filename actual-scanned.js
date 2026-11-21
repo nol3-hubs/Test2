@@ -96,6 +96,7 @@ function build(){
       town:town,townKey:norm(town),actualId:actualId,actualName:actualName||(actualId?"Driver "+actualId:"Unidentified"),
       riderKey:riderKey,hasScanner:hasScanner,vehicle:vehicleType,assigned:assigned,
       comparison:comparison,status:status,onhold:!!onhold,delivered:statusKey.includes("DELIVERED"),
+      delivering:statusKey.includes("DELIVERING"),area:String(row?._area||"").trim().toUpperCase(),
       date:activityDate(row,statusKey)
     });
   });
