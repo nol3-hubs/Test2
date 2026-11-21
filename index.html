@@ -13249,6 +13249,20 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     return out;
   }
   function buildSnapshot(date){
+    // Refresh Dashboard's live operational metrics first. Data must use the
+    // same SPX TN deduplication, date, status and exception rules as Dashboard.
+    try{
+      if(typeof window.updateOperationProgress==="function")window.updateOperationProgress();
+    }catch(error){
+      console.warn("Daily History could not refresh Dashboard operational metrics:",error);
+    }
+    const readDashboardCount=(id,fallback)=>{
+      const node=document.getElementById(id);
+      const raw=clean(node&&node.textContent).replace(/,/g,"");
+      if(!/^\d+(?:\.\d+)?$/.test(raw))return fallback;
+      const value=Number(raw);
+      return Number.isFinite(value)?value:fallback;
+    };
     const rows=typeof getParcelCountRows==="function"?getParcelCountRows():[];
     const liveCfr1=window.__badocCfr1Details||{};
     const cfr1HistoryScanned=Array.isArray(liveCfr1.scanned)?liveCfr1.scanned.map(r=>({
@@ -13310,8 +13324,12 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     // equals total dispatched (e.g. 1,152 delivered while live dashboard shows 487).
     const historyDelivered=parcelStatusForHistory.delivered;
     const historyOnhold=eodHasPerformance?eodOnhold:parcelStatusForHistory.hold;
-    const historyRedelivery=eodHasPerformance?eodRedelivery:parcelStatusForHistory.redelivery;
-    const historyRts=eodHasPerformance?eodRts:parcelStatusForHistory.rts;
+    // Redeliver and RTS are not ordinary Parcel Count status buckets. Read
+    // the authoritative counts populated by updateOperationProgress above.
+    // EOD remains a fallback only when the Dashboard runtime has not provided
+    // a valid numeric display value.
+    const historyRedelivery=readDashboardCount("opRedelivery",eodHasPerformance?eodRedelivery:0);
+    const historyRts=readDashboardCount("opRts",eodHasPerformance?eodRts:0);
     const eodFleet3w=eodNum(eodVal("fleet 3w","3w"));
     const eodFleet2w=eodNum(eodVal("fleet 2w","2w"));
     const eodFleetFlexi=eodNum(eodVal("fleet flexi","flexi"));
