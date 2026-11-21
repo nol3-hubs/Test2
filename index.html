@@ -16664,6 +16664,47 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 }
 </style>
 
+
+<style id="dashboard-hub-performance-final-layout-fix">
+/* Hub Performance: force its two metric cards to share the full available width.
+   This overrides the older five-column dashboard card grid. */
+#homeDashboard .dashboard-status-section .dashboard-card-groups > .hub-performance-group{
+  min-width:0!important;
+  width:auto!important;
+}
+#homeDashboard .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-grid{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  grid-auto-flow:row!important;
+  grid-auto-columns:minmax(0,1fr)!important;
+  width:100%!important;
+  min-width:0!important;
+  gap:9px!important;
+}
+#homeDashboard .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-card{
+  display:flex!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:none!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-card span{
+  white-space:nowrap!important;
+  overflow:visible!important;
+  font-size:clamp(8px,.62vw,10px)!important;
+  letter-spacing:.2px!important;
+}
+@media(max-width:1250px){
+  #homeDashboard .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
+@media(max-width:420px){
+  #homeDashboard .dashboard-status-section .dashboard-card-groups > .hub-performance-group .dashboard-status-card span{
+    white-space:normal!important;
+  }
+}
+</style>
 </body>
 
 
