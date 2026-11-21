@@ -6995,6 +6995,24 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       previousOrderBaseline=await window.__badocPickupCloudReadBaseline?.("orders",previousDate);
     }catch(error){console.warn("Could not load yesterday's Pickup Orders baseline:",error);}
     const previousOrderStatuses=previousOrderBaseline?.byId||{};
+    const hasCanceledCandidates=sourceGroups.some(group=>{
+      if(group.isTaskOnlyInbounded===true||group.isTaskOnlyOnhold===true)return false;
+      const order=(group.eligibleOrders||[])[0];
+      const status=fmNorm(order?fmPickupOrderStatus(order)||fmOrderSheetStatus(order):"");
+      return ["canceled","cancelled","disabled"].includes(status);
+    });
+    // Do not silently copy ambiguous canceled rows when yesterday's history
+    // cannot be verified. The first-sync baseline is needed to distinguish
+    // prior-day cancellations from cancellations that happened today.
+    if(hasCanceledCandidates&&(!previousOrderBaseline?.byId||!Object.keys(previousOrderBaseline.byId).length)){
+      const copyBtn=$("copyFirstMileForSheet");
+      if(copyBtn){
+        const original=copyBtn.textContent;
+        copyBtn.textContent="Yesterday's baseline unavailable";
+        setTimeout(()=>{if(copyBtn.isConnected)copyBtn.textContent=original;},3000);
+      }
+      return;
+    }
     let skippedPreviousDayCanceled=0;
     const groups=sourceGroups.filter(group=>{
       if(group.isTaskOnlyInbounded===true||group.isTaskOnlyOnhold===true)return true;
