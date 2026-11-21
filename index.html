@@ -13323,6 +13323,34 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       delivered:clean(r[3]||""),onHold:clean(r[4]||""),successRate:clean(r[5]||"")
     }));
 
+
+    // Capture the exact live Dashboard menu values for the daily snapshot.
+    // This keeps Data aligned with Dashboard's own unique-parcel and rider calculations.
+    const dashboardNumber=(id,fallback)=>{
+      const node=document.getElementById(id);
+      if(!node)return fallback;
+      const raw=String(node.textContent||"").trim();
+      if(!raw||raw==="—"||raw==="-")return fallback;
+      const value=Number(raw.replace(/,/g,"").replace(/%/g,""));
+      return Number.isFinite(value)?value:fallback;
+    };
+    const dashboardMetrics={
+      totalVolume:dashboardNumber("opTodayVolume",historyDispatched),
+      dispatched:dashboardNumber("opDispatched",historyDispatched),
+      volumeForecast:dashboardNumber("opIncomingVolume",0),
+      received:dashboardNumber("opReceivedSummary",parcelStatusForHistory.received),
+      delivering:dashboardNumber("opDelivering",parcelStatusForHistory.delivering),
+      delivered:dashboardNumber("opDelivered",historyDelivered),
+      onHold:dashboardNumber("opOnHold",historyOnhold),
+      backlogs:dashboardNumber("opBacklogs",0),
+      redelivery:dashboardNumber("opRedelivery",historyRedelivery),
+      rts:dashboardNumber("opRts",historyRts),
+      exemptions:dashboardNumber("opExemptions",Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers.length:0),
+      totalRiders:dashboardNumber("opTotalRiders",eodTotalRiders),
+      successRate:dashboardNumber("opSuccessRate",pct(historyDelivered,historyDelivered+historyOnhold+parcelStatusForHistory.delivering+parcelStatusForHistory.received))
+    };
+    const cfr1Percent=cfr1HistoryTotalCount>0?(cfr1HistoryScannedCount/cfr1HistoryTotalCount)*100:0;
+
     const groupDetails=riderGroups.map(g=>{
       const groupRows=[];
       (g.towns||[]).forEach(t=>{
@@ -13363,21 +13391,27 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         cfr1:"Current CFR1 ledger and scanned/unscanned details, including source Received Time and first Scanned Time"
       },
       metrics:{
-        totalVolume:historyDispatched,
-        delivered:historyDelivered,
-        onHold:historyOnhold,
-        redelivery:historyRedelivery,
-        rts:historyRts,
-        successRate:pct(historyDelivered,historyDelivered+historyOnhold+parcelStatusForHistory.delivering+parcelStatusForHistory.received),
+        totalVolume:dashboardMetrics.totalVolume,
+        dispatched:dashboardMetrics.dispatched,
+        volumeForecast:dashboardMetrics.volumeForecast,
+        received:dashboardMetrics.received,
+        delivering:dashboardMetrics.delivering,
+        delivered:dashboardMetrics.delivered,
+        onHold:dashboardMetrics.onHold,
+        backlogs:dashboardMetrics.backlogs,
+        redelivery:dashboardMetrics.redelivery,
+        rts:dashboardMetrics.rts,
+        successRate:dashboardMetrics.successRate,
         threeWcRiders:eodFleet3w,
         twoWhRiders:eodFleet2w,
         flexiRiders:eodFleetFlexi,
-        totalRiders:eodTotalRiders,
+        totalRiders:dashboardMetrics.totalRiders,
         misrouted:mis.length,
-        exemptions:Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers.length:0,
+        exemptions:dashboardMetrics.exemptions,
         cfr1Total:cfr1HistoryTotalCount,
         cfr1Scanned:cfr1HistoryScannedCount,
-        cfr1Unscanned:cfr1HistoryUnscannedCount
+        cfr1Unscanned:cfr1HistoryUnscannedCount,
+        cfr1Percent:cfr1Percent
       },
       cfr1:{
         totalCount:cfr1HistoryTotalCount,
@@ -13520,9 +13554,11 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   function indexRow(s){
     const m=s.metrics||{};
     return {id:s.date,date:s.date,capturedAt:s.capturedAt||"",reason:s.captureReason||"",
-      totalVolume:n(m.totalVolume),delivered:n(m.delivered),onHold:n(m.onHold),redelivery:n(m.redelivery),rts:n(m.rts),
+      totalVolume:n(m.totalVolume),dispatched:m.dispatched==null?null:n(m.dispatched),volumeForecast:m.volumeForecast==null?null:n(m.volumeForecast),
+      received:m.received==null?null:n(m.received),delivering:m.delivering==null?null:n(m.delivering),delivered:n(m.delivered),
+      onHold:n(m.onHold),backlogs:m.backlogs==null?null:n(m.backlogs),redelivery:n(m.redelivery),rts:n(m.rts),
       successRate:n(m.successRate),totalRiders:n(m.totalRiders),cfr1Total:n(m.cfr1Total),cfr1Scanned:n(m.cfr1Scanned),
-      misrouted:n(m.misrouted),exemptions:n(m.exemptions)};
+      cfr1Percent:m.cfr1Percent==null?null:n(m.cfr1Percent),misrouted:n(m.misrouted),exemptions:n(m.exemptions)};
   }
   async function listIndex(){
     const r=await client().from(INDEX_TABLE).select("*");
@@ -13600,7 +13636,11 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   function trendPoints(s){
     const rows=(Array.isArray(window.__badocDailyHistoryIndex)?window.__badocDailyHistoryIndex:[]).filter(r=>r.date!==s.date);
     const m=s.metrics||{};
-    rows.push({date:s.date,totalVolume:n(m.totalVolume),successRate:n(m.successRate),delivered:n(m.delivered)});
+    rows.push({
+      date:s.date,totalVolume:n(m.totalVolume),dispatched:m.dispatched==null?null:n(m.dispatched),
+      volumeForecast:m.volumeForecast==null?null:n(m.volumeForecast),
+      successRate:n(m.successRate),delivered:n(m.delivered)
+    });
     return rows.sort((a,b)=>a.date<b.date?-1:1).slice(-14);
   }
   function chart(points,key,title,kind,selDate,suffix){
@@ -13689,26 +13729,53 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   function buildHtml(s,date,live){
     const m=s.metrics||{},prev=prevRow(date),groups=Array.isArray(s.riderPerformance)?s.riderPerformance:[],towns=Array.isArray(s.townPerformance)?s.townPerformance:[];
     const riderBelow=groups.filter(g=>clean(g.rider)&&n(g.successRate)<90).length,townBelow=towns.filter(t=>clean(t.town)&&n(t.successRate)<90).length;
-    const sr=n(m.successRate);
-    const cfr=n(m.cfr1Total);
-    const cards=[
-      card("Total volume",fmt(m.totalVolume),delta(m.totalVolume,prev&&prev.totalVolume)),
-      card("Delivered",fmt(m.delivered),delta(m.delivered,prev&&prev.delivered),"is-good"),
-      card("On hold",fmt(m.onHold),delta(m.onHold,prev&&prev.onHold,true),"is-warn"),
-      card("Success rate",fmt1(sr)+"%",delta(sr,prev&&prev.successRate),"sr-"+(srClass(sr)||"none")),
-      card("Redeliver",fmt(m.redelivery),delta(m.redelivery,prev&&prev.redelivery,true)),
-      card("RTS",fmt(m.rts),delta(m.rts,prev&&prev.rts,true))
+    const metric=(label,key,cls,lower,pctValue)=>{
+      const raw=m[key],display=raw===undefined||raw===null?"—":(pctValue?fmt1(raw)+"%":fmt(raw));
+      const old=prev&&prev[key]!=null?prev[key]:null;
+      return card(label,display,raw===undefined||raw===null?"":delta(raw,old,!!lower),cls||"");
+    };
+    const cfr=n(m.cfr1Total),cfrScanned=n(m.cfr1Scanned);
+    const cfrRate=m.cfr1Percent!=null?n(m.cfr1Percent):(cfr>0?(cfrScanned/cfr)*100:null);
+    const cfrCard=card("CFR1 completion",cfrRate==null?"—":fmt1(cfrRate)+"%",
+      `<em class="dh2-d">${fmt(cfrScanned)} / ${fmt(cfr)} scanned</em>`,
+      cfrRate==null?"":("sr-"+(srClass(cfrRate)||"none")));
+    const section=(title,items)=>`<section class="dh2-metric-section"><div class="dh2-section-title">${escH(title)}</div><div class="dh2-metric-grid">${items.join("")}</div></section>`;
+    const metricsHtml=[
+      section("Operation Progress",[
+        metric("Today's volume","totalVolume","",false),
+        metric("Dispatched","dispatched","",false),
+        metric("Next-day volume forecast","volumeForecast","",false)
+      ]),
+      section("Parcel Overview",[
+        metric("Received","received","",false),
+        metric("Delivering","delivering","",false),
+        metric("Delivered","delivered","is-good",false),
+        metric("On hold","onHold","is-warn",true),
+        cfrCard
+      ]),
+      section("Delivery Status",[
+        metric("Backlogs","backlogs","is-warn",true),
+        metric("Redeliver","redelivery","",true),
+        metric("RTS","rts","",true),
+        metric("Exemptions","exemptions","",true)
+      ]),
+      section("Hub Performance",[
+        metric("Total riders","totalRiders","",false),
+        metric("Success rate","successRate","sr-"+(srClass(n(m.successRate))||"none"),false,true)
+      ])
     ].join("");
-    const fleet=`<div class="dh2-fleet"><span><b>${fmt(m.threeWcRiders)}</b>3WC</span><span><b>${fmt(m.twoWhRiders)}</b>2WH</span><span><b>${fmt(m.flexiRiders)}</b>Flexi</span><span><b>${fmt(m.totalRiders)}</b>Total riders</span><span><b>${fmt(cfr)}</b>CFR1</span>
+    const fleet=`<div class="dh2-fleet"><span><b>${fmt(m.threeWcRiders)}</b>3WC</span><span><b>${fmt(m.twoWhRiders)}</b>2WH</span><span><b>${fmt(m.flexiRiders)}</b>Flexi</span>
       <button type="button" class="dh2-alert${riderBelow?"":" is-disabled"}" data-action="daily-history-below90">${fmt(riderBelow)} riders below 90%</button>
       <button type="button" class="dh2-alert${townBelow?"":" is-disabled"}" data-action="daily-history-below90-towns">${fmt(townBelow)} towns below 90%</button></div>`;
     const pts=trendPoints(s);
-    const charts=`<div class="dh2-charts">${chart(pts,"totalVolume","Volume · last "+pts.length+" days","bars",date)}${chart(pts,"successRate","Success rate","line",date,"%")}</div>`;
+    const dispatchPts=pts.filter(p=>p.dispatched!==undefined&&p.dispatched!==null);
+    const forecastPts=pts.filter(p=>p.volumeForecast!==undefined&&p.volumeForecast!==null);
+    const charts=`<div class="dh2-charts">${chart(pts,"totalVolume","Today's volume · last "+pts.length+" days","bars",date)}${chart(dispatchPts,"dispatched","Dispatched · last "+dispatchPts.length+" days","bars",date)}${chart(forecastPts,"volumeForecast","Next-day forecast · last "+forecastPts.length+" days","bars",date)}${chart(pts,"successRate","Success rate","line",date,"%")}</div>`;
     const tabs=[["riders","Riders",groups.length],["towns","Towns",towns.length],["cfr1","CFR1",null],["board","Leaderboard",Array.isArray(s.eodLeaderboard)?s.eodLeaderboard.length:0],["exceptions","Exceptions",n(m.misrouted)+n(m.exemptions)]];
-    const bar=`<nav class="dh2-tabs" role="tablist">${tabs.map(t=>`<button type="button" role="tab" data-dh-tab="${t[0]}" class="${ui.tab===t[0]?"is-on":""}" aria-selected="${ui.tab===t[0]}">${t[1]}${t[2]?`<em>${fmt(t[2])}</em>`:""}</button>`).join("")}</nav>`;
+    const bar=`<nav class="dh2-tabs" role="tablist">${tabs.map(t=>`<button type="button" role="tab" data-dh-tab="${t[0]}" class="${ui.tab===t[0]?"is-on":""}" aria-selected="${ui.tab===t[0]}">${t[1]}${t[2]? `<em>${fmt(t[2])}</em>`:""}</button>`).join("")}</nav>`;
     const body={riders:tabRiders,towns:tabTowns,cfr1:tabCfr1,board:tabBoard,exceptions:tabExceptions}[ui.tab](s);
     const meta=live?`<div class="dh2-meta is-live"><i></i>Live view of today — not saved until you tap Capture Now.</div>`:`<div class="dh2-meta">Saved snapshot${s.capturedAt?" · captured "+escH(prettyDate(String(s.capturedAt).slice(0,10)))+" "+escH(timeOf(s.capturedAt)):""}${s.captureReason?" · "+escH(s.captureReason):""}</div>`;
-    return `${meta}<div class="dh2-cards">${cards}</div>${fleet}${charts}${bar}<div class="dh2-tab-body" id="dh2TabBody">${body}</div>`;
+    return `${meta}${metricsHtml}${fleet}${charts}${bar}<div class="dh2-tab-body" id="dh2TabBody">${body}</div>`;
   }
 
   function renderSnapshot(s,dateArg){
@@ -16917,6 +16984,23 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 html[data-theme="dark"] #dailyHistory #dh2TabBody article.dh2-rider{background:var(--panel,#111923)!important;box-shadow:none!important}
 html[data-theme="dark"] #dailyHistory #dh2TabBody article.dh2-rider .dh2-stats>span,html[data-theme="dark"] #dailyHistory #dh2TabBody article.dh2-rider .dh2-chips-sm>span{background:var(--panel2,#1a2633)!important;border-color:var(--line,#344252)!important}
 html[data-theme="dark"] #dailyHistory #dh2TabBody article.dh2-rider .dh2-stats>span>b{color:var(--text,#f3f6fa)!important}
+</style>
+
+
+<style id="daily-history-dashboard-metrics-v2">
+#dailyHistory .dh2-metric-section{display:flex!important;flex-direction:column!important;gap:8px!important;min-width:0!important}
+#dailyHistory .dh2-section-title{display:flex!important;align-items:center!important;gap:9px!important;margin:0!important;padding:0 0 6px!important;border-bottom:1px solid var(--line,#dce3ea)!important;color:var(--text,#1d2939)!important;font-size:12px!important;font-weight:850!important;letter-spacing:.035em!important}
+#dailyHistory .dh2-metric-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:9px!important;min-width:0!important}
+#dailyHistory .dh2-metric-grid .dh2-card{min-width:0!important;min-height:79px!important;padding:10px 13px!important;border-radius:11px!important}
+#dailyHistory .dh2-metric-grid .dh2-card strong{font-size:22px!important;line-height:1.15!important;overflow-wrap:anywhere!important}
+#dailyHistory .dh2-metric-grid .dh2-card .dh2-d{display:block!important;margin-top:3px!important;font-size:10px!important}
+#dailyHistory .dh2-metric-grid .dh2-card.sr-good strong{color:#15965e!important}
+#dailyHistory .dh2-metric-grid .dh2-card.sr-warn strong{color:#c58b1c!important}
+#dailyHistory .dh2-metric-grid .dh2-card.sr-low strong{color:#d64545!important}
+#dailyHistory .dh2-charts{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+#dailyHistory .dh2-chart{min-height:158px!important}
+@media(max-width:1050px){#dailyHistory .dh2-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+@media(max-width:650px){#dailyHistory .dh2-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important}#dailyHistory .dh2-metric-grid .dh2-card{min-height:72px!important;padding:9px!important}#dailyHistory .dh2-metric-grid .dh2-card strong{font-size:19px!important}#dailyHistory .dh2-charts{grid-template-columns:1fr!important}}
 </style>
 
 </body>
