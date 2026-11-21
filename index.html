@@ -2775,7 +2775,7 @@ html[data-theme="dark"] #dailyHistory .dh2-chart .dh2-pt.is-sel rect:not(.dh2-hi
 <section id="dailyHistory" class="page">
   <div class="dh2">
     <div class="dh2-head">
-      <div class="dh2-title"><span id="dh2Mode" class="dh2-badge is-live">LIVE</span><span class="dh2-sub">Today is live. Past days are saved snapshots.</span></div>
+      <div class="dh2-title"><h2 style="margin:0;font-size:22px;line-height:1.2;color:var(--text,#17212b)">EOD Data</h2><span id="dh2Mode" class="dh2-badge is-live">LIVE</span><span class="dh2-sub">Today is live. Past days are saved snapshots.</span></div>
       <div class="dh2-actions">
         <button type="button" class="btn" id="dailyHistoryRefreshBtn" title="Reload saved days">↻ Refresh</button>
         <button type="button" class="btn dh2-primary" id="dailyHistoryCaptureBtn" title="Save today's snapshot to the cloud">⬆ Capture Now</button>
@@ -8064,7 +8064,6 @@ function refreshLinehaulIncomingVolume(){
 
 function renderLinehaulKpis(){
   refreshLinehaulIncomingVolume();
-  let receivedInCagayan=0;
   let doid=0;
 
   const allRows=[];
@@ -8073,12 +8072,8 @@ function renderLinehaulKpis(){
       allRows.push(...task.exportRows.filter(row=>!isExceptionRow({"SPX TN":row?.spxTN??row?.["SPX TN"]??row?.["SPX Tracking Number"]??""})));
     }
   });
-  // TO Received Order Quantity is the quantity received at Cagayan DC.
-  // Keep the current non-exempt source population and sum its received quantities.
-  receivedInCagayan=allRows.reduce((sum,row)=>{
-    const quantity=Number(String(row?.received??0).replace(/,/g,"").trim());
-    return sum+(Number.isFinite(quantity)&&quantity>0?quantity:0);
-  },0);
+  // Preserve the original Linehaul Task row total for this card.
+  // The separate Total Incoming Volume card applies the Arriving In Time selection.
 
   // DOID remains a separate duplicate-SPX-TN group count.
   const counts=new Map();
@@ -8093,7 +8088,7 @@ function renderLinehaulKpis(){
     if(e)e.textContent=Number(v||0).toLocaleString();
   };
 
-  set("lhKpiTotal",receivedInCagayan);
+  set("lhKpiTotal",allRows.length);
   set("lhKpiDoid",doid);
 }
 function renderLinehaulCore(){
@@ -8311,6 +8306,8 @@ function renderLinehaulCore(){
         const tasks=(Array.isArray(linehaulTasks)?linehaulTasks:[]).filter(t=>t&&!t.blank&&!t.cleared&&String(t.id||"").trim());
         tasks.forEach(t=>{t.arrivingInTime=allArrivalBox.checked;});
         try{saveLinehaul()}catch(err){console.warn("Could not save all linehaul arrival choices locally:",err)}
+        // Repaint Linehaul KPI cards immediately without leaving this menu.
+        if(typeof renderLinehaul==="function")renderLinehaul();
         if(typeof render==="function")render();
         if(typeof window.updateOperationProgress==="function")window.updateOperationProgress();
         if(typeof window.__badocCloudSaveLinehaulArrivalFlags==="function"){
@@ -8335,9 +8332,8 @@ function renderLinehaulCore(){
       if(!task)return;
       task.arrivingInTime=!!checkbox.checked;
       try{saveLinehaul()}catch(err){console.warn("Could not save linehaul arrival choice locally:",err)}
-      // Update the master incoming-volume displays immediately. The global
-      // incoming-volume toggle in each menu remains in control of whether
-      // the selected linehaul volume is added to its base totals.
+      // Refresh Linehaul KPI cards immediately, then refresh dependent dashboard totals.
+      if(typeof renderLinehaul==="function")renderLinehaul();
       if(typeof render==="function")render();
       if(typeof window.updateOperationProgress==="function")window.updateOperationProgress();
       if(typeof window.__badocCloudSaveLinehaulArrivalFlags==="function"){
