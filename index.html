@@ -10622,14 +10622,14 @@ window.updateOperationProgress=function(){
   const incomingForToday=tvLinehaulEnabled && typeof getParcelIncomingLinehaul==="function"
     ?getParcelIncomingLinehaul()
     :{total:0,rows:[]};
-  const linehaulTodayVolume=Number(incomingForToday.total)||0;
   const dateKey=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
   const nowManila=__badocTime.manilaDate();
   const currentMinutes=nowManila.getHours()*60+nowManila.getMinutes();
   const snapshotDue=currentMinutes>=900;
-  const cycleDate=new Date(nowManila.getFullYear(),nowManila.getMonth(),nowManila.getDate());
-  if(!snapshotDue)cycleDate.setDate(cycleDate.getDate()-1);
-  const volumeCycleKey=dateKey(cycleDate);
+  // Daily volume resets at 12:00 AM Manila time. The fixed 3:00 PM snapshot
+  // belongs to this same calendar date; before cutoff, yesterday's snapshot
+  // must never be reused as today's live volume.
+  const volumeCycleKey=dateKey(nowManila);
   const savedVolumeSnapshot=window.__badocVolumeSnapshot||null;
   const activeVolumeSnapshot=savedVolumeSnapshot?.cycleKey===volumeCycleKey &&
     Array.isArray(savedVolumeSnapshot.rows) ? savedVolumeSnapshot : null;
@@ -10684,32 +10684,12 @@ window.updateOperationProgress=function(){
     return "";
   };
   const todayManilaKey=dateKey(nowManila);
-  const postCutoffPickupDispatchedTnKeys=new Set();
   const postCutoffRedeliverTnKeys=new Set();
 
-  // Dispatched is a cumulative daily metric: once a TN reaches Delivering,
-  // Delivered, or On-Hold during this operating cycle, later status regressions
-  // (for example, a post-3 PM export returning it to Received) must not remove it.
-  // The 3 PM snapshot seeds parcels already dispatched at cutoff; local storage
-  // preserves parcels that become dispatched after cutoff across page reloads.
-  const dispatchedLedgerKey="badoc_dispatched_tn_ledger_v1_"+volumeCycleKey;
+  // Dispatched is the current unique population in Delivering, Delivered,
+  // and On-Hold. Rebuild it from today's active rows on every refresh so
+  // stale or previous-day ledger entries cannot inflate the dashboard card.
   const dispatchedTnKeys=new Set();
-  if(activeVolumeSnapshot){
-    activeVolumeSnapshot.rows.forEach(item=>{
-      const key=tnKey(item?.tn);
-      const initial=statusKey(item?.initialStatus);
-      if(key&&["DELIVERING","DELIVERED","ONHOLD","LMHUBONHOLD"].includes(initial)){
-        dispatchedTnKeys.add(key);
-      }
-    });
-    try{
-      const saved=JSON.parse(localStorage.getItem(dispatchedLedgerKey)||"[]");
-      if(Array.isArray(saved))saved.forEach(value=>{
-        const key=tnKey(value);
-        if(key)dispatchedTnKeys.add(key);
-      });
-    }catch(e){console.warn("Dispatched history ledger could not be read:",e)}
-  }
 
   // Build the population once by SPX TN. Incoming Linehaul is included only
   // when its existing checkbox is enabled; duplicates across sources are removed.
@@ -10754,8 +10734,6 @@ window.updateOperationProgress=function(){
     // A currently Received / LMHub_Received parcel received after 3 PM
     // today and with a Pick Up Time dated today is classified as Redeliver,
     // not Received Today. Pickup Time may be any time today for this bucket.
-    // Separately, a pickup today before 3 PM qualifies for Dispatched even
-    // when its Received timestamp is yesterday or later today.
     latestByTn.forEach((row,key)=>{
       if(!key||isExceptionRow(row))return;
       const currentStatus=statusKey(statusTo(row));
@@ -10765,9 +10743,6 @@ window.updateOperationProgress=function(){
       if(receivedAt?.dateKey===todayManilaKey&&receivedAt.minutes>=900&&
          pickupAt?.dateKey===todayManilaKey){
         postCutoffRedeliverTnKeys.add(key);
-      }
-      if(pickupAt?.dateKey===todayManilaKey&&pickupAt.minutes<900){
-        postCutoffPickupDispatchedTnKeys.add(key);
       }
     });
 
@@ -10784,9 +10759,12 @@ window.updateOperationProgress=function(){
       };
     });
   }
+  // liveBaselineRows is already deduplicated by normalized SPX TN across
+  // Parcel Count and optional Incoming Linehaul. The snapshot uses that same
+  // unique population, so neither source overlap nor an old snapshot inflates it.
   const todayVolume=activeVolumeSnapshot
-    ?Number(activeVolumeSnapshot.count||activeVolumeSnapshot.rows.length)
-    :liveTodayRows.length+linehaulTodayVolume;
+    ?activeVolumeSnapshot.rows.length
+    :liveBaselineRows.length;
 
   // Automatically create one immutable shared snapshot when the 3 PM cutoff is reached.
   if(snapshotDue&&!activeVolumeSnapshot&&window.__badocVolumeSnapshotCloudReady===true&&
@@ -11394,24 +11372,18 @@ window.updateOperationProgress=function(){
     if(pickupAt?.dateKey!==todayManilaKey)backlogTnKeys.add(key);
   });
   setText("opBacklogs",backlogTnKeys.size);
-  // Add every TN that is currently in a dispatched bucket. This ledger is
-  // cumulative for the operating day, so a later Received status cannot undo it.
-  if(activeVolumeSnapshot){
-    todayRows.forEach(row=>{
-      const key=tnKey(spxTN(row));
-      const state=statusKey(statusTo(row));
-      if(key&&["DELIVERING","DELIVERED"].includes(state))dispatchedTnKeys.add(key);
-    });
-    // Include post-cutoff Received rows whose pickup time proves a pre-3 PM
-    // pickup on today's Manila date.
-    postCutoffPickupDispatchedTnKeys.forEach(key=>dispatchedTnKeys.add(key));
-    onholdRows.forEach(row=>{
-      const key=tnKey(spxTN(row));
-      if(key)dispatchedTnKeys.add(key);
-    });
-    try{localStorage.setItem(dispatchedLedgerKey,JSON.stringify([...dispatchedTnKeys]));}
-    catch(e){console.warn("Dispatched history ledger could not be saved:",e)}
-  }
+  // Dispatched is the union of the current Delivering, Delivered and On-Hold
+  // tracking numbers. The Set prevents overlap or duplicate exports from
+  // counting a parcel more than once, both before and after the 3 PM snapshot.
+  todayRows.forEach(row=>{
+    const key=tnKey(spxTN(row));
+    const state=statusKey(statusTo(row));
+    if(key&&["DELIVERING","DELIVERED"].includes(state))dispatchedTnKeys.add(key);
+  });
+  onholdRows.forEach(row=>{
+    const key=tnKey(spxTN(row));
+    if(key)dispatchedTnKeys.add(key);
+  });
   const onholdTnKeys=new Set(onholdRows.map(r=>badocOnholdKey(spxTN(r))).filter(Boolean));
   window.__badocOnholdTnKeys=onholdTnKeys;
   const onHold=onholdTnKeys.size;
@@ -11422,11 +11394,9 @@ window.updateOperationProgress=function(){
   // The EOD-sheet aggregate is intentionally not included.
   setText("opRedelivery",postCutoffRedeliverTnKeys.size);
 
-  // After 3 PM, show the cumulative unique TNs ever dispatched in this
-  // operating cycle. A later regression to Received must not subtract a parcel.
-  const dispatchedTotal=activeVolumeSnapshot
-    ?dispatchedTnKeys.size
-    :(counts.DELIVERING||0)+(counts.DELIVERED||0)+onHold;
+  // Match the current Delivering + Delivered + On-Hold populations, counting
+  // unique SPX TNs only (not historical statuses or a persisted prior-day ledger).
+  const dispatchedTotal=dispatchedTnKeys.size;
   setText("opDispatched",dispatchedTotal);
 
   // Unscanned: Today's Volume minus Delivering, Delivered and On-Hold.
@@ -11562,13 +11532,7 @@ window.updateOperationProgress=function(){
   });
   const deliveringDetailRows=collectDashboardDetails(todayRows,row=>statusKey(statusTo(row))==="DELIVERING");
   const deliveredDetailRows=collectDashboardDetails(todayRows,row=>statusKey(statusTo(row))==="DELIVERED");
-  const dispatchedDetailKeys=activeVolumeSnapshot
-    ?[...dispatchedTnKeys]
-    :[
-      ...collectDashboardDetails(todayRows,row=>["DELIVERING","DELIVERED"].includes(statusKey(statusTo(row)))).map(item=>item.tn),
-      ...onholdRows.map(row=>spxTN(row))
-    ];
-  const dispatchedDetailRows=collectDashboardKeys([...new Set(dispatchedDetailKeys.map(tnKey).filter(Boolean))]);
+  const dispatchedDetailRows=collectDashboardKeys([...dispatchedTnKeys]);
   const backlogDetailRows=collectDashboardDetails(backlogSourceRows,(row,key)=>backlogTnKeys.has(key));
   const rtsDetailRows=collectDashboardDetails(liveTodayRows,(row,key)=>rtsTnKeys.has(key));
   const redeliveryDetailRows=collectDashboardDetails(
