@@ -340,7 +340,7 @@ $('spxOnhold')?.addEventListener("click", async () => {
     const oids = [...new Set((Array.isArray(reply.oids) ? reply.oids : [])
       .map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
     $("oids").value = oids.join("\n");
-    saveOids().catch(error => console.warn("POD Checker could not save the SPX OnHold OID list:", error));
+    saveOids().catch(error => console.warn("POD Checker could not save the OnHold OID list:", error));
     if (!oids.length) {
       setStatus("SPX returned no current OnHold OIDs for Badoc Hub.", "good");
     } else {
