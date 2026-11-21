@@ -13425,7 +13425,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         onHold:historyOnhold,
         redelivery:historyRedelivery,
         rts:historyRts,
-        successRate:pct(historyDelivered,historyDelivered+historyOnhold+parcelStatusForHistory.delivering+parcelStatusForHistory.received),
+        successRate:pct(historyDelivered,historyDelivered+historyOnhold+allStatus.delivering+allStatus.received),
         threeWcRiders:three,
         twoWhRiders:two,
         flexiRiders:flex,
@@ -13612,7 +13612,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       const key=clean(x.area)+"|"+x.position,sr=n(x.successRate),name=clean(x.rider),cls=name?srClass(sr):"";
       const towns=Array.isArray(x.townDetails)?x.townDetails:[];
       return `<article class="dh2-rider sr-${cls||"none"}" data-rider-name="${escH(name)}">
-        <header><div><strong>${name?escH(name):'<i>No rider assigned</i>'}</strong><small>${escH(clean(x.label||x.area))} · Group ${n(x.position)}${x.vehicleType?" · "+escH(x.vehicleType):""}</small></div><div class="dh2-sr">${name?fmt1(sr)+"%":"—"}</div></header>
+        <header><div><strong>${name?escH(name):'<i>No rider assigned</i>'}</strong><small>${escH(clean(x.label||x.area))}${n(x.position)>0?" · Group "+n(x.position):""}${x.vehicleType?" · "+escH(x.vehicleType):""}</small></div><div class="dh2-sr">${name?fmt1(sr)+"%":"—"}</div></header>
         <div class="dh2-bar"><i style="width:${Math.min(100,Math.max(0,sr)).toFixed(1)}%"></i></div>
         ${statRow(x)}
         <div class="dh2-chips-sm">${(x.towns||[]).map(t=>`<span>${escH(t)}</span>`).join("")}</div>
@@ -13842,22 +13842,6 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   function cfrSummaryMeta(row){
     try{if(typeof window.__badocRowMeta==="function")return window.__badocRowMeta(row)||{};}catch(e){}
     return {station:row?.["Current Station"]||"",destination:row?.["Destination Station"]||"",status:statusOf(row)};
-  }
-  function cfrSummaryEodValue(labels){
-    const d=window.__badocEodDashboard||{};
-    const normKey=v=>String(v??"").trim().toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
-    for(const label of labels){
-      const target=normKey(label);
-      for(const [k,v] of Object.entries(d))if(normKey(k)===target&&String(v??"").trim()!=="")return v;
-    }
-    // Fallback to the currently-rendered EOD summary if its source label varies slightly.
-    for(const row of document.querySelectorAll("#eodDashboardSummary .eod-row")){
-      const cells=row.querySelectorAll("span");
-      if(cells.length<2)continue;
-      const label=normKey(cells[0].textContent);
-      if(labels.some(candidate=>{const target=normKey(candidate);return label===target||label.includes(target)||target.includes(label);}))return cells[cells.length-1].textContent;
-    }
-    return null;
   }
   function cfrSummaryNumber(value){const v=parseFloat(String(value??"").replace(/,/g,"").replace(/%/g,""));return Number.isFinite(v)?v:0;}
   function buildCfrDailySummary(date){
