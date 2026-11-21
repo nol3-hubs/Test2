@@ -330,7 +330,7 @@ $('spxOnhold')?.addEventListener("click", async () => {
   if (assignedButton) assignedButton.disabled = true;
   const originalLabel = button.textContent;
   button.textContent = "Loading SPX OnHold…";
-  setStatus("Getting current OnHold parcels from SPX for Badoc Hub…");
+  setStatus("Getting current OnHold parcels from the SPX Forward Order export for Badoc Hub…");
   try {
     const reply = await chrome.runtime.sendMessage({
       target: "POD_CHECKER_BACKGROUND",
