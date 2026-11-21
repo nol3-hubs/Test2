@@ -11,6 +11,21 @@ function value(row,names){
   }
   return "";
 }
+function trackingNumber(row){
+  // Prefer the shared SPX normalizer, but keep the row usable when that
+  // helper is unavailable or a particular export uses a different header.
+  if(typeof window.spxTN==="function"){
+    try{
+      const normalized=String(window.spxTN(row)||"").trim();
+      if(normalized)return normalized;
+    }catch(_){}
+  }
+  return value(row,[
+    "SPX TN","SLS Tracking Number","SPX Tracking Number","Tracking Number",
+    "Tracking No","Tracking No.","SPX Tracking No","SPX Tracking No.",
+    "Shipment Tracking Number","Waybill Number","AWB"
+  ]);
+}
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 function vehicle(v){
   const k=key(v);
@@ -74,15 +89,13 @@ function build(){
     ?window.__badocGetOnholdRows(sourceRows,false):[];
   const onholdRowsByTn=new Map();
   (Array.isArray(sharedOnholdRows)?sharedOnholdRows:[]).forEach(row=>{
-    const tn=typeof window.spxTN==="function"
-      ?String(window.spxTN(row)||"").trim()
-      :String(row?.["SPX TN"]||row?.["SLS Tracking Number"]||row?.["Tracking Number"]||"").trim();
+    const tn=trackingNumber(row);
     const tnKey=key(tn);
     if(tnKey&&!onholdRowsByTn.has(tnKey))onholdRowsByTn.set(tnKey,row);
   });
   const seen=new Set(),records=[];
   sourceRows.forEach(row=>{
-    const tn=typeof window.spxTN==="function"?String(window.spxTN(row)||"").trim():"";
+    const tn=trackingNumber(row);
     const tnKey=key(tn);if(!tnKey||seen.has(tnKey))return;seen.add(tnKey);
     // Deliberately exclude "Assigned Rider" fields: they describe the plan, not who scanned the parcel.
     const rawDriverId=value(row,["Driver ID","Rider ID","Delivery Driver ID","Delivery Rider ID","Last Mile Driver ID","LM Driver ID","Scan Driver ID","Actual Driver ID","Courier ID"]);
