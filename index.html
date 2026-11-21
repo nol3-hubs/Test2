@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v106">
+<meta name="badoc-app-version" content="v107">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -6425,7 +6425,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     }
     if(button){
       const count=rows.length;
-      button.textContent=copied?("Copied "+count.toLocaleString()+" rows"): "Copy failed";
+      button.textContent=copied?`Copied ${lines.length} rows${skippedPreviousDayCanceled? ` · skipped ${skippedPreviousDayCanceled} canceled from yesterday` : ""}`:"Copy failed";
       setTimeout(()=>{if(button.isConnected)fmUpdateRawCopyButtons();},2200);
     }
   }
@@ -6985,13 +6985,35 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   });
   $("firstMileTaskStatusFilter")?.addEventListener("change",renderFirstMileCombined);
   $("copyFirstMileForSheet")?.addEventListener("click",async()=>{
-    const groups=firstMileVisibleRows||[];
+    const sourceGroups=firstMileVisibleRows||[];
+    // Exclude orders already canceled in yesterday's first-sync snapshot.
+    // Current-day cancellations remain eligible for today's sheet.
+    const todayParts=fmPickupBaselineDate().split("-").map(Number);
+    const previousDate=new Date(Date.UTC(todayParts[0],todayParts[1]-1,todayParts[2]-1)).toISOString().slice(0,10);
+    let previousOrderBaseline=null;
+    try{
+      previousOrderBaseline=await window.__badocPickupCloudReadBaseline?.("orders",previousDate);
+    }catch(error){console.warn("Could not load yesterday's Pickup Orders baseline:",error);}
+    const previousOrderStatuses=previousOrderBaseline?.byId||{};
+    let skippedPreviousDayCanceled=0;
+    const groups=sourceGroups.filter(group=>{
+      if(group.isTaskOnlyInbounded===true||group.isTaskOnlyOnhold===true)return true;
+      const order=(group.eligibleOrders||[])[0];
+      if(!order)return true;
+      const id=fmNorm(fmOrderId(order));
+      const previousStatus=fmNorm(previousOrderStatuses[id]?.status);
+      const wasAlreadyCanceled=["canceled","cancelled","disabled"].includes(previousStatus);
+      if(wasAlreadyCanceled)skippedPreviousDayCanceled++;
+      return !wasAlreadyCanceled;
+    });
     const clean=value=>String(value??"").replace(/[\t\r\n]+/g," ").trim();
     // Copy for Sheet maps Inbounded and Picked Up to the sheet's "Picked - Up" label.
     // This conversion is deliberately local to the copy action; the Pickup UI/export keep their own statuses.
     const sheetPickupStatus=value=>{
       const status=String(value??"").trim();
-      return ["inbounded","pickedup"].includes(fmNorm(status)) ? "Picked - Up" : status;
+      const key=fmNorm(status);
+      if(key==="canceled"||key==="cancelled")return "Cancelled";
+      return ["inbounded","pickedup"].includes(key) ? "Picked - Up" : status;
     };
     const lines=[];
     // Column positions follow the user's 16 spreadsheet headers exactly.
@@ -15719,6 +15741,22 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     }
     return JSON.parse(await result.data.text());
   }
+  // Read-only historical lookup used by Copy for Sheet to identify orders
+  // already canceled in the previous Philippine calendar day's baseline.
+  window.__badocPickupCloudReadBaseline=async function(kind,date){
+    if(!["orders","tasks"].includes(kind)||!date)return null;
+    try{
+      if(!started){
+        const deadline=Date.now()+12000;
+        while(!started&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      if(!started)return null;
+      return await readCloudBaseline(kind,date);
+    }catch(error){
+      console.warn("Pickup historical baseline read failed:",error);
+      return null;
+    }
+  };
   async function saveCloudBaselineFirst(kind,record){
     const existing=await readCloudBaseline(kind,record.date);
     let next=record;
