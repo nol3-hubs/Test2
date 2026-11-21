@@ -8,7 +8,7 @@ Independent test repository merged from the newer `nol3-hubs/test` project while
 - Firefox extension v69.5.9
 - First Mile XLSX-to-CSV support
 - On-demand Pickup Info lookup from the signed-in SPX tab, including pickup attempts, geofence, remarks, photos, and seller signature
-- Integrated POD/POOH checker with an **Assigned Parcels Today** button for Forward and Return Orders assigned on the current Philippine calendar day, plus an **SPX OnHold** button that exports current status `5` (OnHold), filters Current Station to Badoc Hub, deduplicates OIDs, and does not apply a date restriction
+- Integrated POD/POOH checker with an **Assigned Parcels Today** button for Forward and Return Orders assigned on the current Philippine calendar day, plus an **SPX OnHold** button that uses the SPX Forward Order export for current status `5` (OnHold), filters Current Station to Badoc Hub, deduplicates OIDs, and does not apply a date restriction
 - Built-in Chrome extension installer and generated ZIP package, synchronized with `extension/`
 - One-request combined SPX export for Delivering, Delivered, and OnHold
 - CFR1 frozen-membership recovery and late cloud-load handling
