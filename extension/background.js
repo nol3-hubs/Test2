@@ -901,13 +901,14 @@ async function exportOnHoldOidsFromSpx(jobOverride = null) {
 
   notifyPodCheckerAssignedProgress("OnHold export task " + taskId + " created. Waiting for completion…");
   const waitStartSec = Math.max(0, Math.floor((job.startedAt - 10 * 60 * 1000) / 1000));
-  const completed = await waitForCompletion(taskId, waitStartSec, job);
+  const completedInfo = await waitForAssignedTodayExportTask(taskId, waitStartSec, job, "OnHold");
+  const completed = completedInfo.task;
   if (!isParcelDeliveryTask(completed, job)) {
     throw new Error("The completed SPX task does not match the requested OnHold-only export.");
   }
 
   notifyPodCheckerAssignedProgress("OnHold export completed. Downloading its CSV…");
-  const signedUrl = await getSignedDownloadUrl(taskId);
+  const signedUrl = await getSignedDownloadUrl(taskId, completedInfo.source);
   const csv = await downloadCsv(signedUrl);
   const extracted = extractAssignedParcelOids(csv.text);
 
