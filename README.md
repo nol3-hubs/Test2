@@ -25,7 +25,8 @@ Both extension bridge scripts report their package version during the handshake.
 
 ## Pickup test mode — Orders-led with exact task status and driver lookup
 - The main Pickup results use Pickup Orders as the source for one row per order, ETA eligibility, seller details, and order details. The only automatic row eligibility filter is ETA = today's Philippine calendar date.
-- Pickup Task records supply both the displayed **Status** and **Assigned Rider**. The match requires the same normalized Pickup Point ID and exact Pickup Order `Assigned Time` = Pickup Task `Create Time`. A real Pickup Task Number can disambiguate multiple exact point-and-time matches; when Assigned Time is absent, it can serve as a fallback only if the Pickup Point ID also agrees. Ambiguous matches are treated as **No Task Match** rather than borrowing another task's status or rider.
+- Pickup Task records supply both the displayed **Status** and **Assigned Rider**. Match priority is **Pickup Task Number + Pickup Point ID** first. If the order has no usable Task Number, fall back to same Pickup Point ID and Assigned Time / Create Time within a 2-second tolerance.
+- When multiple rows share the same Task Number, use the 2-second timestamp window to disambiguate where possible. Ambiguous matches are treated as **No Task Match**; the app never borrows status or rider information from an unrelated task.
 - Task status labels are normalized for the table: `Pickup No Order` → **OnHold**, `Accepted` → **Assigned**, `Disabled` → **Cancelled**, and `Inbounded` → **Inbounded**. Other task statuses display their task label. Orders without a safe task match display **No Task Match**.
 - A Pickup Order marked `Canceled` / `Cancelled` / `Disabled` is shown only when its exact matched Pickup Task is `Disabled`. Canceled orders without that matching Disabled task are excluded from the table and **Copy for Sheet**.
 - The **Sync Pickup Orders + Tasks** button requests Pickup Orders first and Pickup Tasks second. If Tasks are unavailable, ETA-today orders still appear with **No Task Match** and Assigned Rider shows **Unassigned**.
@@ -34,7 +35,6 @@ Both extension bridge scripts report their package version during the handshake.
 - Pickup Orders exports all statuses and all bulky types, limited by the SPX export's Created Time range. The main result then filters that export by ETA only.
 - The first successful Pickup Orders and Pickup Tasks exports of each Philippine calendar day establish their respective baselines. Each Order ID / Pickup Task Number keeps its first-seen status for that day; newly appearing IDs are appended without overwriting existing entries. Baselines are kept locally and in shared cloud storage.
 - Each Order Number retains its on-demand **Pickup Info** action. It reads the authenticated SPX `pickup_info` endpoint and displays pickup status/times, attempt history, task/rider, geofence result, remarks, seller signature, and available photo links. It requires an open, signed-in SPX tab and does not bulk-fetch or cache order details.
-
 ## Repository boundaries
 - This is the independent Test2 test repository.
 - `nol3-hubs/test` was used as the source and was not changed.
