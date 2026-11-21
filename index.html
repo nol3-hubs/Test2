@@ -13220,7 +13220,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 
   const BUCKET="exported-files";
   const PREFIX="daily-history/";
-  const SNAPSHOT_VERSION="v226";
+  const SNAPSHOT_VERSION="v227";
   let historyClient=null;
 
   function cfg(){
@@ -13329,6 +13329,26 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     const cfr1HistoryTotalCount=Math.max(cfr1HistoryScannedCount,n(liveCfr1.totalCount??(cfr1HistoryScanned.length+cfr1HistoryUnscanned.length)));
     const cfr1HistoryUnscannedCount=Math.max(0,cfr1HistoryTotalCount-cfr1HistoryScannedCount);
     const mis=Array.isArray(current?.mis)?current.mis:[];
+    const exemptionLookupRows=[
+      ...(Array.isArray(current?.valid)?current.valid:[]),
+      ...(Array.isArray(current?.mis)?current.mis:[]),
+      ...(Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows:[]),
+      ...(typeof getParcelCountRows==="function"?getParcelCountRows({includeExemptions:true}):[])
+    ];
+    const exemptionRowsByTn=new Map();
+    exemptionLookupRows.forEach(row=>{
+      const tn=clean(typeof spxTN==="function"?spxTN(row):"");
+      const key=tn.toUpperCase().replace(/[\\s\\-_.]/g,"");
+      if(key)exemptionRowsByTn.set(key,row);
+    });
+    const exemptionDetails=(Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers:[]).map(value=>{
+      const tracking=clean(value);
+      const key=tracking.toUpperCase().replace(/[\\s\\-_.]/g,"");
+      const row=exemptionRowsByTn.get(key)||null;
+      return {tracking,orderId:clean(row?.["Order ID"]||row?.["Shopee Order SN"]||row?.["Order SN"]||""),
+        town:clean(row?.["Town Name"]||row?.["Town"]||row?.["town"]||""),
+        currentStation:clean(row?.["Current Station"]||""),status:row?statusOf(row):""};
+    });
     const incomingEnabled=typeof parcelIncomingEnabled==="function"&&parcelIncomingEnabled();
     const incoming= incomingEnabled&&typeof getParcelIncomingLinehaul==="function"
       ? getParcelIncomingLinehaul()
@@ -13381,19 +13401,19 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       const layout=layoutByRiderArea.get(normRiderName(g.name)+"|"+g.area)||null;
       const townDetails=[...g.townBreakdown.values()].sort((a,b)=>b.count-a.count||a.town.localeCompare(b.town)).map(t=>({
         town:t.town,delivered:t.delivered,delivering:t.delivering,onHold:t.onHold,total:t.count,
-        successRate:pct(t.delivered,t.delivered+t.delivering+t.onHold)
+        successRate:pct(t.delivered,t.count)
       }));
       const label=g.area==="BADOC"?"BADOC":g.area==="PINILI"?"PINILI":(layout?.label||"UNASSIGNED");
       return {area:g.area,label,position:Number(layout?.position)||0,rider:g.name,riderId:clean(layout?.riderId),vehicleType:g.vehicle,
         towns:townDetails.map(t=>t.town),townDetails,delivered:g.delivered,delivering:g.delivering,onHold:g.onHold,
-        total:g.scannedCount,scanned:g.scannedCount,successRate:pct(g.delivered,g.delivered+g.delivering+g.onHold)};
+        total:g.scannedCount,scanned:g.scannedCount,successRate:pct(g.delivered,g.scannedCount)};
     }).sort((a,b)=>a.area.localeCompare(b.area)||a.position-b.position||a.rider.localeCompare(b.rider));
     let three=0,two=0,flex=0;
     uniqueActualRiders.forEach(r=>{const v=clean(r.vehicle).toUpperCase().replace(/[\s_-]+/g,"");
       if(v==="3WH"||v==="3WC"||v==="3W")three++;else if(v==="2WH"||v==="2W")two++;else if(v==="FLEXI"||v==="FLEX")flex++;});
     const eodLeaderboard=[...leaderboardGroups.values()].sort((a,b)=>b.scanned-a.scanned||a.name.localeCompare(b.name))
       .map((r,index)=>({rank:index+1,service:r.vehicle,name:r.name,scanned:r.scanned,delivered:r.delivered,delivering:r.delivering,
-        onHold:r.onHold,successRate:pct(r.delivered,r.delivered+r.delivering+r.onHold)}));
+        onHold:r.onHold,successRate:pct(r.delivered,r.scanned)}));
     const historyDispatched=totalVolume;
     const historyDelivered=allStatus.delivered;
     const historyOnhold=allStatus.hold;
@@ -13451,7 +13471,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         currentStation:clean(r?.["Current Station"]||""),
         status:statusOf(r)
       })),
-      exemptionDetails:(Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers:[]).map(clean).filter(Boolean),
+      exemptionDetails,
       riderPerformance:groupDetails,
       townPerformance:Object.entries(areaRows).flatMap(([area,areaList])=>{
         const byTown=new Map();
@@ -13648,15 +13668,19 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       '<td>'+fmt(r.scanned)+'</td><td>'+fmt(r.delivered)+'</td><td>'+fmt(r.delivering)+'</td><td>'+fmt(r.onHold)+'</td><td>'+fmt1(r.successRate)+'%</td></tr>').join("")+
       '</tbody></table></div>';
   }
-    function tabExceptions(s){
-    const mis=Array.isArray(s.misroutedDetails)?s.misroutedDetails:[],ex=Array.isArray(s.exemptionDetails)?s.exemptionDetails:[];
+  function tabExceptions(s){
+    const mis=Array.isArray(s.misroutedDetails)?s.misroutedDetails:[];
+    const rawEx=Array.isArray(s.exemptionDetails)?s.exemptionDetails:[];
+    const ex=rawEx.map(r=>typeof r==="string"?({tracking:r,orderId:"",town:"",currentStation:"",status:""}):(r||{}));
+    const parcelTable=rows=>rows.length?'<div class="dh2-tablewrap"><table class="dh2-table"><thead><tr><th>Tracking</th><th>Order ID</th><th>Town</th><th>Current station</th><th>Status</th></tr></thead><tbody>'+rows.map(r=>
+      '<tr><td>'+escH(r.tracking||"—")+'</td><td>'+escH(r.orderId||"—")+'</td><td>'+escH(r.town||"—")+'</td><td>'+escH(r.currentStation||"—")+'</td><td>'+escH(r.status||"—")+'</td></tr>').join("")+
+      '</tbody></table></div>':'<div class="dh2-empty">No matching parcels.</div>';
     return '<h4 class="dh2-h">Misrouted parcels <span>'+fmt(mis.length)+'</span></h4>'+
-      (mis.length?'<div class="dh2-tablewrap"><table class="dh2-table"><thead><tr><th>Tracking</th><th>Order ID</th><th>Town</th><th>Current station</th><th>Status</th></tr></thead><tbody>'+mis.map(r=>
-        '<tr><td>'+escH(r.tracking)+'</td><td>'+escH(r.orderId)+'</td><td>'+escH(r.town)+'</td><td>'+escH(r.currentStation)+'</td><td>'+escH(r.status)+'</td></tr>').join("")+'</tbody></table></div>':'<div class="dh2-empty">No misrouted parcels.</div>')+
+      (mis.length?parcelTable(mis):'<div class="dh2-empty">No misrouted parcels.</div>')+
       '<h4 class="dh2-h">Exemptions <span>'+fmt(ex.length)+'</span></h4>'+
-      (ex.length?'<div class="dh2-exemption-list">'+ex.map(r=>'<span class="dh2-exemption-chip">'+escH(r)+'</span>').join("")+'</div>':'<div class="dh2-empty">No exemptions.</div>');
+      (ex.length?parcelTable(ex):'<div class="dh2-empty">No exemptions.</div>');
   }
-    function buildHtml(s,date,live){
+      function buildHtml(s,date,live){
     const m=s.metrics||{},prev=prevRow(date),groups=Array.isArray(s.riderPerformance)?s.riderPerformance:[],towns=Array.isArray(s.townPerformance)?s.townPerformance:[];
     const riderBelow=groups.filter(g=>clean(g.rider)&&n(g.successRate)<90).length,townBelow=towns.filter(t=>clean(t.town)&&n(t.successRate)<90).length;
     const sr=n(m.successRate);
@@ -13988,7 +14012,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     const title=type==="misrouted"?"Misrouted Parcels":"Exemptions";
     let body="";
     if(type==="misrouted") body=rows.length?`<table class="badoc-detail-table"><thead><tr><th>Tracking</th><th>Order ID</th><th>Town</th><th>Current Station</th><th>Status</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escH(r.tracking)}</td><td>${escH(r.orderId)}</td><td>${escH(r.town)}</td><td>${escH(r.currentStation)}</td><td>${escH(r.status)}</td></tr>`).join("")}</tbody></table>`:`<div class="badoc-detail-empty">No misrouted parcels.</div>`;
-    else body=rows.length?`<table class="badoc-detail-table"><thead><tr><th>#</th><th>Tracking Number</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escH(r)}</td></tr>`).join("")}</tbody></table>`:`<div class="badoc-detail-empty">No exemptions.</div>`;
+    else {const items=rows.map(r=>typeof r==="string"?({tracking:r}):(r||{}));body=items.length?`<table class="badoc-detail-table"><thead><tr><th>Tracking</th><th>Order ID</th><th>Town</th><th>Current Station</th><th>Status</th></tr></thead><tbody>${items.map(r=>`<tr><td>${escH(r.tracking||"—")}</td><td>${escH(r.orderId||"—")}</td><td>${escH(r.town||"—")}</td><td>${escH(r.currentStation||"—")}</td><td>${escH(r.status||"—")}</td></tr>`).join("")}</tbody></table>`:`<div class="badoc-detail-empty">No exemptions.</div>`;}
     overlay.innerHTML=`<div class="badoc-detail-modal" role="dialog" aria-modal="true" aria-label="${title}"><div class="badoc-detail-head"><h3>${title}</h3><button type="button" class="badoc-detail-close" aria-label="Close">×</button></div><div class="badoc-detail-body"><div class="badoc-detail-count">${rows.length.toLocaleString()} item${rows.length===1?"":"s"}</div>${body}</div></div>`;
     document.body.appendChild(overlay);
     overlay.querySelector(".badoc-detail-close").onclick=closeBadocDetailPopup;
