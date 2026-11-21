@@ -767,7 +767,7 @@ async function exportOnHoldOidsFromSpx(jobOverride = null) {
   });
   const json = parseJsonResponse("SPX OnHold export", response);
   if (!response.ok || Number(json?.retcode) !== 0) {
-    throw new Error("SPX OnHold export request failed: " +
+    throw new Error("OnHold export request failed: " +
       (json?.message || "SPX export failed (HTTP " + response.status + ")."));
   }
 
