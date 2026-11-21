@@ -17484,3 +17484,65 @@ html[data-theme="dark"] #homeDashboard .dashboard-status-card.rts span{color:#fe
 
 </style>
 
+
+<style id="dashboard-hub-performance-two-column-final-fix">
+/* Restore Hub Performance's two metric tiles to full, equal-width cards.
+   The generic dashboard style uses five columns for the other status groups;
+   Hub Performance must remain a two-column grid. */
+#homeDashboard .dashboard-overview .dashboard-card-groups > .hub-performance-group .dashboard-status-grid{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  grid-auto-flow:row!important;
+  grid-auto-columns:minmax(0,1fr)!important;
+  grid-auto-rows:78px!important;
+  align-items:stretch!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+  gap:9px!important;
+}
+#homeDashboard .dashboard-overview .dashboard-card-groups > .hub-performance-group .dashboard-status-card{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  width:100%!important;
+  height:78px!important;
+  min-width:0!important;
+  min-height:78px!important;
+  max-height:78px!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:10px 11px!important;
+  box-sizing:border-box!important;
+  text-align:left!important;
+  overflow:hidden!important;
+}
+#homeDashboard .dashboard-overview .dashboard-card-groups > .hub-performance-group .dashboard-status-card strong{
+  display:block!important;
+  width:100%!important;
+  margin:0!important;
+  text-align:left!important;
+  font-size:clamp(18px,1.4vw,25px)!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+}
+#homeDashboard .dashboard-overview .dashboard-card-groups > .hub-performance-group .dashboard-status-card span{
+  display:block!important;
+  width:100%!important;
+  min-height:0!important;
+  margin:1px 0 0!important;
+  text-align:left!important;
+  font-size:9px!important;
+  font-weight:850!important;
+  line-height:1.2!important;
+  letter-spacing:.35px!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+}
+#homeDashboard .dashboard-overview .dashboard-card-groups > .hub-performance-group .dashboard-status-card small{
+  display:none!important;
+}
+</style>
+
