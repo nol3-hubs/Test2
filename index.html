@@ -2532,7 +2532,7 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
         </details>
       </article>
     </div>
-    <div class="hint first-mile-local-note">Pickup Orders supply each result row and ETA. Pickup Tasks supply Status and Assigned Rider only when Pickup Point ID and Assigned Time match task Create Time. Cancelled orders appear only when the matched task is Disabled.</div>
+    <div class="hint first-mile-local-note">Pickup Orders supply each result row and ETA. Pickup Tasks supply Status and Assigned Rider by Pickup Task Number + Pickup Point ID first. If Task Number is missing, same-point Assigned Time / Create Time can differ by up to 2 seconds. Cancelled orders appear only when the matched task is Disabled.</div>
   </div>
 </section>
 
@@ -6218,6 +6218,12 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const parsed=Date.parse(raw.replace(/\//g,"-"));
     return Number.isFinite(parsed)?new Date(parsed).toISOString().slice(0,19):"";
   }
+  function fmDateTimeMs(value){
+    const key=fmDateTimeKey(value);
+    if(!key)return NaN;
+    const parsed=Date.parse(key.replace(" ","T"));
+    return Number.isFinite(parsed)?parsed:NaN;
+  }
   const FM_PICKUP_BASELINE_KEYS={
     orders:"badoc_first_mile_orders_baseline_v1",
     tasks:"badoc_first_mile_tasks_baseline_v1"
@@ -6534,19 +6540,18 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const orderRows=allOrderRows.filter(order=>fmEtaDate(order)===today);
     const excludedEtaOrders=allOrderRows.length-orderRows.length;
 
-    // Pickup Orders determine rows and ETA eligibility. Match each order to
-    // the task at the same Pickup Point ID and exact Assigned Time = task
-    // Create Time. The matched task supplies both Status and Assigned Rider.
-    const tasksByPickupPointAndTime=new Map();
+    // Pickup Orders determine rows and ETA eligibility. Match by the
+    // exact Pickup Task Number first, and require the Pickup Point ID to agree.
+    // Only when the order has no Task Number do we fall back to same-point
+    // Assigned Time / Create Time within a 2-second tolerance.
+    const tasksByPickupPoint=new Map();
     const tasksByPickupTaskNumber=new Map();
     const taskRows=Array.isArray(tasksData?.rows)?tasksData.rows.filter(fmIsBadocPickupTask):[];
     taskRows.forEach(task=>{
       const pointKey=fmNorm(fmPickupPointId(task));
-      const createTimeKey=fmDateTimeKey(fmValue(task,["Create Time","Task Create Time","Created Time","create_time","ctime"],/^createtime$|^taskcreatetime$|^ctime$/i));
-      if(pointKey&&createTimeKey){
-        const key=pointKey+"|"+createTimeKey;
-        if(!tasksByPickupPointAndTime.has(key))tasksByPickupPointAndTime.set(key,[]);
-        tasksByPickupPointAndTime.get(key).push(task);
+      if(pointKey){
+        if(!tasksByPickupPoint.has(pointKey))tasksByPickupPoint.set(pointKey,[]);
+        tasksByPickupPoint.get(pointKey).push(task);
       }
       const taskNumberKey=fmNorm(fmPickupTaskNumber(task));
       if(fmHasPickupTaskNumber(taskNumberKey)){
@@ -6558,26 +6563,34 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       const pickupPointId=fmPickupPointId(order)||"";
       const pointKey=fmNorm(pickupPointId);
       const orderTaskNumber=fmPickupTaskNumber(order);
-      const assignedTimeKey=fmDateTimeKey(fmPickupOrderAssignedTime(order));
+      const assignedTimeMs=fmDateTimeMs(fmPickupOrderAssignedTime(order));
       let candidates=[];
-      if(pointKey&&assignedTimeKey){
-        candidates=tasksByPickupPointAndTime.get(pointKey+"|"+assignedTimeKey)||[];
-        // Use an order-supplied Task Number to disambiguate when multiple
-        // task records share the exact same pickup point and creation time.
-        if(candidates.length>1&&fmHasPickupTaskNumber(orderTaskNumber)){
-          const numberMatches=candidates.filter(task=>fmNorm(fmPickupTaskNumber(task))===fmNorm(orderTaskNumber));
-          if(numberMatches.length)candidates=numberMatches;
-        }
-      }else if(fmHasPickupTaskNumber(orderTaskNumber)){
-        // A real Task Number is a safe fallback only when Assigned Time is
-        // missing; the Pickup Point ID must still agree when both are present.
+
+      if(fmHasPickupTaskNumber(orderTaskNumber)){
+        // Primary match: task number. A different pickup point is never
+        // accepted, even when the task number happens to exist elsewhere.
         candidates=(tasksByPickupTaskNumber.get(fmNorm(orderTaskNumber))||[]).filter(task=>{
           const taskPointKey=fmNorm(fmPickupPointId(task));
-          return !pointKey||!taskPointKey||taskPointKey===pointKey;
+          return !!pointKey&&!!taskPointKey&&taskPointKey===pointKey;
+        });
+        // Duplicate task-number rows may be narrowed by the same 2-second
+        // timestamp window, but the timestamp never overrides the task ID.
+        if(candidates.length>1&&Number.isFinite(assignedTimeMs)){
+          const timeMatches=candidates.filter(task=>{
+            const taskTimeMs=fmDateTimeMs(fmValue(task,["Create Time","Task Create Time","Created Time","create_time","ctime"],/^createtime$|^taskcreatetime$|^ctime$/i));
+            return Number.isFinite(taskTimeMs)&&Math.abs(taskTimeMs-assignedTimeMs)<=2000;
+          });
+          if(timeMatches.length)candidates=timeMatches;
+        }
+      }else if(pointKey&&Number.isFinite(assignedTimeMs)){
+        // Safe fallback only when the order has no Task Number.
+        candidates=(tasksByPickupPoint.get(pointKey)||[]).filter(task=>{
+          const taskTimeMs=fmDateTimeMs(fmValue(task,["Create Time","Task Create Time","Created Time","create_time","ctime"],/^createtime$|^taskcreatetime$|^ctime$/i));
+          return Number.isFinite(taskTimeMs)&&Math.abs(taskTimeMs-assignedTimeMs)<=2000;
         });
       }
-      // Ambiguous matches are treated as unmatched rather than borrowing a
-      // driver's name or status from a different task.
+
+      // An ambiguous match is not safe: do not borrow a rider or task status.
       const matchedTasks=candidates.length===1?candidates:[];
       const matchedTask=matchedTasks[0]||null;
       const taskDisabled=!!matchedTask&&fmIsDisabledPickupTask(matchedTask);
@@ -6623,7 +6636,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     });
     firstMileVisibleRows=filtered;
 
-    if(meta)meta.textContent="Showing "+filtered.length.toLocaleString()+" of "+firstMileCombinedRows.length.toLocaleString()+" eligible orders with ETA "+today+" (Philippine time). Hidden "+excludedCancelledWithoutDisabled.toLocaleString()+" cancelled orders without an exact Disabled task match. Tasks match by Pickup Point ID + Assigned Time / Create Time; ambiguous or missing matches display No Task Match."+(tasksData?"":" Pickup Tasks are not synced yet, so task status and driver matching are unavailable.");
+    if(meta)meta.textContent="Showing "+filtered.length.toLocaleString()+" of "+firstMileCombinedRows.length.toLocaleString()+" eligible orders with ETA "+today+" (Philippine time). Hidden "+excludedCancelledWithoutDisabled.toLocaleString()+" cancelled orders without an exact Disabled task match. Tasks match by Task Number + Pickup Point ID first; if Task Number is missing, same-point timestamps may differ by up to 2 seconds. Ambiguous or missing matches display No Task Match."+(tasksData?"":" Pickup Tasks are not synced yet, so task status and driver matching are unavailable.");
 
     const copyBtn=$("copyFirstMileForSheet");
     if(copyBtn){copyBtn.disabled=!filtered.length;copyBtn.textContent=filtered.length?`Copy for Sheet (${filtered.length})`:"Copy for Sheet";}
