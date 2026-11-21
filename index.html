@@ -3454,8 +3454,7 @@ html[data-theme="light"] #homeDashboard .dashboard-summary-card small{
     const themeObserver = new MutationObserver(syncReceivedCheckingTheme);
     themeObserver.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
   } catch (err) {
-    frame.srcdoc = '<!doctype html><meta charset="utf-8"><body style="font:14px Arial;padding:24px;color:#b91c1c">Dispatch could not load. Refresh the app and try again.
-</body>';
+    frame.srcdoc = '<!doctype html><meta charset="utf-8"><body style="font:14px Arial;padding:24px;color:#b91c1c">Dispatch could not load. Refresh the app and try again.<br></body>';
     console.error('Dispatch embedded page failed to initialize:', err);
   }
 })();
