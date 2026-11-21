@@ -7015,7 +7015,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           assignedRider,   // ASSIGNED RIDER - from Pickup Tasks export
           "TRUE",          // Printed AWB?
           "Pouch - M",     // Packaging Material to be used
-          sheetPickupStatus(fmOrderSheetStatus(order)), // 5PM STATUS
+          sheetPickupStatus(fmCombinedPickupStatus(group)), // 5PM STATUS
           "",              // 7PM STATUS
           "",              // 9PM STATUS
           "",              // EOD Status
