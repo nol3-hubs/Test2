@@ -329,14 +329,14 @@ $('spxOnhold')?.addEventListener("click", async () => {
   const assignedButton = $("onholdToday");
   if (assignedButton) assignedButton.disabled = true;
   const originalLabel = button.textContent;
-  button.textContent = "Loading SPX OnHold…";
+  button.textContent = "Loading OnHold…";
   setStatus("Getting current OnHold parcels from the SPX Forward Order export for Badoc Hub…");
   try {
     const reply = await chrome.runtime.sendMessage({
       target: "POD_CHECKER_BACKGROUND",
       action: "EXPORT_ONHOLD_OIDS_FROM_SPX"
     });
-    if (!reply?.ok) throw new Error(reply?.error || "SPX OnHold data could not be loaded.");
+    if (!reply?.ok) throw new Error(reply?.error || "OnHold data could not be loaded.");
     const oids = [...new Set((Array.isArray(reply.oids) ? reply.oids : [])
       .map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
     $("oids").value = oids.join("\n");
