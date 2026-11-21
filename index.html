@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v108">
+<meta name="badoc-app-version" content="v109">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -2508,10 +2508,10 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
               <button class="btn" id="copyFMHubInventory" type="button" disabled title="Copy Pickup Orders with ETA today">FM Hub Inventory</button>
               <button class="btn" id="copyPickupTaskManagement" type="button" disabled title="Copy Pickup Tasks created today">Pickup Task Management</button>
             </div>
-            <button class="btn primary" id="syncFirstMileAll" type="button">↻ Sync Pickup Orders</button>
+            <button class="btn primary" id="syncFirstMileAll" type="button">↻ Sync Pickup Orders + Tasks</button>
           </div>
           <div class="pickup-status-strip">
-            <span id="firstMileCombinedMeta">Pickup Orders only · Results are filtered by ETA today (Philippine time).</span>
+            <span id="firstMileCombinedMeta">Pickup Orders determine rows and status. Pickup Tasks supply Driver Name by Pickup Point ID.</span>
             <div id="firstMileAutoAlertControls" hidden style="display:none">
               <button class="btn" id="enableFirstMileAlarm" type="button" hidden>Enable alarm sound</button>
               <button class="btn" id="ackFirstMileAlarm" type="button" hidden>Acknowledge Alarm</button>
@@ -2532,7 +2532,7 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
         </details>
       </article>
     </div>
-    <div class="hint first-mile-local-note">Pickup Orders are the only source for the test results. Rows are filtered by ETA today (Philippine time); Pickup Tasks are kept separately and do not affect results.</div>
+    <div class="hint first-mile-local-note">Pickup Orders supply each result row, ETA, and status. Pickup Tasks are matched by Pickup Point ID only to supply Driver Name; task status never changes the order result.</div>
   </div>
 </section>
 
@@ -5965,7 +5965,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     };
     const orders=getTime("orders");
     const tasks=getTime("tasks");
-    target.textContent="Last updated across all devices (PHT) — Pickup Orders: "+orders;
+    target.textContent="Last updated across all devices (PHT) — Orders: "+orders+" · Tasks: "+tasks;
   }
   window.__badocUpdateFirstMileLastUpdated=updateFirstMileLastUpdated;
   let firstMileSequenceBusy=false;
@@ -5975,18 +5975,26 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     if(!(await window.__badocEnsureSpxBridge?.()))return;
     firstMileSequenceBusy=true;firstMileNextStep="orders";
     if(btn){btn.disabled=true;btn.dataset.busy="1";}
-    $("firstMileOverallStatus").textContent="Exporting Pickup Orders…";
+    $("firstMileOverallStatus").textContent="Step 1 of 2 · Exporting Pickup Orders…";
     $("firstMileOrdersStatus").textContent="Connecting to SPX…";
-    window.__badocOperationModalStart?.("Sync Pickup Orders","Requesting Pickup Orders only. Pickup Tasks are not used in the test results.");
+    window.__badocOperationModalStart?.("Sync Pickup Orders + Tasks","Step 1 of 2: requesting Pickup Orders. Pickup Tasks will follow and supply Driver Name only.");
     postBadocSpxMessage("BADOC_START_FIRST_MILE_ORDERS_SYNC",{selectedDate:getBadocManilaDayBounds().date});
   }
   window.__badocFirstMileSequenceResult=function(kind,success,message){
     const btn=$("syncFirstMileAll");
+    if(kind==="orders"&&success){
+      firstMileNextStep="tasks";
+      $("firstMileOverallStatus").textContent="Step 2 of 2 · Orders saved. Exporting Pickup Tasks for rider names…";
+      window.__badocOperationModalUpdate?.("Pickup Orders saved. Now requesting Pickup Tasks to match Driver Name by Pickup Point ID…");
+      postBadocSpxMessage("BADOC_START_FIRST_MILE_TASKS_SYNC",{selectedDate:getBadocManilaDayBounds().date});
+      return;
+    }
     firstMileSequenceBusy=false;firstMileNextStep="";
     if(btn){btn.disabled=false;btn.dataset.busy="0";}
     $("firstMileOverallStatus").textContent=success
-      ?(kind==="orders"?"Pickup Orders sync completed · Orders saved locally.":"Pickup Tasks saved separately.")
+      ?(kind==="orders"?"Pickup Orders sync completed.":"Pickup Tasks sync completed · rider lookup refreshed.")
       :`Pickup ${kind==="orders"?"Orders":"Tasks"} sync stopped: ${message||"export failed"}`;
+    window.__badocRenderFirstMileCombined?.();
   };
   window.__badocFailFirstMileSequence=function(message){
     const kind=firstMileNextStep==="tasks"?"tasks":"orders";
@@ -6137,12 +6145,13 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   }
   function fmAssignedRiderDisplay(group){
     if(group?.pickupOrderOnly){
-      const order=group.eligibleOrders?.[0]||group.orders?.[0]||{};
-      const driver=fmValue(order,[
-        "Pickup Driver","Pickup Driver Name","Pickup Rider","Pickup Rider Name",
-        "Assigned Driver","Assigned Rider","Driver Name","Rider Name",
-        "pickup_driver","pickup_driver_name","driver_name","rider_name"
-      ]).trim();
+      // Pickup Orders determine the row and status. Pickup Tasks contribute
+      // only the Driver Name after matching Pickup Point ID.
+      const latest=fmLatestTask(group);
+      const driver=latest?fmValue(latest,[
+        "Driver Name","Assigned Driver Name","Rider Name","Assigned Rider",
+        "Pickup Driver Name","Pickup Rider Name","Driver","driver_name","rider_name"
+      ]).trim():"";
       return driver||"Unassigned";
     }
     const latest=fmLatestTask(group);
@@ -6448,6 +6457,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   $("copyPickupTaskManagement")?.addEventListener("click",event=>fmCopyRawExportRows("tasks",event.currentTarget,"Pickup Task Management"));
   function renderFirstMileCombined(){
     const ordersData=getStoredFirstMile("orders");
+    const tasksData=getStoredFirstMile("tasks");
     fmUpdateRawCopyButtons();
     const stats=$("firstMileCombinedStats"),table=$("firstMileCombinedTable"),meta=$("firstMileCombinedMeta"),downloadBtn=$("downloadFirstMileCombined");
     const unmatchedPanel=$("firstMileUnmatchedPanel");
@@ -6460,7 +6470,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       firstMileCombinedRows=[];
       firstMileVisibleRows=[];
       if(stats)stats.innerHTML=[[0,"Pickup Orders export"],[0,"ETA today"],[0,"Assigned"],[0,"Picked Up"],[0,"Cancelled"]].map(([n,l])=>`<div><strong>${n}</strong><span>${l}</span></div>`).join("");
-      if(meta)meta.textContent="Pickup Orders only · Sync Pickup Orders to load results. Pickup Tasks are not used in this test.";
+      if(meta)meta.textContent="Pickup Orders determine the results. Sync Pickup Orders + Tasks to load orders and their rider names.";
       if(table)table.innerHTML='<div class="first-mile-combined-empty">Sync Pickup Orders to show orders whose ETA is today (Philippine time).</div>';
       if(downloadBtn)downloadBtn.disabled=true;
       const copyBtn=$("copyFirstMileForSheet");
@@ -6473,15 +6483,29 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const orderRows=allOrderRows.filter(order=>fmEtaDate(order)===today);
     const excludedEtaOrders=allOrderRows.length-orderRows.length;
 
-    // Test mode: one row per Pickup Order. No Pickup Task joins, task-only
-    // records, task statuses, or task riders can affect the result.
-    firstMileCombinedRows=orderRows.map((order,index)=>({
-      pickupPointId:fmPickupPointId(order)||"",
-      orders:[order],
-      eligibleOrders:[order],
-      tasks:[],
-      pickupOrderOnly:true
-    }));
+    // Pickup Orders remain the only source for rows, ETA eligibility, and
+    // status. Pickup Tasks are looked up by Pickup Point ID solely to read
+    // Driver Name; task status and other task fields do not affect the result.
+    const tasksByPickupPoint=new Map();
+    const taskRows=Array.isArray(tasksData?.rows)?tasksData.rows.filter(fmIsBadocPickupTask):[];
+    taskRows.forEach(task=>{
+      const pointKey=fmNorm(fmPickupPointId(task));
+      if(!pointKey)return;
+      if(!tasksByPickupPoint.has(pointKey))tasksByPickupPoint.set(pointKey,[]);
+      tasksByPickupPoint.get(pointKey).push(task);
+    });
+    firstMileCombinedRows=orderRows.map((order,index)=>{
+      const pickupPointId=fmPickupPointId(order)||"";
+      const pointKey=fmNorm(pickupPointId);
+      const matchedTasks=pointKey?tasksByPickupPoint.get(pointKey)||[]:[];
+      return {
+        pickupPointId,
+        orders:[order],
+        eligibleOrders:[order],
+        tasks:matchedTasks,
+        pickupOrderOnly:true
+      };
+    });
 
     const statusCounts=new Map();
     firstMileCombinedRows.forEach(group=>{
@@ -6506,7 +6530,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     });
     firstMileVisibleRows=filtered;
 
-    if(meta)meta.textContent="Pickup Orders only · Showing "+filtered.length.toLocaleString()+" of "+orderRows.length.toLocaleString()+" orders with ETA "+today+" (Philippine time). All statuses are included; status and Pickup Driver come directly from the Pickup Orders export. Pickup Tasks are not used.";
+    if(meta)meta.textContent="Pickup Orders determine the rows and status · Showing "+filtered.length.toLocaleString()+" of "+orderRows.length.toLocaleString()+" orders with ETA "+today+" (Philippine time). Assigned Rider is looked up from Pickup Tasks by Pickup Point ID; task status is ignored."+(tasksData?"":" Pickup Tasks are not synced yet, so riders show Unassigned.");
 
     const copyBtn=$("copyFirstMileForSheet");
     if(copyBtn){copyBtn.disabled=!filtered.length;copyBtn.textContent=filtered.length?`Copy for Sheet (${filtered.length})`:"Copy for Sheet";}
