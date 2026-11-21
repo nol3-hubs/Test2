@@ -335,7 +335,7 @@ $('spxOnhold')?.addEventListener("click", async () => {
       setStatus("SPX returned no current OnHold OIDs for Badoc Hub.", "good");
     } else {
       setStatus(
-        "Loaded " + oids.length.toLocaleString() + " unique current OnHold OID(s) from SPX for Badoc Hub; " +
+        "Loaded " + oids.length.toLocaleString() + " unique current OnHold OID(s) from the SPX Forward Order export for Badoc Hub; " +
         Number(reply.duplicateCount || 0).toLocaleString() +
         " duplicate(s) removed. No date restriction was applied. Click Check OIDs to validate them.",
         "good"
