@@ -6275,6 +6275,21 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const orderId=order?fmOrderId(order):"";
     const orderTaskNumber=order?fmPickupTaskNumber(order):"";
     const taskNumber=latest?fmPickupTaskNumber(latest):"";
+    const orderRaw=order?fmPickupOrderStatus(order)||fmOrderSheetStatus(order)||"Unknown":"";
+    const orderKey=fmNorm(orderRaw);
+
+    // An explicit order-level cancellation is authoritative. A Pickup Task is
+    // linked by Pickup Point ID when an order has no task number, and that
+    // point-level Accepted status must not turn a canceled order into Assigned.
+    if(order&&(orderKey==="cancelled"||orderKey==="canceled"||orderKey==="disabled")){
+      const wasAssigned=fmPickupBaselineWasAssigned("orders",orderId)||
+        fmPickupBaselineWasAssigned("tasks",orderTaskNumber);
+      if(orderKey==="cancelled"||orderKey==="canceled"){
+        return wasAssigned?"Cancelled after Assigned":orderRaw;
+      }
+      return wasAssigned?"Cancelled after Assigned":"Hidden Disabled";
+    }
+
     if(latest&&["accepted","disabled","pickupnoorder","inbounded"].includes(taskKey)){
       if(taskKey==="disabled"){
         const wasAssigned=fmPickupBaselineWasAssigned("tasks",taskNumber)||
@@ -6284,16 +6299,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       }
       return taskLabel;
     }
-    if(order){
-      const orderRaw=fmPickupOrderStatus(order)||fmOrderSheetStatus(order)||"Unknown";
-      const orderKey=fmNorm(orderRaw);
-      if(orderKey==="disabled"||orderKey==="cancelled"||orderKey==="canceled"){
-        const wasAssigned=fmPickupBaselineWasAssigned("orders",orderId)||
-          fmPickupBaselineWasAssigned("tasks",orderTaskNumber);
-        return wasAssigned?"Cancelled after Assigned":"Hidden Disabled";
-      }
-      return orderRaw;
-    }
+    if(order)return orderRaw||"Unknown";
     if(latest){
       if(taskKey==="disabled"||taskKey==="cancelled"||taskKey==="canceled"){
         return fmPickupBaselineWasAssigned("tasks",taskNumber)?"Cancelled after Assigned":"Hidden Disabled";
