@@ -6165,6 +6165,12 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   function fmTaskDriverName(task){
     return fmValue(task,FM_DRIVER_NAME_FIELDS).trim();
   }
+  function fmTaskStatusRaw(task){
+    return fmValue(task,["Status","Task Status","Pickup Task Status","status_name","status"]);
+  }
+  function fmIsDisabledPickupTask(task){
+    return fmNorm(fmTaskStatusRaw(task))==="disabled";
+  }
   function fmHasPickupTaskNumber(value){
     const key=fmNorm(value);
     return !!key&&!['na','none','null','undefined','notavailable'].includes(key);
@@ -6174,10 +6180,9 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     return key==='canceled'||key==='cancelled'||key==='disabled'||key.startsWith('canceled')||key.startsWith('cancelled');
   }
   function fmAssignedRiderDisplay(group){
-    // A cancelled Pickup Order must never inherit a point-level rider from a
-    // different order at the same Pickup Point ID.
+    // Do not show a rider on an order cancelled by either source.
     const order=group?.eligibleOrders?.[0]||group?.orders?.[0]||{};
-    if(group?.pickupOrderOnly&&fmIsCancelledPickupOrder(order))return "Unassigned";
+    if(group?.pickupOrderOnly&&(fmIsCancelledPickupOrder(order)||group.taskDisabled))return "Unassigned";
 
     // Pickup Orders own the row, ETA, status, and point ID. Matched Pickup
     // Tasks contribute only a non-empty Driver Name; prefer the latest named
@@ -6315,7 +6320,12 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   function fmCombinedPickupStatus(group){
     if(group?.pickupOrderOnly){
       const order=group.eligibleOrders?.[0]||group.orders?.[0]||{};
-      return fmPickupOrderOnlyStatus(order);
+      const orderStatus=fmPickupOrderOnlyStatus(order);
+      // An explicit order cancellation remains authoritative. Otherwise, a
+      // reliably linked Disabled task marks the pickup as cancelled too.
+      if(fmIsCancelledPickupOrder(order))return orderStatus;
+      if(group.taskDisabled&&fmNorm(orderStatus)!=="pickedup")return "Cancelled – Task Disabled";
+      return orderStatus;
     }
     const order=group?.eligibleOrders?.[0]||null;
     const latest=fmLatestTask(group);
@@ -6511,8 +6521,8 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
 
     // Pickup Orders remain the only source for rows, ETA eligibility, status,
     // and Pickup Point ID. Link tasks by the order's exact Pickup Task Number
-    // first. Use Pickup Point ID only when the order has no task number and
-    // that point resolves to exactly one distinct non-empty Driver Name.
+    // first. When the order has no task number, use Pickup Point ID to detect a
+    // Disabled task only if exactly one task record exists at that point.
     const tasksByPickupPoint=new Map();
     const tasksByPickupTaskNumber=new Map();
     const taskRows=Array.isArray(tasksData?.rows)?tasksData.rows.filter(fmIsBadocPickupTask):[];
@@ -6543,18 +6553,27 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
             return !pointKey||!taskPointKey||taskPointKey===pointKey;
           });
         }else if(pointKey){
-          // Safe fallback for orders with no task number: only attach a driver
-          // when all named tasks at this point agree on one unique driver.
           const pointTasks=tasksByPickupPoint.get(pointKey)||[];
-          const driverKeys=new Set(pointTasks.map(fmTaskDriverName).map(fmNorm).filter(Boolean));
-          if(driverKeys.size===1)matchedTasks=pointTasks.filter(task=>fmTaskDriverName(task));
+          if(pointTasks.length===1){
+            // A single task at this point is unambiguous, including Disabled.
+            matchedTasks=pointTasks;
+          }else{
+            // For rider display only, retain the prior fallback when all
+            // named tasks at this point agree on one unique driver. Multiple
+            // task records are not enough evidence to infer Disabled status.
+            const driverKeys=new Set(pointTasks.map(fmTaskDriverName).map(fmNorm).filter(Boolean));
+            if(driverKeys.size===1)matchedTasks=pointTasks.filter(task=>fmTaskDriverName(task));
+          }
         }
       }
+      const latestMatchedTask=matchedTasks.length?fmLatestTask({tasks:matchedTasks}):null;
+      const taskDisabled=!!latestMatchedTask&&fmIsDisabledPickupTask(latestMatchedTask);
       return {
         pickupPointId,
         orders:[order],
         eligibleOrders:[order],
         tasks:matchedTasks,
+        taskDisabled,
         pickupOrderOnly:true
       };
     });
@@ -6571,7 +6590,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       [orderRows.length,"ETA today"],
       [statusCount("assigned"),"Assigned"],
       [statusCount("pickedup","pickupdone","collected"),"Picked Up"],
-      [statusCount("cancelled","canceled","disabled","cancelledafterassigned"),"Cancelled"]
+      [statusCount("cancelled","canceled","disabled","cancelledafterassigned","cancelledtaskdisabled"),"Cancelled"]
     ].map(([n,l])=>`<div><strong>${Number(n).toLocaleString()}</strong><span>${l}</span></div>`).join("");
 
     const search=fmNorm($("firstMileCombinedSearch")?.value||"");
@@ -6582,7 +6601,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     });
     firstMileVisibleRows=filtered;
 
-    if(meta)meta.textContent="Pickup Orders determine the rows and status · Showing "+filtered.length.toLocaleString()+" of "+orderRows.length.toLocaleString()+" orders with ETA "+today+" (Philippine time). Assigned Rider is looked up from Pickup Tasks by Pickup Point ID; task status is ignored."+(tasksData?"":" Pickup Tasks are not synced yet, so riders show Unassigned.");
+    if(meta)meta.textContent="Pickup Orders determine rows and ETA · task number is the primary match; a single Pickup Point ID task is the fallback. A reliably matched Disabled task is shown as Cancelled – Task Disabled."+(tasksData?"":" Pickup Tasks are not synced yet, so task-based cancellation checks are unavailable.");
 
     const copyBtn=$("copyFirstMileForSheet");
     if(copyBtn){copyBtn.disabled=!filtered.length;copyBtn.textContent=filtered.length?`Copy for Sheet (${filtered.length})`:"Copy for Sheet";}
@@ -6607,7 +6626,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           const value=c[1](g);
           if(c[0]==="Status"){
             const key=fmNorm(value);
-            const tone=({assigned:"assigned",accepted:"assigned",pickedup:"done",pickupdone:"done",onhold:"onhold",pickupnoorder:"onhold",inbounded:"inbounded",cancelled:"cancelled",canceled:"cancelled",disabled:"cancelled",cancelledafterassigned:"cancelled"})[key]||"other";
+            const tone=({assigned:"assigned",accepted:"assigned",pickedup:"done",pickupdone:"done",onhold:"onhold",pickupnoorder:"onhold",inbounded:"inbounded",cancelled:"cancelled",canceled:"cancelled",disabled:"cancelled",cancelledafterassigned:"cancelled",cancelledtaskdisabled:"cancelled"})[key]||"other";
             return '<td><span class="fm-task-pill fm-task-'+tone+'">'+fmEsc(value)+'</span></td>';
           }
           if(c[0]==="Order Number")return '<td>'+fmOrderLinksHtml(g)+'</td>';
@@ -6908,7 +6927,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const sheetPickupStatus=value=>{
       const status=String(value??"").trim();
       const key=fmNorm(status);
-      if(key==="canceled"||key==="cancelled")return "Cancelled";
+      if(key==="canceled"||key==="cancelled"||key.startsWith("cancelled"))return "Cancelled";
       return ["inbounded","pickedup"].includes(key) ? "Picked - Up" : status;
     };
     const lines=[];
