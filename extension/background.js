@@ -865,10 +865,15 @@ async function exportOnHoldOidsFromSpx(jobOverride = null) {
   };
   job.trackingStatus = "5";
 
-  // Request the current OnHold status without an assigned-time or created-date window.
+  // SPX requires both time-range parameters for a Forward Order export.
+  // Use epoch → now so the request does not restrict current OnHold parcels
+  // by Created Date or Assigned/OnHold Time.
+  const rangeEndSec = Math.floor(Date.now() / 1000);
   const body = {
     tracking_status: "5",
     bulky_type: "1,0,2",
+    ctime: "1," + rangeEndSec,
+    pick_up_time: "1," + rangeEndSec,
     format_condition:
       "Status Log= OnHold; " +
       "Current Station= Badoc Hub; " +
@@ -876,7 +881,7 @@ async function exportOnHoldOidsFromSpx(jobOverride = null) {
       "Driver= All"
   };
 
-  notifyPodCheckerAssignedProgress("Submitting SPX current OnHold-only export for Badoc Hub…");
+  notifyPodCheckerAssignedProgress("Submitting current OnHold export for Badoc Hub…");
   const response = await extensionFetchText(SPX_ORIGIN + PARCEL_FORWARD_EXPORT_PATH, {
     method: "POST",
     headers: {
@@ -887,20 +892,21 @@ async function exportOnHoldOidsFromSpx(jobOverride = null) {
   });
   const json = parseJsonResponse("SPX OnHold export", response);
   if (!response.ok || Number(json?.retcode) !== 0) {
-    throw new Error(json?.message || "SPX OnHold export failed (HTTP " + response.status + ").");
+    throw new Error("SPX OnHold export request failed: " +
+      (json?.message || "SPX export failed (HTTP " + response.status + ")."));
   }
 
   const taskId = Number(json?.data?.task_id || json?.task_id || 0);
   if (!taskId) throw new Error("SPX accepted the OnHold export request but returned no task ID.");
 
-  notifyPodCheckerAssignedProgress("SPX OnHold export task " + taskId + " created. Waiting for completion…");
+  notifyPodCheckerAssignedProgress("OnHold export task " + taskId + " created. Waiting for completion…");
   const waitStartSec = Math.max(0, Math.floor((job.startedAt - 10 * 60 * 1000) / 1000));
   const completed = await waitForCompletion(taskId, waitStartSec, job);
   if (!isParcelDeliveryTask(completed, job)) {
     throw new Error("The completed SPX task does not match the requested OnHold-only export.");
   }
 
-  notifyPodCheckerAssignedProgress("SPX OnHold export completed. Downloading its CSV…");
+  notifyPodCheckerAssignedProgress("OnHold export completed. Downloading its CSV…");
   const signedUrl = await getSignedDownloadUrl(taskId);
   const csv = await downloadCsv(signedUrl);
   const extracted = extractAssignedParcelOids(csv.text);
@@ -916,11 +922,11 @@ async function exportOnHoldOidsFromSpx(jobOverride = null) {
     "status", "current status", "tracking status", "shipment status"
   ]);
   const keptRows = extracted.rows.filter(row => {
-    const station = String(row[stationIndex] ?? "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+    const station = String(row[stationIndex] ?? "").trim().toLowerCase().replace(/[\\s_-]+/g, " ");
     if (!station.includes("badoc hub")) return false;
     if (statusIndex >= 0) {
       const status = String(row[statusIndex] ?? "").trim();
-      if (status && !/on[\s_-]*hold/i.test(status)) return false;
+      if (status && !/on[\\s_-]*hold/i.test(status)) return false;
     }
     return true;
   });
