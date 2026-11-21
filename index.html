@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v107">
+<meta name="badoc-app-version" content="v108">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -2500,7 +2500,7 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
         <div class="first-mile-combined-toolbar pickup-combined-toolbar">
           <div class="pickup-combined-controls">
             <input id="firstMileCombinedSearch" type="search" placeholder="Search pickup point, order, seller, rider…" autocomplete="off">
-            <select id="firstMileTaskStatusFilter" aria-label="Filter by pickup status">
+            <select id="firstMileTaskStatusFilter" aria-label="Filter by pickup status" hidden style="display:none">
               <option value="all">All statuses</option>
             </select>
             <div class="pickup-copy-actions" aria-label="Copy pickup data">
@@ -2508,11 +2508,11 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
               <button class="btn" id="copyFMHubInventory" type="button" disabled title="Copy Pickup Orders with ETA today">FM Hub Inventory</button>
               <button class="btn" id="copyPickupTaskManagement" type="button" disabled title="Copy Pickup Tasks created today">Pickup Task Management</button>
             </div>
-            <button class="btn primary" id="syncFirstMileAll" type="button">↻ Sync First Mile</button>
+            <button class="btn primary" id="syncFirstMileAll" type="button">↻ Sync Pickup Orders</button>
           </div>
           <div class="pickup-status-strip">
-            <span id="firstMileCombinedMeta">Sync Orders and Tasks to build the combined pickup list.</span>
-            <div id="firstMileAutoAlertControls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            <span id="firstMileCombinedMeta">Pickup Orders only · Results are filtered by ETA today (Philippine time).</span>
+            <div id="firstMileAutoAlertControls" hidden style="display:none">
               <button class="btn" id="enableFirstMileAlarm" type="button" hidden>Enable alarm sound</button>
               <button class="btn" id="ackFirstMileAlarm" type="button" hidden>Acknowledge Alarm</button>
               <span id="firstMileAutoAlertStatus" class="hint" aria-live="polite">Checking unassigned alarm and sound…</span>
@@ -2524,7 +2524,7 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
             <div id="firstMileBaselineStatus" class="hint" style="margin-top:4px;font-size:11px" aria-live="polite">First-sync baseline will be saved automatically before today’s first successful export is replaced.</div>
           </details>
         </div>
-        <div id="firstMileCombinedTable" class="first-mile-combined-table"><div class="first-mile-combined-empty">Combined pickup information will appear here after both exports are saved.</div></div>
+        <div id="firstMileCombinedTable" class="first-mile-combined-table"><div class="first-mile-combined-empty">Sync Pickup Orders to show orders whose ETA is today.</div></div>
         <details id="firstMileUnmatchedPanel" hidden style="margin-top:12px;border:1px solid var(--border-color,#d8e0e8);border-radius:10px;padding:10px 12px;background:var(--card-bg,transparent)" open>
           <summary id="firstMileUnmatchedSummary" style="cursor:pointer;font-weight:700">Unmatched Tasks</summary>
           <p class="hint" style="margin:8px 0">These SPX task records have no matching ETA-today Pickup Order by Pickup Point ID. Unmatched Inbounded and Onhold tasks are moved into the main results; this panel shows other unmatched task statuses.</p>
@@ -2532,7 +2532,7 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
         </details>
       </article>
     </div>
-    <div class="hint first-mile-local-note">Pickup Orders and Tasks are cached on this device and synced to shared cloud storage for all dashboard devices.</div>
+    <div class="hint first-mile-local-note">Pickup Orders are the only source for the test results. Rows are filtered by ETA today (Philippine time); Pickup Tasks are kept separately and do not affect results.</div>
   </div>
 </section>
 
@@ -5965,7 +5965,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     };
     const orders=getTime("orders");
     const tasks=getTime("tasks");
-    target.textContent="Last updated across all devices (PHT) — Orders: "+orders+" · Tasks: "+tasks;
+    target.textContent="Last updated across all devices (PHT) — Pickup Orders: "+orders;
   }
   window.__badocUpdateFirstMileLastUpdated=updateFirstMileLastUpdated;
   let firstMileSequenceBusy=false;
@@ -5975,22 +5975,18 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     if(!(await window.__badocEnsureSpxBridge?.()))return;
     firstMileSequenceBusy=true;firstMileNextStep="orders";
     if(btn){btn.disabled=true;btn.dataset.busy="1";}
-    $("firstMileOverallStatus").textContent="Step 1 of 2 · Exporting First Mile Orders…";
+    $("firstMileOverallStatus").textContent="Exporting Pickup Orders…";
     $("firstMileOrdersStatus").textContent="Connecting to SPX…";
-    window.__badocOperationModalStart?.("Sync First Mile","Step 1 of 2: requesting First Mile Orders. Tasks will start automatically after Orders finishes.");
+    window.__badocOperationModalStart?.("Sync Pickup Orders","Requesting Pickup Orders only. Pickup Tasks are not used in the test results.");
     postBadocSpxMessage("BADOC_START_FIRST_MILE_ORDERS_SYNC",{selectedDate:getBadocManilaDayBounds().date});
   }
   window.__badocFirstMileSequenceResult=function(kind,success,message){
     const btn=$("syncFirstMileAll");
-    if(kind==="orders"&&success){
-      firstMileNextStep="tasks";$("firstMileOverallStatus").textContent="Step 2 of 2 · Orders saved. Starting First Mile Tasks…";
-      window.__badocOperationModalUpdate?.("First Mile Orders saved. Now requesting First Mile Tasks…");
-      postBadocSpxMessage("BADOC_START_FIRST_MILE_TASKS_SYNC",{selectedDate:getBadocManilaDayBounds().date});
-      return;
-    }
     firstMileSequenceBusy=false;firstMileNextStep="";
     if(btn){btn.disabled=false;btn.dataset.busy="0";}
-    $("firstMileOverallStatus").textContent=success?"First Mile sync completed · Orders and Tasks saved locally.":`First Mile sync stopped: ${message||"export failed"}`;
+    $("firstMileOverallStatus").textContent=success
+      ?(kind==="orders"?"Pickup Orders sync completed · Orders saved locally.":"Pickup Tasks saved separately.")
+      :`Pickup ${kind==="orders"?"Orders":"Tasks"} sync stopped: ${message||"export failed"}`;
   };
   window.__badocFailFirstMileSequence=function(message){
     const kind=firstMileNextStep==="tasks"?"tasks":"orders";
@@ -6140,6 +6136,15 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     return [...new Set(sellerNames)].join(" | ")||"—";
   }
   function fmAssignedRiderDisplay(group){
+    if(group?.pickupOrderOnly){
+      const order=group.eligibleOrders?.[0]||group.orders?.[0]||{};
+      const driver=fmValue(order,[
+        "Pickup Driver","Pickup Driver Name","Pickup Rider","Pickup Rider Name",
+        "Assigned Driver","Assigned Rider","Driver Name","Rider Name",
+        "pickup_driver","pickup_driver_name","driver_name","rider_name"
+      ]).trim();
+      return driver||"Unassigned";
+    }
     const latest=fmLatestTask(group);
     const driver=latest?fmValue(latest,[
       "Driver Name","Assigned Driver Name","Rider Name","Assigned Rider",
@@ -6266,7 +6271,17 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   function fmOrderPickupStatusLabel(order){
     return fmOrderSheetStatus(order)==="Picked Up"?"Picked Up":"Not Picked Up";
   }
+  function fmPickupOrderOnlyStatus(order){
+    const raw=fmPickupOrderStatus(order)||fmOrderSheetStatus(order)||"Unknown";
+    const key=fmNorm(raw);
+    if(key==="canceled"||key==="cancelled"||key==="disabled")return "Cancelled";
+    return raw;
+  }
   function fmCombinedPickupStatus(group){
+    if(group?.pickupOrderOnly){
+      const order=group.eligibleOrders?.[0]||group.orders?.[0]||{};
+      return fmPickupOrderOnlyStatus(order);
+    }
     const order=group?.eligibleOrders?.[0]||null;
     const latest=fmLatestTask(group);
     const taskRaw=latest?fmValue(latest,["Status","Task Status","Pickup Task Status","status_name","status"]):"";
@@ -6432,296 +6447,82 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   $("copyFMHubInventory")?.addEventListener("click",event=>fmCopyRawExportRows("orders",event.currentTarget,"FM Hub Inventory"));
   $("copyPickupTaskManagement")?.addEventListener("click",event=>fmCopyRawExportRows("tasks",event.currentTarget,"Pickup Task Management"));
   function renderFirstMileCombined(){
-    const ordersData=getStoredFirstMile("orders"),tasksData=getStoredFirstMile("tasks");
+    const ordersData=getStoredFirstMile("orders");
     fmUpdateRawCopyButtons();
     const stats=$("firstMileCombinedStats"),table=$("firstMileCombinedTable"),meta=$("firstMileCombinedMeta"),downloadBtn=$("downloadFirstMileCombined");
-    if(!ordersData||!tasksData){
+    const unmatchedPanel=$("firstMileUnmatchedPanel");
+    const alertControls=$("firstMileAutoAlertControls");
+    if(unmatchedPanel)unmatchedPanel.hidden=true;
+    if(alertControls)alertControls.hidden=true;
+    firstMileAlertRows=[];
+
+    if(!ordersData){
       firstMileCombinedRows=[];
-      firstMileAlertRows=[];
-      if(stats)stats.innerHTML=[[ordersData?.rows.length||0,"Orders · awaiting ETA filter"],["—","Matched pickup points"],["—","Orders without task"],[tasksData?.rows.length||0,"Tasks"],["—","Excluded · ETA not today"]].map(([n,l])=>`<div><strong>${n}</strong><span>${l}</span></div>`).join("");
-      if(meta)meta.textContent="Both exports are required before the combined list can be built.";
-      if(table)table.innerHTML='<div class="first-mile-combined-empty">Sync both First Mile Orders and First Mile Tasks to create the combined pickup list.</div>';
-      if(downloadBtn)downloadBtn.disabled=true;
       firstMileVisibleRows=[];
-      const copyBtn=$("copyFirstMileForSheet");if(copyBtn){copyBtn.disabled=true;copyBtn.textContent="Copy for Sheet";}
+      if(stats)stats.innerHTML=[[0,"Pickup Orders export"],[0,"ETA today"],[0,"Assigned"],[0,"Picked Up"],[0,"Cancelled"]].map(([n,l])=>`<div><strong>${n}</strong><span>${l}</span></div>`).join("");
+      if(meta)meta.textContent="Pickup Orders only · Sync Pickup Orders to load results. Pickup Tasks are not used in this test.";
+      if(table)table.innerHTML='<div class="first-mile-combined-empty">Sync Pickup Orders to show orders whose ETA is today (Philippine time).</div>';
+      if(downloadBtn)downloadBtn.disabled=true;
+      const copyBtn=$("copyFirstMileForSheet");
+      if(copyBtn){copyBtn.disabled=true;copyBtn.textContent="Copy for Sheet";}
       return;
     }
-    const allOrderRows=ordersData.rows;
-    const today=getBadocManilaDayBounds().date;
-    const allTaskRows=tasksData.rows;
-    // Match orders to all Badoc task rows by Pickup Point ID, including tasks
-    // created before today. Tasks without an eligible order are retained as
-    // standalone task-only rows only when their creation date is today.
-    const tasksRows=allTaskRows.filter(fmIsBadocPickupTask);
-    fmRememberPickupPointNames(tasksRows);
-    fmRememberPickupPointNames(allOrderRows);
-    const orderRows=[],historicalOrderRows=[];
-    allOrderRows.forEach(order=>{
-      if(fmEtaDate(order)===today)orderRows.push(order);
-      else historicalOrderRows.push(order);
-    });
-    const excludedEtaOrders=historicalOrderRows.length;
-    const groups=new Map();
-    const getGroup=id=>{if(!groups.has(id))groups.set(id,{pickupPointId:id,orders:[],eligibleOrders:[],tasks:[]});return groups.get(id);};
-    orderRows.forEach(order=>{
-      const id=fmNorm(fmPickupPointId(order));
-      const group=id?getGroup(id):getGroup(`__order_without_point_${groups.size}`);
-      group.orders.push(order);
-      group.eligibleOrders.push(order);
-    });
-    // The requested relationship is Pickup Point ID only, not Order ID.
-    tasksRows.forEach(task=>{
-      const pointId=fmNorm(fmPickupPointId(task));
-      const matchedGroup=pointId?groups.get(pointId):null;
-      if(matchedGroup&&(matchedGroup.eligibleOrders||[]).length){
-        matchedGroup.tasks.push(task);
-        return;
-      }
-      // Do not attach historical tasks to a standalone task-only group.
-      if(fmTaskCreateDate(task)!==today)return;
-      const taskOnlyGroup=matchedGroup||(
-        pointId?getGroup(pointId):getGroup(`__task_without_point_${groups.size}`)
-      );
-      taskOnlyGroup.tasks.push(task);
-    });
-    // Attach historical order metadata to today's standalone task rows for context only.
-    // Historical orders are display-only: they do not enter today's eligible count or Copy for Sheet.
-    let historicalTaskOrders=0;
-    historicalOrderRows.forEach(order=>{
-      const id=fmNorm(fmPickupPointId(order));
-      const group=id?groups.get(id):null;
-      if(group&&group.tasks.length){group.orders.push(order);historicalTaskOrders++;}
-    });
-    // Preserve every filtered task group for the new-unassigned alarm, even
-    // though task-only groups are excluded from the main order table.
-    firstMileAlertRows=[...groups.values()].filter(group=>fmNorm(fmCombinedPickupStatus(group))!=="hiddendisabled");
-    // Keep task groups without a current-day eligible Order separately.
-    // The SPX Tasks export has no Order ID or ETA, so these cannot be copied
-    // to the sheet unless the Orders export supplies a matching current-day row.
-    const unmatchedTaskGroups=[...groups.values()].filter(group=>
-      group.tasks.length>0 && !(group.eligibleOrders||[]).length &&
-      fmNorm(fmCombinedPickupStatus(group))!=="hiddendisabled"
-    );
-    const unmatchedTaskStatusCounts={};
-    unmatchedTaskGroups.forEach(group=>{
-      const latest=fmLatestTask(group);
-      const label=latest
-        ? fmTaskStatusLabel(fmValue(latest,["Status","Task Status","Pickup Task Status","status_name","status"]))
-        : "Unknown";
-      unmatchedTaskStatusCounts[label]=(unmatchedTaskStatusCounts[label]||0)+1;
-    });
-    // Promote unmatched Inbounded and Onhold tasks into the main Pickup results.
-    // SPX Tasks has no Order Number, Seller Name, or ETA for task-only rows, so
-    // leave those fields blank rather than inventing order details.
-    const unmatchedInboundedGroups=unmatchedTaskGroups.filter(group=>
-      fmNorm(fmCombinedPickupStatus(group))==="inbounded"
-    );
-    const unmatchedOnholdGroups=unmatchedTaskGroups.filter(group=>
-      fmNorm(fmCombinedPickupStatus(group))==="onhold"
-    );
-    firstMileCombinedRows=[
-      ...[...groups.values()].flatMap(group=>
-        (group.eligibleOrders||[]).map(order=>{
-          const orderTaskNo=fmNorm(fmPickupTaskNumber(order));
-          const orderStatusKey=fmNorm(fmPickupOrderStatus(order)||fmOrderSheetStatus(order)||"");
-          const isCanceledOrder=["canceled","cancelled","disabled"].includes(orderStatusKey);
-          const pointTasks=group.tasks||[];
-          let matchedTasks=[];
 
-          // Never attach a point-level task to an order already canceled/disabled.
-          if(!isCanceledOrder){
-            if(orderTaskNo){
-              const exactTasks=pointTasks.filter(task=>fmNorm(fmPickupTaskNumber(task))===orderTaskNo);
-              const noTaskNumberFallback=pointTasks.length===1&&!fmPickupTaskNumber(pointTasks[0]);
-              matchedTasks=exactTasks.length?exactTasks:(noTaskNumberFallback?pointTasks:[]);
-            }else if((group.eligibleOrders||[]).length===1){
-              // A single order at this pickup point is an unambiguous point-ID match.
-              matchedTasks=pointTasks;
-            }else{
-              // Multiple orders can share one Pickup Point ID. In that case,
-              // only link a task when its Create Time exactly matches this
-              // order's Assigned Time; otherwise leave the task unassigned
-              // rather than copying one rider/task across unrelated orders.
-              const assignedRaw=fmValue(order,["Assigned Time","Pickup Assigned Time","Assign Time","Assigned At","assigned_time"]);
-              const assignedStamp=assignedRaw?Date.parse(String(assignedRaw).replace(/\\//g,"-").replace(/\\s+/,"T")):NaN;
-              if(Number.isFinite(assignedStamp)){
-                matchedTasks=pointTasks.filter(task=>{
-                  const createdRaw=fmValue(task,["Create Time","Created Time","Task Create Time","create_time","ctime"]);
-                  const createdStamp=createdRaw?Date.parse(String(createdRaw).replace(/\\//g,"-").replace(/\\s+/,"T")):NaN;
-                  return Number.isFinite(createdStamp)&&createdStamp===assignedStamp;
-                });
-              }
-            }
-          }
-          return {...group,orders:[order],eligibleOrders:[order],tasks:matchedTasks};
-        })
-      ),
-      ...unmatchedInboundedGroups.map(group=>({
-        ...group,
-        orders:[],
-        eligibleOrders:[],
-        isTaskOnlyInbounded:true
-      })),
-      ...unmatchedOnholdGroups.map(group=>({
-        ...group,
-        orders:[],
-        eligibleOrders:[],
-        isTaskOnlyOnhold:true
-      }))
-    ];
-    firstMileCombinedRows=firstMileCombinedRows.filter(group=>fmNorm(fmCombinedPickupStatus(group))!=="hiddendisabled");
-    window.__badocUpdatePickupBaselineStatus?.();
-    window.__badocCheckNewUnassigned?.();
-    // Sort pickup-point rows by Assigned Rider A–Z. Names within each group are
-    // already alphabetized by fmAssignedRiderDisplay(); groups without a rider go last.
-    const riderCollator=new Intl.Collator("en",{sensitivity:"base",numeric:true});
-    const riderSortKey=g=>{
-      const value=fmAssignedRiderDisplay(g);
-      return value==="Unassigned"||value==="—"?"":value.split(" | ")[0].trim();
-    };
-    firstMileCombinedRows.sort((a,b)=>{
-      const nameA=riderSortKey(a),nameB=riderSortKey(b);
-      if(!nameA&&!nameB)return 0;
-      if(!nameA)return 1;
-      if(!nameB)return -1;
-      return riderCollator.compare(nameA,nameB);
-    });
-    const matchedGroups=new Set(firstMileCombinedRows.filter(g=>g.pickupPointId&&!g.pickupPointId.startsWith("__")&&g.eligibleOrders.length&&g.tasks.length).map(g=>g.pickupPointId));
-    const unassignedDrivers=firstMileCombinedRows.filter(g=>!g.isTaskOnlyInbounded&&!g.isTaskOnlyOnhold&&fmAssignedRiderDisplay(g)==="Unassigned").length;
-    if(stats)stats.innerHTML=[[orderRows.length,"Orders · ETA today"],[matchedGroups.size,"Matched pickup points"],[unassignedDrivers,"Orders without assigned driver"],[tasksRows.length,"Tasks · all statuses"],[excludedEtaOrders,"Excluded · ETA not today"]].map(([n,l])=>`<div><strong>${Number(n).toLocaleString()}</strong><span>${l}</span></div>`).join("");
-    const unmatchedPanel=$("firstMileUnmatchedPanel");
-    const unmatchedSummary=$("firstMileUnmatchedSummary");
-    const unmatchedTable=$("firstMileUnmatchedTable");
-    const unmatchedSearchText=fmNorm($("firstMileCombinedSearch")?.value||"");
-    const visibleUnmatchedTaskGroups=unmatchedTaskGroups.filter(group=>
-      !["inbounded","onhold"].includes(fmNorm(fmCombinedPickupStatus(group)))
-    ).filter(group=>
-      !unmatchedSearchText ||
-      [group.pickupPointId,...(group.tasks||[]).flatMap(task=>Object.values(task)),
-       fmPickupNameDisplay(group),fmAssignedRiderDisplay(group)]
-        .some(value=>fmNorm(value).includes(unmatchedSearchText))
-    );
-    const unmatchedCountByStatus={};
-    visibleUnmatchedTaskGroups.forEach(group=>{
-      const latest=fmLatestTask(group);
-      const label=latest
-        ?fmTaskStatusLabel(fmValue(latest,["Status","Task Status","Pickup Task Status","status_name","status"]))
-        :"Unknown";
-      unmatchedCountByStatus[label]=(unmatchedCountByStatus[label]||0)+1;
-    });
-    if(unmatchedPanel){
-      unmatchedPanel.hidden=visibleUnmatchedTaskGroups.length===0;
-      unmatchedPanel.open=visibleUnmatchedTaskGroups.length>0;
-    }
-    if(unmatchedSummary){
-      const statusText=Object.entries(unmatchedCountByStatus)
-        .sort((a,b)=>a[0].localeCompare(b[0]))
-        .map(([label,count])=>count+" "+label).join(", ");
-      unmatchedSummary.textContent="Unmatched Tasks ("+visibleUnmatchedTaskGroups.length+")"+
-        (statusText?" · "+statusText:"");
-    }
-    if(unmatchedTable){
-      if(!visibleUnmatchedTaskGroups.length)unmatchedTable.innerHTML="";
-      else{
-        const rows=visibleUnmatchedTaskGroups.map(group=>{
-          const latest=fmLatestTask(group)||group.tasks?.[0]||{};
-          const taskNumber=fmValue(latest,["Pickup Task Number","Task Number","Pickup Task No","Task ID","task_id","pickup_task_number"]);
-          const created=fmValue(latest,["Create Time","Task Create Time","Created Time","create_time","ctime"]);
-          const status=fmTaskStatusLabel(fmValue(latest,["Status","Task Status","Pickup Task Status","status_name","status"]));
-          const cells=[
-            taskNumber||"—",
-            fmPickupPointId(latest)||group.pickupPointId||"—",
-            fmPickupNameDisplay(group),
-            status,
-            created||"—",
-            fmAssignedRiderDisplay(group)
-          ];
-          const tone=fmNorm(status)==="inbounded"?"inbounded":fmNorm(status)==="assigned"?"assigned":fmNorm(status)==="cancelledafterassigned"?"cancelled":"onhold";
-          return "<tr>"+cells.map((value,index)=>index===3
-            ?'<td><span class="fm-task-pill fm-task-'+tone+'">'+fmEsc(value)+'</span></td>'
-            :'<td>'+fmEsc(value)+'</td>').join("")+"</tr>";
-        });
-        unmatchedTable.innerHTML=
-          '<table style="width:100%;border-collapse:collapse;min-width:780px"><thead><tr>'+
-          ["Pickup Task Number","Pickup Point ID","Pickup Point Name","Task Status","Create Time","Assigned Rider"]
-            .map(label=>'<th style="text-align:left;padding:9px 8px;border-bottom:1px solid var(--border-color,#d8e0e8)">'+fmEsc(label)+'</th>').join("")+
-          '</tr></thead><tbody>'+rows.join("")+'</tbody></table>';
-      }
-    }
-    if(meta){
-      const inboundedIncluded=unmatchedInboundedGroups.length;
-      const onholdIncluded=unmatchedOnholdGroups.length;
-      const remainingUnmatched=unmatchedTaskGroups.filter(group=>
-        !["inbounded","onhold"].includes(fmNorm(fmCombinedPickupStatus(group)))
-      );
-      const remainingStatusCounts={};
-      remainingUnmatched.forEach(group=>{
-        const label=fmNorm(fmCombinedPickupStatus(group))||"unknown";
-        remainingStatusCounts[label]=(remainingStatusCounts[label]||0)+1;
-      });
-      const remainingStatusText=Object.entries(remainingStatusCounts)
-        .map(([label,count])=>count+" "+label).join(", ");
-      const parts=[];
-      if(inboundedIncluded)parts.push(inboundedIncluded+" unmatched Inbounded task(s) included in results and Copy for Sheet; Order Number and ETA are blank because SPX Tasks has no matching current-day Order.");
-      if(onholdIncluded)parts.push(onholdIncluded+" unmatched Onhold task(s) included in the main results and Copy for Sheet; Order Number and ETA are blank because SPX Tasks has no matching current-day Order.");
-      if(remainingUnmatched.length)parts.push(remainingUnmatched.length+" other unmatched task point(s) remain below"+(remainingStatusText?" ("+remainingStatusText+")":"")+".");
-      meta.textContent=parts.join(" ");
-      if(!parts.length)meta.textContent="All ETA-today Orders were joined to Badoc Hub tasks by Pickup Point ID where a matching task exists.";
-    }
-    if(downloadBtn)downloadBtn.disabled=!firstMileCombinedRows.length;
-    const search=fmNorm($("firstMileCombinedSearch")?.value||"");
-    const selectedTaskStatus=$("firstMileTaskStatusFilter")?.value||"all";
-    const searchMatchedRows=firstMileCombinedRows.filter(g=>!search||[g.pickupPointId,...g.orders.flatMap(o=>Object.values(o)),...g.tasks.flatMap(t=>Object.values(t))].some(v=>fmNorm(v).includes(search)));
-    // Every ETA-today order is eligible, regardless of SPX order status or driver.
-    // Standalone task-only Inbounded and Onhold rows are also eligible.
-    const eligibleStatusRows=searchMatchedRows.filter(g=>
-      (g.eligibleOrders||[]).length===1 || g.isTaskOnlyInbounded===true || g.isTaskOnlyOnhold===true
-    );
-    const statusFilter=$("firstMileTaskStatusFilter");
+    const allOrderRows=Array.isArray(ordersData.rows)?ordersData.rows:[];
+    const today=getBadocManilaDayBounds().date;
+    const orderRows=allOrderRows.filter(order=>fmEtaDate(order)===today);
+    const excludedEtaOrders=allOrderRows.length-orderRows.length;
+
+    // Test mode: one row per Pickup Order. No Pickup Task joins, task-only
+    // records, task statuses, or task riders can affect the result.
+    firstMileCombinedRows=orderRows.map((order,index)=>({
+      pickupPointId:fmNorm(fmPickupPointId(order))||`__order_${index}`,
+      orders:[order],
+      eligibleOrders:[order],
+      tasks:[],
+      pickupOrderOnly:true
+    }));
+
     const statusCounts=new Map();
-    eligibleStatusRows.forEach(group=>{
+    firstMileCombinedRows.forEach(group=>{
       const label=fmCombinedPickupStatus(group)||"Unknown";
       const key=fmNorm(label)||"unknown";
-      const entry=statusCounts.get(key)||{label,count:0};
-      entry.count++;
-      statusCounts.set(key,entry);
+      statusCounts.set(key,(statusCounts.get(key)||0)+1);
     });
-    if(statusFilter){
-      const previous=statusFilter.value||"all";
-      statusFilter.replaceChildren();
-      const allOption=document.createElement("option");
-      allOption.value="all";
-      allOption.textContent=`All statuses (${eligibleStatusRows.length.toLocaleString()})`;
-      statusFilter.appendChild(allOption);
-      [...statusCounts.entries()].sort((a,b)=>a[1].label.localeCompare(b[1].label)).forEach(([key,entry])=>{
-        const option=document.createElement("option");
-        option.value=key;
-        option.textContent=`${entry.label} (${entry.count.toLocaleString()})`;
-        statusFilter.appendChild(option);
-      });
-      statusFilter.value=previous==="all"||statusCounts.has(previous)?previous:"all";
-    }
-    const activeStatus=statusFilter?.value||"all";
-    const filtered=eligibleStatusRows.filter(g=>
-      activeStatus==="all"||fmNorm(fmCombinedPickupStatus(g))===activeStatus
-    );
+    const statusCount=(...keys)=>keys.reduce((sum,key)=>sum+(statusCounts.get(key)||0),0);
+    if(stats)stats.innerHTML=[
+      [allOrderRows.length,"Pickup Orders export"],
+      [orderRows.length,"ETA today"],
+      [statusCount("assigned"),"Assigned"],
+      [statusCount("pickedup","pickupdone","collected"),"Picked Up"],
+      [statusCount("cancelled","canceled","disabled","cancelledafterassigned"),"Cancelled"]
+    ].map(([n,l])=>`<div><strong>${Number(n).toLocaleString()}</strong><span>${l}</span></div>`).join("");
+
+    const search=fmNorm($("firstMileCombinedSearch")?.value||"");
+    const filtered=firstMileCombinedRows.filter(group=>{
+      if(!search)return true;
+      const order=group.eligibleOrders?.[0]||{};
+      return [group.pickupPointId,...Object.values(order)].some(value=>fmNorm(value).includes(search));
+    });
     firstMileVisibleRows=filtered;
+
+    if(meta)meta.textContent="Pickup Orders only · Showing "+filtered.length.toLocaleString()+" of "+orderRows.length.toLocaleString()+" orders with ETA "+today+" (Philippine time). All statuses are included; status and Pickup Driver come directly from the Pickup Orders export. Pickup Tasks are not used.";
+
     const copyBtn=$("copyFirstMileForSheet");
-    // Same eligible row set as the dropdown/table: one Order ID per row.
-    const copyOrderCount=filtered.length;
-    if(copyBtn){copyBtn.disabled=copyOrderCount===0;copyBtn.textContent=copyOrderCount?`Copy for Sheet (${copyOrderCount})`:"Copy for Sheet";}
+    if(copyBtn){copyBtn.disabled=!filtered.length;copyBtn.textContent=filtered.length?`Copy for Sheet (${filtered.length})`:"Copy for Sheet";}
+
     const columns=[
       ["Order Number",g=>fmOrderId(g.eligibleOrders?.[0]||{})||"—"],
-      ["Pickup Point ID",g=>fmPickupPointId(g.eligibleOrders?.[0]||g.tasks[0]||{})||g.pickupPointId||"—"],
+      ["Pickup Point ID",g=>fmPickupPointId(g.eligibleOrders?.[0]||{})||g.pickupPointId||"—"],
       ["Seller Name",g=>fmSellerName(g.eligibleOrders?.[0]||{})||"—"],
       ["ETA",g=>fmValue(g.eligibleOrders?.[0]||{},["ETA","Estimated Time of Arrival","Estimated Arrival Time","Pickup ETA","eta_date","eta_time"])||"—"],
       ["Status",g=>fmCombinedPickupStatus(g)||"Unknown"],
       ["Assigned Rider",g=>fmAssignedRiderDisplay(g)],
       ["PROOF",g=>fmPickupInfoButtonsHtml(g)]
     ];
-    if(table && $("firstMile")?.classList.contains("active")){
+    if(table&&$("firstMile")?.classList.contains("active")){
       if(!filtered.length){
-        table.innerHTML='<div class="first-mile-combined-empty">No pickup orders or task-only Inbounded / Onhold records match this search.</div>';
+        table.innerHTML='<div class="first-mile-combined-empty">No Pickup Orders have an ETA of today ('+fmEsc(today)+').</div>';
       }else{
         const maxRows=Math.min(filtered.length,2000);
         const rowHeight=48,overscan=8;
@@ -6730,7 +6531,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           const value=c[1](g);
           if(c[0]==="Status"){
             const key=fmNorm(value);
-            const tone=({assigned:"assigned",accepted:"assigned",pickedup:"done",pickupdone:"done",onhold:"onhold",pickupnoorder:"onhold",inbounded:"inbounded",cancelled:"cancelled",disabled:"cancelled",cancelledafterassigned:"cancelled"})[key]||"other";
+            const tone=({assigned:"assigned",accepted:"assigned",pickedup:"done",pickupdone:"done",onhold:"onhold",pickupnoorder:"onhold",inbounded:"inbounded",cancelled:"cancelled",canceled:"cancelled",disabled:"cancelled",cancelledafterassigned:"cancelled"})[key]||"other";
             return '<td><span class="fm-task-pill fm-task-'+tone+'">'+fmEsc(value)+'</span></td>';
           }
           if(c[0]==="Order Number")return '<td>'+fmOrderLinksHtml(g)+'</td>';
@@ -6740,7 +6541,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           }
           if(c[0]==="PROOF")return '<td class="fm-pickup-info-cell">'+(value||"—")+'</td>';
           return '<td title="'+fmEsc(value)+'">'+fmEsc(value)+'</td>';
-        }).join('')+'</tr>';
+        }).join("")+'</tr>';
         const renderWindow=()=>{
           const viewportHeight=table.clientHeight||560;
           const rowsPerViewport=Math.max(1,Math.ceil(Math.max(120,viewportHeight-44)/rowHeight));
@@ -6749,10 +6550,10 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           let end=Math.min(maxRows,start+windowSize);
           if(end-start<windowSize)start=Math.max(0,end-windowSize);
           const topHeight=start*rowHeight,bottomHeight=(maxRows-end)*rowHeight;
-          const topSpacer=topHeight?'<tr class="fm-virtual-spacer" aria-hidden="true"><td colspan="'+columns.length+'" style="height:'+topHeight+'px;padding:0;border:0;line-height:0"></td></tr>':'';
-          const bottomSpacer=bottomHeight?'<tr class="fm-virtual-spacer" aria-hidden="true"><td colspan="'+columns.length+'" style="height:'+bottomHeight+'px;padding:0;border:0;line-height:0"></td></tr>':'';
-          table.innerHTML='<table>'+columnsHtml+'<tbody>'+topSpacer+filtered.slice(start,end).map(rowHtml).join('')+bottomSpacer+'</tbody></table>'+
-            (filtered.length>2000?'<div class="first-mile-combined-empty">Showing first 2,000 of '+filtered.length.toLocaleString()+' rows.</div>':'');
+          const topSpacer=topHeight?'<tr class="fm-virtual-spacer" aria-hidden="true"><td colspan="'+columns.length+'" style="height:'+topHeight+'px;padding:0;border:0;line-height:0"></td></tr>':"";
+          const bottomSpacer=bottomHeight?'<tr class="fm-virtual-spacer" aria-hidden="true"><td colspan="'+columns.length+'" style="height:'+bottomHeight+'px;padding:0;border:0;line-height:0"></td></tr>':"";
+          table.innerHTML='<table>'+columnsHtml+'<tbody>'+topSpacer+filtered.slice(start,end).map(rowHtml).join("")+bottomSpacer+'</tbody></table>'+
+            (filtered.length>2000?'<div class="first-mile-combined-empty">Showing first 2,000 of '+filtered.length.toLocaleString()+' rows.</div>':"");
           table.dataset.virtualStart=String(start);
           table.dataset.virtualEnd=String(end);
         };
@@ -6771,6 +6572,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
         renderWindow();
       }
     }
+    if(downloadBtn)downloadBtn.disabled=!filtered.length;
   }
   window.__badocRenderFirstMileCombined=renderFirstMileCombined;
 
@@ -6974,7 +6776,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       const btn=document.getElementById("syncFirstMileAll");
       if(!btn||btn.disabled||btn.dataset.busy==="1")return;
       lastAutoRun=key;
-      try{btn.click();const el=statusEl();if(el)el.textContent="Automatic Sync First Mile triggered at "+hm+" (Philippine time).";}
+      try{btn.click();const el=statusEl();if(el)el.textContent="Automatic Sync Pickup Orders triggered at "+hm+" (Philippine time).";}
       catch(e){console.error("Scheduled First Mile click failed:",e);lastAutoRun="";}
     },15000);
   })();
@@ -16367,7 +16169,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 </script>
 
 <style id="pickup-toolbar-clean-layout-v1">
-/* Pickup toolbar: keep the three copy actions grouped and Sync First Mile separate. */
+/* Pickup toolbar: keep the three copy actions grouped and Sync Pickup Orders separate. */
 #firstMile .pickup-combined-toolbar{display:flex!important;flex-direction:column!important;align-items:stretch!important;gap:9px!important;margin:0 0 12px!important}
 #firstMile .pickup-combined-controls{display:grid!important;grid-template-columns:minmax(260px,1fr) minmax(155px,185px) auto auto!important;align-items:center!important;gap:9px!important;width:100%!important}
 #firstMile .pickup-combined-controls #firstMileCombinedSearch{width:100%!important;min-width:0!important;min-height:40px!important;flex:initial!important}
