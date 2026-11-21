@@ -2707,7 +2707,7 @@ html[data-theme="dark"] #dailyHistory .dh2-chart .dh2-pt.is-sel rect:not(.dh2-hi
       <span class="hint" id="linehaulStatus">0 tasks</span>
     </div>
     <div class="linehaul-tools">
-      <button class="btn" id="syncLinehaulFromSPX" type="button" title="Export the Pending Receive TO List from SPX and sync incoming linehaul tasks into BADOC HUB">↻ Sync Incoming Linehauls</button>
+      <button class="btn primary" id="syncLinehaulFromSPX" type="button" title="Export the Pending Receive TO List from SPX and sync incoming linehaul tasks into BADOC HUB">↻ Sync Incoming Linehauls</button>
       <span id="linehaulSpxSyncStatus" class="hint" aria-live="polite"></span>
     </div>
     <div class="lh-kpi-cards">
@@ -2775,7 +2775,7 @@ html[data-theme="dark"] #dailyHistory .dh2-chart .dh2-pt.is-sel rect:not(.dh2-hi
 <section id="dailyHistory" class="page">
   <div class="dh2">
     <div class="dh2-head">
-      <div class="dh2-title"><h2 style="margin:0;font-size:22px;line-height:1.2;color:var(--text,#17212b)">EOD Data</h2><span id="dh2Mode" class="dh2-badge is-live">LIVE</span><span class="dh2-sub">Today is live. Past days are saved snapshots.</span></div>
+      <div class="dh2-title"><span id="dh2Mode" class="dh2-badge is-live">LIVE</span><span class="dh2-sub">Today is live. Past days are saved snapshots.</span></div>
       <div class="dh2-actions">
         <button type="button" class="btn" id="dailyHistoryRefreshBtn" title="Reload saved days">↻ Refresh</button>
         <button type="button" class="btn dh2-primary" id="dailyHistoryCaptureBtn" title="Save today's snapshot to the cloud">⬆ Capture Now</button>
@@ -7154,7 +7154,7 @@ function showPage(p){
  document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
  const page=$(p);if(page)page.classList.add("active");
  document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===p));
- const titles={homeDashboard:"Dashboard",dashboard:"Planning Board",actualScannedByRiders:"Actual Scanned by Riders",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyRiderPerformance:"Rider Performance",ridersData:"Riders Data",dailyHistory:"Data",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};
+ const titles={homeDashboard:"Dashboard",dashboard:"Planning Board",actualScannedByRiders:"Actual Scanned by Riders",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyRiderPerformance:"Rider Performance",ridersData:"Riders Data",dailyHistory:"EOD Data",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};
  $("pageTitle").textContent=titles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");
  document.body.classList.toggle("pickup-page-active",p==="firstMile");
  if(p==="firstMile")window.__badocRenderFirstMileCombined?.();
