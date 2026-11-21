@@ -6528,7 +6528,9 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const taskRows=Array.isArray(tasksData?.rows)?tasksData.rows.filter(fmIsBadocPickupTask):[];
     taskRows.forEach(task=>{
       const pointKey=fmNorm(fmPickupPointId(task));
-      if(pointKey){
+      // Point-only matching is limited to tasks created today (Manila time)
+      // so an old Disabled task cannot cancel a new day's order at that point.
+      if(pointKey&&fmTaskCreateDate(task)===today){
         if(!tasksByPickupPoint.has(pointKey))tasksByPickupPoint.set(pointKey,[]);
         tasksByPickupPoint.get(pointKey).push(task);
       }
@@ -6601,7 +6603,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     });
     firstMileVisibleRows=filtered;
 
-    if(meta)meta.textContent="Pickup Orders determine rows and ETA · task number is the primary match; a single Pickup Point ID task is the fallback. A reliably matched Disabled task is shown as Cancelled – Task Disabled."+(tasksData?"":" Pickup Tasks are not synced yet, so task-based cancellation checks are unavailable.");
+    if(meta)meta.textContent="Pickup Orders determine rows and ETA · Showing "+filtered.length.toLocaleString()+" of "+orderRows.length.toLocaleString()+" orders with ETA "+today+" (Philippine time). Tasks match by Task Number first; Pickup Point ID is a fallback only for one task created today. A matched Disabled task is shown as Cancelled – Task Disabled."+(tasksData?"":" Pickup Tasks are not synced yet, so task-based cancellation checks are unavailable.");
 
     const copyBtn=$("copyFirstMileForSheet");
     if(copyBtn){copyBtn.disabled=!filtered.length;copyBtn.textContent=filtered.length?`Copy for Sheet (${filtered.length})`:"Copy for Sheet";}
