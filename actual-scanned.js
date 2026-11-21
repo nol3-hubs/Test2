@@ -43,7 +43,7 @@ function activityDate(row,status){
 }
 function isOnholdStatus(v){
   const s=norm(v).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
-  return s==="5"||/^(?:ONHOLD|ON HOLD|LMHUB ONHOLD|LMHUB ON HOLD)$/.test(s);
+  return s==="5"||/^(?:ONHOLD|ON HOLD|LM ?HUB ONHOLD|LM ?HUB ON HOLD)$/.test(s);
 }
 function tnAliases(tn){
   const raw=String(tn??"").trim(),values=[];
@@ -86,10 +86,16 @@ function build(){
   const statusFields=["Parcel Status To","Status To","TO Status","To Status","Status To (Current)","Status","Parcel Status","Delivery Status","Current Status","Tracking Status","Tracking Status ID","Tracking Status Id","Tracking Status Code","Current Tracking Status","Current Tracking Status ID"];
   // Pre-scan all rows before deduplication so a current OnHold row cannot be hidden
   // by an earlier stale Delivered/Delivering row with the same tracking number.
-  const onholdAliasesFromRows=new Set();
+  const onholdAliasesFromRows=new Set(),onholdRowsByTn=new Map();
   sourceRows.forEach(row=>{
     const tn=typeof window.spxTN==="function"?String(window.spxTN(row)||"").trim():"";
-    if(tn&&statusFields.some(name=>isOnholdStatus(value(row,[name]))))tnAliases(tn).forEach(alias=>onholdAliasesFromRows.add(alias));
+    if(tn&&statusFields.some(name=>isOnholdStatus(value(row,[name])))){
+      tnAliases(tn).forEach(alias=>onholdAliasesFromRows.add(alias));
+      const tnKey=key(tn),existing=onholdRowsByTn.get(tnKey);
+      const rowHasHoldTime=!!value(row,["OnHold Time","On Hold Time"]);
+      const existingHasHoldTime=!!(existing&&value(existing,["OnHold Time","On Hold Time"]));
+      if(!existing||(!existingHasHoldTime&&rowHasHoldTime))onholdRowsByTn.set(tnKey,row);
+    }
   });
   const seen=new Set(),records=[];
   sourceRows.forEach(row=>{
@@ -137,7 +143,7 @@ function build(){
       riderKey:riderKey,hasScanner:hasScanner,vehicle:vehicleType,assigned:assigned,
       comparison:comparison,status:displayStatus,onhold:onhold,delivered:delivered,
       delivering:delivering,area:String(row?._area||"").trim().toUpperCase(),
-      date:activityDate(row,activityStatusKey)
+      date:activityDate(onhold?(onholdRowsByTn.get(tnKey)||row):row,activityStatusKey)
     });
   });
   return {records:records,sourceCount:Array.isArray(source)?source.length:0};
