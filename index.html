@@ -2144,6 +2144,69 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
   }
 }
 </style>
+
+<style id="daily-history-data-page-upgrade-v1">
+/* Data / Daily History page: scoped visual repair and responsive layout. */
+#dailyHistory.page{padding:20px 22px 30px!important;min-width:0!important}
+#dailyHistory .dh2{display:flex!important;flex-direction:column!important;gap:16px!important;width:100%!important;max-width:100%!important;padding:0 0 28px!important;color:var(--text,#17212b)!important}
+#dailyHistory .dh2 *{box-sizing:border-box!important}
+#dailyHistory .dh2-head{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;padding:0 0 12px!important;border-bottom:1px solid var(--line,#dce3ea)!important}
+#dailyHistory .dh2-title{display:flex!important;align-items:center!important;gap:10px!important;min-width:0!important}
+#dailyHistory .dh2-sub{font-size:13px!important;line-height:1.45!important;color:var(--muted,#667085)!important}
+#dailyHistory .dh2-actions{display:flex!important;align-items:center!important;gap:8px!important;flex-wrap:wrap!important}
+#dailyHistory .dh2-actions .btn{min-height:38px!important;padding:8px 13px!important;border-radius:9px!important;font-size:12px!important;font-weight:750!important;white-space:nowrap!important}
+#dailyHistory .dh2-datebar{display:flex!important;align-items:center!important;gap:8px!important;min-width:0!important;padding:2px 0!important}
+#dailyHistory .dh2-datebar>button,#dailyHistory .dh2-datebar input{height:38px!important;border:1px solid var(--line,#dce3ea)!important;border-radius:9px!important;background:var(--panel,#fff)!important;color:var(--text,#17212b)!important;font-size:12px!important;font-weight:700!important}
+#dailyHistory .dh2-datebar>button{width:38px!important;padding:0!important}
+#dailyHistory .dh2-datebar input{width:160px!important;flex:0 0 160px!important;padding:0 10px!important}
+#dailyHistory .dh2-datelabel{font-size:13px!important;font-weight:750!important;color:var(--text,#17212b)!important}
+#dailyHistory .dh2-chips{display:flex!important;gap:6px!important;flex:1 1 100%!important;min-width:0!important;overflow-x:auto!important;padding:3px 0 5px!important}
+#dailyHistory .dh2-chips button{height:31px!important;padding:0 11px!important;border:1px solid var(--line,#dce3ea)!important;border-radius:999px!important;background:var(--panel,#fff)!important;color:var(--muted,#667085)!important;font-size:11px!important;font-weight:750!important;white-space:nowrap!important}
+#dailyHistory .dh2-chips button.is-on{background:#1677e8!important;border-color:#1677e8!important;color:#fff!important}
+#dailyHistory .dh2-meta{display:flex!important;align-items:center!important;gap:8px!important;font-size:12px!important;color:var(--muted,#667085)!important;line-height:1.4!important}
+#dailyHistory .dh2-meta.is-live{padding:9px 11px!important;border:1px solid #16a36a40!important;border-radius:9px!important;background:#16a36a0d!important;color:#168052!important}
+#dailyHistory .dh2-meta.is-live i{width:8px!important;height:8px!important;flex:0 0 8px!important;border-radius:50%!important;background:#16a36a!important;box-shadow:0 0 0 3px #16a36a20!important}
+#dailyHistory .dh2-cards{display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr))!important;gap:10px!important}
+#dailyHistory .dh2-card{display:flex!important;flex-direction:column!important;justify-content:center!important;gap:4px!important;min-width:0!important;min-height:100px!important;padding:13px 14px!important;border:1px solid var(--line,#dce3ea)!important;border-radius:12px!important;background:var(--panel,#fff)!important;box-shadow:0 2px 7px #17212b0a!important;overflow:hidden!important}
+#dailyHistory .dh2-card-l{font-size:10px!important;font-weight:800!important;letter-spacing:.065em!important;color:var(--muted,#667085)!important;text-transform:uppercase!important}
+#dailyHistory .dh2-card strong{font-size:clamp(20px,1.65vw,27px)!important;line-height:1.15!important;font-weight:850!important;color:var(--text,#17212b)!important;font-variant-numeric:tabular-nums!important}
+#dailyHistory .dh2-card::before{width:3px!important}
+#dailyHistory .dh2-d{font-size:10px!important;font-weight:700!important;color:var(--muted,#667085)!important}
+#dailyHistory .dh2-fleet{display:flex!important;align-items:center!important;gap:7px!important;flex-wrap:wrap!important}
+#dailyHistory .dh2-fleet>span{display:inline-flex!important;align-items:baseline!important;gap:6px!important;padding:7px 11px!important;border:1px solid var(--line,#dce3ea)!important;border-radius:9px!important;background:var(--panel,#fff)!important;font-size:11px!important;color:var(--muted,#667085)!important}
+#dailyHistory .dh2-fleet>span b{font-size:14px!important;font-weight:850!important;color:var(--text,#17212b)!important}
+#dailyHistory .dh2-alert{min-height:32px!important;padding:6px 11px!important;border-radius:9px!important;font-size:11px!important;font-weight:750!important}
+#dailyHistory .dh2-charts{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important;align-items:stretch!important}
+#dailyHistory .dh2-chart{display:flex!important;flex-direction:column!important;min-width:0!important;min-height:174px!important;padding:13px 15px!important;border:1px solid var(--line,#dce3ea)!important;border-radius:12px!important;background:var(--panel,#fff)!important;box-shadow:0 2px 7px #17212b0a!important}
+#dailyHistory .dh2-chart-t{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;margin:0 0 8px!important;color:var(--muted,#667085)!important;font-size:11px!important;font-weight:800!important}
+#dailyHistory .dh2-chart-t b{font-size:17px!important;font-weight:850!important;color:var(--text,#17212b)!important}
+#dailyHistory .dh2-chart svg{display:block!important;width:100%!important;height:112px!important;min-height:112px!important;max-height:112px!important;overflow:visible!important;background:transparent!important}
+#dailyHistory .dh2-chart rect:not(.dh2-hit){fill:#4b9bea!important}
+#dailyHistory .dh2-chart .dh2-pt.is-sel rect:not(.dh2-hit){fill:#1269ce!important}
+#dailyHistory .dh2-chart .dh2-line{fill:none!important;stroke:#2586e8!important;stroke-width:2.5!important}
+#dailyHistory .dh2-chart .dh2-pt circle{fill:var(--panel,#fff)!important;stroke:#2586e8!important;stroke-width:2!important}
+#dailyHistory .dh2-chart .dh2-pt.is-sel circle{fill:#2586e8!important}
+#dailyHistory .dh2-chart rect.dh2-hit{fill:transparent!important}
+#dailyHistory .dh2-chart-x{display:flex!important;justify-content:space-between!important;gap:8px!important;margin-top:5px!important;color:var(--muted,#667085)!important;font-size:10px!important}
+#dailyHistory .dh2-tabs{display:flex!important;gap:3px!important;min-width:0!important;overflow-x:auto!important;border-bottom:1px solid var(--line,#dce3ea)!important}
+#dailyHistory .dh2-tabs button{min-height:42px!important;padding:9px 13px!important;border:0!important;border-bottom:3px solid transparent!important;background:transparent!important;color:var(--muted,#667085)!important;font-size:12px!important;font-weight:800!important;white-space:nowrap!important}
+#dailyHistory .dh2-tabs button.is-on{color:#1677e8!important;border-bottom-color:#1677e8!important}
+#dailyHistory .dh2-tab-body{display:flex!important;flex-direction:column!important;gap:10px!important;min-width:0!important}
+#dailyHistory .dh2-tools{display:flex!important;align-items:center!important;gap:8px!important;flex-wrap:wrap!important}
+#dailyHistory .dh2-tools input,#dailyHistory .dh2-tools select{height:38px!important;min-width:0!important;padding:0 11px!important;border:1px solid var(--line,#dce3ea)!important;border-radius:9px!important;background:var(--panel,#fff)!important;color:var(--text,#17212b)!important;font-size:12px!important}
+#dailyHistory .dh2-tablewrap{width:100%!important;max-width:100%!important;overflow:auto!important;border:1px solid var(--line,#dce3ea)!important;border-radius:11px!important;background:var(--panel,#fff)!important}
+#dailyHistory .dh2-table{width:100%!important;border-collapse:collapse!important;font-size:12px!important}
+#dailyHistory .dh2-table th{padding:10px 12px!important;background:var(--panel2,#f4f7fa)!important;color:var(--muted,#667085)!important;font-size:10px!important;font-weight:850!important;letter-spacing:.05em!important}
+#dailyHistory .dh2-table td{padding:10px 12px!important;border-top:1px solid var(--line,#dce3ea)!important;color:var(--text,#17212b)!important}
+#dailyHistory .dh2-empty{padding:22px!important;border:1px dashed var(--line,#dce3ea)!important;border-radius:12px!important;background:var(--panel,#fff)!important;color:var(--muted,#667085)!important;font-size:12px!important;text-align:center!important}
+@media(max-width:1200px){#dailyHistory .dh2-cards{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+@media(max-width:760px){#dailyHistory.page{padding:14px 12px 24px!important}#dailyHistory .dh2-head{align-items:flex-start!important;flex-direction:column!important}#dailyHistory .dh2-cards{grid-template-columns:repeat(2,minmax(0,1fr))!important}#dailyHistory .dh2-charts{grid-template-columns:1fr!important}#dailyHistory .dh2-datebar{flex-wrap:wrap!important}#dailyHistory .dh2-chips{flex-basis:100%!important;order:5!important}#dailyHistory .dh2-card{min-height:88px!important;padding:11px!important}}
+@media(max-width:390px){#dailyHistory .dh2-cards{grid-template-columns:1fr 1fr!important;gap:7px!important}#dailyHistory .dh2-card strong{font-size:20px!important}}
+html[data-theme="dark"] #dailyHistory .dh2-card,html[data-theme="dark"] #dailyHistory .dh2-chart,html[data-theme="dark"] #dailyHistory .dh2-tablewrap{box-shadow:none!important}
+html[data-theme="dark"] #dailyHistory .dh2-chart rect:not(.dh2-hit){fill:#397fbd!important}
+html[data-theme="dark"] #dailyHistory .dh2-chart .dh2-pt.is-sel rect:not(.dh2-hit){fill:#60a5fa!important}
+</style>
+
 </head>
 <body data-app-version="21">
 
