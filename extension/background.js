@@ -856,6 +856,99 @@ async function exportAssignedParcelsTodayFromSpx(jobOverride = null, options = {
   };
 }
 
+async function exportOnHoldOidsFromSpx(jobOverride = null) {
+  const job = jobOverride || {
+    kind: "pod-checker-onhold",
+    startedAt: Date.now(),
+    cancelled: false,
+    trackingStatus: "5"
+  };
+  job.trackingStatus = "5";
+
+  // Request the current OnHold status without an assigned-time or created-date window.
+  const body = {
+    tracking_status: "5",
+    bulky_type: "1,0,2",
+    format_condition:
+      "Status Log= OnHold; " +
+      "Current Station= Badoc Hub; " +
+      "Bulky Type= Bulky,N/A,Non-Bulky; " +
+      "Driver= All"
+  };
+
+  notifyPodCheckerAssignedProgress("Submitting SPX current OnHold-only export for Badoc Hub…");
+  const response = await extensionFetchText(SPX_ORIGIN + PARCEL_FORWARD_EXPORT_PATH, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/plain, */*"
+    },
+    body: JSON.stringify(body)
+  });
+  const json = parseJsonResponse("SPX OnHold export", response);
+  if (!response.ok || Number(json?.retcode) !== 0) {
+    throw new Error(json?.message || "SPX OnHold export failed (HTTP " + response.status + ").");
+  }
+
+  const taskId = Number(json?.data?.task_id || json?.task_id || 0);
+  if (!taskId) throw new Error("SPX accepted the OnHold export request but returned no task ID.");
+
+  notifyPodCheckerAssignedProgress("SPX OnHold export task " + taskId + " created. Waiting for completion…");
+  const waitStartSec = Math.max(0, Math.floor((job.startedAt - 10 * 60 * 1000) / 1000));
+  const completed = await waitForCompletion(taskId, waitStartSec, job);
+  if (!isParcelDeliveryTask(completed, job)) {
+    throw new Error("The completed SPX task does not match the requested OnHold-only export.");
+  }
+
+  notifyPodCheckerAssignedProgress("SPX OnHold export completed. Downloading its CSV…");
+  const signedUrl = await getSignedDownloadUrl(taskId);
+  const csv = await downloadCsv(signedUrl);
+  const extracted = extractAssignedParcelOids(csv.text);
+
+  const stationIndex = findAssignedExportColumn(extracted.headers, [
+    "current station", "current station name", "current hub", "current hub name"
+  ]);
+  if (stationIndex < 0) {
+    throw new Error("SPX OnHold CSV is missing the Current Station column, so the hub filter cannot be verified.");
+  }
+
+  const statusIndex = findAssignedExportColumn(extracted.headers, [
+    "status", "current status", "tracking status", "shipment status"
+  ]);
+  const keptRows = extracted.rows.filter(row => {
+    const station = String(row[stationIndex] ?? "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+    if (!station.includes("badoc hub")) return false;
+    if (statusIndex >= 0) {
+      const status = String(row[statusIndex] ?? "").trim();
+      if (status && !/on[\s_-]*hold/i.test(status)) return false;
+    }
+    return true;
+  });
+
+  const oids = [...new Set(
+    extractAssignedParcelOidsFromRows(extracted.headers, keptRows)
+      .map(value => String(value || "").trim().toUpperCase())
+      .filter(Boolean)
+  )];
+  const oidRows = keptRows.reduce((count, row) =>
+    count + (extractAssignedParcelOidsFromRows(extracted.headers, [row]).length ? 1 : 0), 0
+  );
+
+  return {
+    ok: true,
+    source: "SPX OnHold export",
+    status: "OnHold",
+    station: "Badoc Hub",
+    taskId,
+    rowCount: keptRows.length,
+    rawRowCount: extracted.rows.length,
+    excludedOtherStation: extracted.rows.length - keptRows.length,
+    duplicateCount: Math.max(0, oidRows - oids.length),
+    oids,
+    fileName: csv.fileName
+  };
+}
+
 async function ensureToListRoute(tabId) {
   const tab = await chrome.tabs.get(tabId);
   const currentUrl = String(tab?.url || "");
@@ -2134,6 +2227,40 @@ chrome.runtime.onConnect.addListener(port => {
       return;
     }
 
+    if (type === "BADOC_START_POD_CHECKER_ONHOLD") {
+      const requestId = String(message?.requestId || "");
+      const job = reserveActiveJob("pod-checker-onhold", port, {
+        requestId,
+        startedAt: Date.now(),
+        trackingStatus: "5"
+      });
+      if (!job) {
+        sendToPort(port, "BADOC_POD_CHECKER_ONHOLD_ERROR", {
+          requestId,
+          message: "Another SPX export is already running. Try SPX OnHold again after it finishes."
+        });
+        return;
+      }
+      sendToPort(port, "BADOC_POD_CHECKER_ONHOLD_ACCEPTED", {
+        requestId,
+        message: "Extension accepted SPX OnHold. Preparing an OnHold-only export…"
+      });
+      void (async () => {
+        try {
+          const result = await exportOnHoldOidsFromSpx(job);
+          sendToPort(port, "BADOC_POD_CHECKER_ONHOLD_COMPLETE", { requestId, result });
+        } catch (error) {
+          sendToPort(port, "BADOC_POD_CHECKER_ONHOLD_ERROR", {
+            requestId,
+            message: error?.message || String(error)
+          });
+        } finally {
+          releaseActiveJob(job);
+        }
+      })();
+      return;
+    }
+
     if (type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" || type === "BADOC_START_FIRST_MILE_TASKS_SYNC") {
       const kind = type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" ? "first-mile-orders" : "first-mile-tasks";
       sendToPort(port, "BADOC_SPX_COMMAND_ACCEPTED", { kind, message: `Extension background accepted ${kind === "first-mile-orders" ? "First Mile Orders" : "First Mile Tasks"} export. Preparing SPX request…` });
@@ -2290,6 +2417,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ───────── Integrated POD/POOH Checker background actions ─────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || message.target !== "POD_CHECKER_BACKGROUND") return false;
+
+  if (message.action === "EXPORT_ONHOLD_OIDS_FROM_SPX") {
+    (async () => {
+      try { sendResponse(await exportOnHoldOidsFromSpx()); }
+      catch (error) { sendResponse({ ok: false, error: error?.message || String(error) }); }
+    })();
+    return true;
+  }
 
   if (message.action === "EXPORT_ASSIGNED_PARCELS_TODAY") {
     (async () => {
