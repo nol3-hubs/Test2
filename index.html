@@ -12669,12 +12669,71 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   let activeDetailKey="";
   let activeDetailPage=1;
   let activeDetailCount=null;
+  let activeDetailRiderFilter="";
 
   function renderRowsPage(){
     const body=byId("dashboardParcelDetailBody");
     if(!body)return;
-    const rows=activeDetailRows;
+    const allRows=activeDetailRows;
     body.replaceChildren();
+
+    if(activeDetailKey==="delivering"&&allRows.length){
+      const riderCounts=new Map();
+      allRows.forEach(item=>{
+        const name=String(item?.rider??"").trim();
+        const key=name?"rider:"+name.toLocaleLowerCase():"unassigned";
+        const entry=riderCounts.get(key)||{name:name||"Unassigned",count:0};
+        entry.count++;
+        riderCounts.set(key,entry);
+      });
+
+      const filterWrap=document.createElement("div");
+      filterWrap.className="dashboard-parcel-detail-rider-filter";
+      filterWrap.style.cssText="display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:0 0 12px;color:var(--c-9fb0bf-text);font-size:12px";
+
+      const filterLabel=document.createElement("label");
+      filterLabel.textContent="Filter by rider";
+      filterLabel.htmlFor="dashboardParcelDetailRiderFilter";
+      filterLabel.style.cssText="font-weight:600;white-space:nowrap";
+
+      const riderSelect=document.createElement("select");
+      riderSelect.id="dashboardParcelDetailRiderFilter";
+      riderSelect.setAttribute("aria-label","Filter Delivering parcels by rider");
+      riderSelect.style.cssText="min-width:260px;max-width:100%;border:1px solid var(--c-344454-border);background:var(--c-10161e-bg);color:var(--c-f4f9fc-text);border-radius:8px;padding:8px 10px;font:inherit";
+
+      const allOption=document.createElement("option");
+      allOption.value="";
+      allOption.textContent="All riders ("+allRows.length.toLocaleString()+")";
+      riderSelect.appendChild(allOption);
+
+      [...riderCounts.entries()]
+        .sort((a,b)=>b[1].count-a[1].count||a[1].name.localeCompare(b[1].name))
+        .forEach(([key,entry])=>{
+          const option=document.createElement("option");
+          option.value=key;
+          option.textContent=entry.name+" ("+entry.count.toLocaleString()+")";
+          riderSelect.appendChild(option);
+        });
+
+      riderSelect.value=activeDetailRiderFilter;
+      riderSelect.addEventListener("change",()=>{
+        activeDetailRiderFilter=riderSelect.value;
+        activeDetailPage=1;
+        renderRowsPage();
+      });
+
+      filterWrap.appendChild(filterLabel);
+      filterWrap.appendChild(riderSelect);
+      body.appendChild(filterWrap);
+    }
+
+    const rows=activeDetailKey==="delivering"&&activeDetailRiderFilter
+      ?allRows.filter(item=>{
+        const name=String(item?.rider??"").trim();
+        const key=name?"rider:"+name.toLocaleLowerCase():"unassigned";
+        return key===activeDetailRiderFilter;
+      })
+      :allRows;
 
     if(!rows.length){
       const empty=document.createElement("div");
@@ -12757,6 +12816,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     activeDetailRows=Array.isArray(data.rows)?data.rows:[];
     activeDetailKey=key;
     activeDetailPage=1;
+    activeDetailRiderFilter="";
 
     const title=byId("dashboardParcelDetailTitle");
     const summary=byId("dashboardParcelDetailSummary");
