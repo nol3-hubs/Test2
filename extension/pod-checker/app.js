@@ -325,12 +325,12 @@ $('spxOnhold')?.addEventListener("click", async () => {
           target: "POD_CHECKER_BACKGROUND",
           action: "EXPORT_ONHOLD_OIDS_FROM_SPX"
         });
-    if (!reply) throw new Error("The extension returned an empty SPX OnHold result. Reload the extension and refresh BADOC HUB.");
+    if (!reply) throw new Error("The extension returned an empty OnHold result. Reload the extension and refresh BADOC HUB.");
     if (reply.ok !== true) throw new Error(reply.error || "OnHold data could not be loaded.");
     const oids = [...new Set((Array.isArray(reply.oids) ? reply.oids : [])
       .map(value => String(value || "").trim().toUpperCase()).filter(Boolean))];
     $("oids").value = oids.join("\n");
-    saveOids().catch(error => console.warn("POD Checker could not save the SPX OnHold OID list:", error));
+    saveOids().catch(error => console.warn("POD Checker could not save the OnHold OID list:", error));
     if (!oids.length) {
       setStatus("SPX returned no current OnHold OIDs for Badoc Hub.", "good");
     } else {
