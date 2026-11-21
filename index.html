@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v110">
+<meta name="badoc-app-version" content="v111">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -16704,6 +16704,104 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
 
 
 
+<style id="pickup-toolbar-layout-fix-v111">
+/* Keep the Pickup search, copy actions, and sync action in separate grid tracks. */
+#firstMile .pickup-combined-controls{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) max-content max-content!important;
+  align-items:center!important;
+  gap:10px!important;
+  width:100%!important;
+}
+#firstMile .pickup-combined-controls #firstMileCombinedSearch{
+  grid-column:1!important;
+  grid-row:1!important;
+  width:100%!important;
+  min-width:0!important;
+}
+#firstMile .pickup-combined-controls .pickup-copy-actions{
+  grid-column:2!important;
+  grid-row:1!important;
+  display:flex!important;
+  flex-wrap:nowrap!important;
+  align-items:center!important;
+  justify-content:flex-start!important;
+  gap:8px!important;
+  width:max-content!important;
+  max-width:100%!important;
+  min-width:0!important;
+}
+#firstMile .pickup-combined-controls #syncFirstMileAll{
+  grid-column:3!important;
+  grid-row:1!important;
+  justify-self:end!important;
+  width:auto!important;
+  max-width:100%!important;
+  white-space:nowrap!important;
+}
+#firstMile .pickup-combined-controls .pickup-copy-actions>button{
+  flex:0 0 auto!important;
+  min-width:max-content!important;
+}
+@media(max-width:1180px){
+  #firstMile .pickup-combined-controls{
+    grid-template-columns:minmax(0,1fr) max-content!important;
+  }
+  #firstMile .pickup-combined-controls #firstMileCombinedSearch{
+    grid-column:1/-1!important;
+    grid-row:1!important;
+  }
+  #firstMile .pickup-combined-controls .pickup-copy-actions{
+    grid-column:1!important;
+    grid-row:2!important;
+    flex-wrap:wrap!important;
+    width:100%!important;
+  }
+  #firstMile .pickup-combined-controls #syncFirstMileAll{
+    grid-column:2!important;
+    grid-row:2!important;
+    justify-self:end!important;
+  }
+}
+@media(max-width:720px){
+  #firstMile .pickup-combined-controls{
+    grid-template-columns:minmax(0,1fr)!important;
+    gap:8px!important;
+  }
+  #firstMile .pickup-combined-controls #firstMileCombinedSearch,
+  #firstMile .pickup-combined-controls .pickup-copy-actions,
+  #firstMile .pickup-combined-controls #syncFirstMileAll{
+    grid-column:1!important;
+    width:100%!important;
+    max-width:100%!important;
+  }
+  #firstMile .pickup-combined-controls #firstMileCombinedSearch{grid-row:1!important}
+  #firstMile .pickup-combined-controls .pickup-copy-actions{
+    grid-row:2!important;
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:8px!important;
+  }
+  #firstMile .pickup-combined-controls .pickup-copy-actions>button{
+    width:100%!important;
+    min-width:0!important;
+    white-space:normal!important;
+    text-align:center!important;
+  }
+  #firstMile .pickup-combined-controls #copyPickupTaskManagement{grid-column:1/-1!important}
+  #firstMile .pickup-combined-controls #syncFirstMileAll{
+    grid-row:3!important;
+    justify-self:stretch!important;
+    width:100%!important;
+  }
+}
+@media(max-width:440px){
+  #firstMile .pickup-combined-controls .pickup-copy-actions{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  #firstMile .pickup-combined-controls #copyPickupTaskManagement{grid-column:1!important}
+}
+</style>
 </body>
 
 
