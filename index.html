@@ -10973,8 +10973,6 @@ window.updateOperationProgress=function(){
   // Dispatched is refreshed below, after the current On-Hold total is finalized.
   const setMetricText=(id,value)=>{const el=document.getElementById(id);if(el)el.textContent=value===undefined||value===null||String(value).trim()===""?"—":String(value)};
   setText("opRts",rtsTnKeys.size);
-  setMetricText("opTotalRiders","—");
-  setMetricText("opSuccessRate","—");
   setText("opExemptions",Array.isArray(exceptionTrackingNumbers)?exceptionTrackingNumbers.length:0);
   let incomingCardTotal=0;
   try{
@@ -11397,6 +11395,19 @@ window.updateOperationProgress=function(){
   const onHold=onholdTnKeys.size;
   counts.ONHOLD=onHold;
   setText("opOnHold",onHold);
+
+  // Hub Performance uses the same unique assigned-rider total shown in
+  // Dashboard → Assigned Riders, covering Badoc and Pinili without double-counting.
+  try { window.__badocRenderDashboardRiderSummary?.(); }
+  catch(e) { console.warn("Hub Performance rider total could not refresh:",e); }
+  const assignedRiderTotal=document.getElementById("dashboardRiderTotal");
+  setMetricText("opTotalRiders",assignedRiderTotal?assignedRiderTotal.textContent.trim():"—");
+
+  // Match Daily History: delivered / (delivered + delivering + on-hold + received).
+  // The status population excludes exemptions and uses the live operational counts.
+  const successRateDenominator=(counts.DELIVERED||0)+onHold+(counts.DELIVERING||0)+(counts.RECEIVED||0);
+  const successRate=successRateDenominator>0?((counts.DELIVERED||0)/successRateDenominator)*100:null;
+  setMetricText("opSuccessRate",successRate===null?"—":successRate.toFixed(1)+"%");
 
   // Redeliver is sourced only from qualifying SPX parcel records.
   // The EOD-sheet aggregate is intentionally not included.
@@ -15429,6 +15440,9 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     });
     var totalNode=el("dashboardRiderTotal"),twoNode=el("dashboardRider2WH"),threeNode=el("dashboardRider3WH"),flexiNode=el("dashboardRiderFlexi"),noteNode=el("dashboardRiderNote");
     if(totalNode)totalNode.textContent=counts.total.toLocaleString();
+    // Keep Hub Performance in sync immediately when town rider assignments change.
+    var hubTotalNode=el("opTotalRiders");
+    if(hubTotalNode)hubTotalNode.textContent=counts.total.toLocaleString();
     if(twoNode)twoNode.textContent=counts.two.toLocaleString();
     if(threeNode)threeNode.textContent=counts.three.toLocaleString();
     if(flexiNode)flexiNode.textContent=counts.flexi.toLocaleString();
