@@ -316,7 +316,7 @@ $('spxOnhold')?.addEventListener("click", async () => {
   if (assignedButton) assignedButton.disabled = true;
   const originalLabel = button.textContent;
   button.textContent = "Loading SPX OnHold…";
-  setStatus("Getting current OnHold parcels from SPX for Badoc Hub…");
+  setStatus("Getting current OnHold parcels from the SPX Forward Order export for Badoc Hub…");
   try {
     const requestId = "pod-checker-onhold-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
     const reply = window.podChrome
