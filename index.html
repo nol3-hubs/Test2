@@ -5206,12 +5206,15 @@ function renderParcelUploadStatus(){
 const PARCEL_INCOMING_KEY="badoc_parcel_incoming_linehaul_v1";function parcelIncomingEnabled(){
  try{return localStorage.getItem(PARCEL_INCOMING_KEY)==="1"}catch(e){return false}
 }
-function getParcelIncomingLinehaul(){
+function getParcelIncomingLinehaul(options={}){
+  const includeExemptions=options?.includeExemptions===true;
   /*
     Parcel Count incoming Linehaul uses the same core logic as Today's Volume:
     - Match Linehaul Task SPX TNs to Parcel Records Order ID.
     - Count each SPX TN only once across all Linehaul Tasks.
-    - Exclude exception/exemption tracking numbers.
+    - Exemptions are excluded by default in ordinary Parcel Count views, but
+      callers calculating Today's Volume can include them so the exemption
+      list cannot reduce the daily operating-volume total.
     - Only count parcels whose matched Town Name belongs to the configured
       BADOC/PINILI town lists shown in Parcel Count.
     - Town counts use the same unique-SPX-TN set, so duplicates cannot inflate
@@ -5258,8 +5261,9 @@ function getParcelIncomingLinehaul(){
 
         // Match the same exception rule used by Parcel Count. Check the
         // matched Parcel Record itself and the Linehaul SPX TN key.
-        if((typeof isExceptionRow==="function"&&isExceptionRow(parcel)) ||
-           exceptionSet.has(typeof tnKey==="function"?tnKey(tn):tn)) return;
+        if(!includeExemptions&&
+           ((typeof isExceptionRow==="function"&&isExceptionRow(parcel)) ||
+            exceptionSet.has(typeof tnKey==="function"?tnKey(tn):tn))) return;
 
         seen.add(tn);
         incomingRows.push(parcel);
@@ -10608,9 +10612,12 @@ window.updateOperationProgress=function(){
   const liveTodayRows=typeof getParcelCountRows==="function"
     ?getParcelCountRows()
     :allRows.filter(r=>!isExceptionRow(r));
-  // Backlogs has its own Parcel Count view so adding an exemption never
-  // removes the parcel from this metric. All other dashboard populations keep
+  // Today's Volume is independent of the Exemptions list: exempted parcels
+  // remain part of the day's incoming workload. Other operational metrics keep
   // using liveTodayRows with their existing exemption handling.
+  const liveTodayVolumeRows=typeof getParcelCountRows==="function"
+    ?getParcelCountRows({includeExemptions:true})
+    :allRows;
   const backlogSourceRows=typeof getParcelCountRows==="function"
     ?getParcelCountRows({includeExemptions:true})
     :allRows;
@@ -10620,7 +10627,7 @@ window.updateOperationProgress=function(){
   let tvLinehaulEnabled=false;
   try{tvLinehaulEnabled=localStorage.getItem(TV_LINEHAUL_KEY)==="1";}catch(e){}
   const incomingForToday=tvLinehaulEnabled && typeof getParcelIncomingLinehaul==="function"
-    ?getParcelIncomingLinehaul()
+    ?getParcelIncomingLinehaul({includeExemptions:true})
     :{total:0,rows:[]};
   const dateKey=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
   const nowManila=__badocTime.manilaDate();
@@ -10695,7 +10702,7 @@ window.updateOperationProgress=function(){
   // when its existing checkbox is enabled; duplicates across sources are removed.
   const baselineByTn=new Map();
   const addBaselineRow=row=>{
-    if(!row||isExceptionRow(row))return;
+    if(!row)return;
     const rawTn=spxTN(row),key=tnKey(rawTn);
     if(!key||baselineByTn.has(key))return;
     const meta=badocRowMeta(row);
@@ -10706,7 +10713,7 @@ window.updateOperationProgress=function(){
       initialStatus:String(meta.status||statusTo(row)||"").trim()
     });
   };
-  liveTodayRows.forEach(addBaselineRow);
+  liveTodayVolumeRows.forEach(addBaselineRow);
   if(tvLinehaulEnabled)(Array.isArray(incomingForToday.rows)?incomingForToday.rows:[]).forEach(addBaselineRow);
   const liveBaselineRows=[...baselineByTn.values()];
 
@@ -10757,7 +10764,7 @@ window.updateOperationProgress=function(){
         "Parcel Status To":String(liveStatus||item?.initialStatus||""),
         _area:String(item?.area||"")
       };
-    });
+    }).filter(row=>!isExceptionRow(row));
   }
   // liveBaselineRows is already deduplicated by normalized SPX TN across
   // Parcel Count and optional Incoming Linehaul. The snapshot uses that same
@@ -11518,8 +11525,12 @@ window.updateOperationProgress=function(){
   };
 
   const todayVolumeSource=activeVolumeSnapshot
-    ?todayRows
-    :[...liveTodayRows,...(tvLinehaulEnabled&&Array.isArray(incomingForToday?.rows)?incomingForToday.rows:[])];
+    ?activeVolumeSnapshot.rows.map(item=>({
+      "SPX TN":String(item?.tn||""),
+      "Town Name":String(item?.town||""),
+      "Parcel Status To":String(item?.initialStatus||"")
+    }))
+    :[...liveTodayVolumeRows,...(tvLinehaulEnabled&&Array.isArray(incomingForToday?.rows)?incomingForToday.rows:[])];
   const forecastParcelRows=forecastDetailRows
     .filter(item=>forecastGroupEnabled(item.station,item.status))
     .map(item=>item.record)
@@ -11559,8 +11570,8 @@ window.updateOperationProgress=function(){
       note:activeVolumeSnapshot
         ?"Uses the saved 3:00 PM Manila operating-volume population. Statuses shown are the latest statuses available in the loaded data."
         :(tvLinehaulEnabled
-          ?"Includes the live Parcel Count population and enabled Incoming Linehaul parcel rows. Any source count without a matching SPX TN cannot be shown as an individual OID."
-          :"Uses the live Parcel Count population.")
+          ?"Includes all qualifying Parcel Count and enabled Incoming Linehaul parcels, including tracking numbers listed under Exemptions; duplicate SPX TNs are counted once."
+          :"Uses all qualifying Parcel Count parcels, including tracking numbers listed under Exemptions; duplicate SPX TNs are counted once.")
     },
     dispatched:{
       count:dispatchedTotal,rows:dispatchedDetailRows,
