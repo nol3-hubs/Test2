@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v115">
+<meta name="badoc-app-version" content="v116">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -13368,7 +13368,8 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
     // EOD Riders and Leaderboard share the same deduplicated actual-scanner data as the dashboard page.
     const actualScanData=typeof window.__badocGetActualScannedByRidersData==="function"
       ?window.__badocGetActualScannedByRidersData():{records:[],sourceCount:0};
-    const actualRecords=(Array.isArray(actualScanData?.records)?actualScanData.records:[]).filter(r=>r&&r.hasScanner);
+    const actualParcelRecords=Array.isArray(actualScanData?.records)?actualScanData.records:[];
+    const actualRecords=actualParcelRecords.filter(r=>r&&r.hasScanner);
     const normRiderName=v=>clean(v).toUpperCase().replace(/[\s_-]+/g,"");
     const layoutByRiderArea=new Map();
     riderGroups.forEach(g=>{if(clean(g.rider)){const k=normRiderName(g.rider)+"|"+clean(g.area).toUpperCase();if(!layoutByRiderArea.has(k))layoutByRiderArea.set(k,g);}});
@@ -13472,6 +13473,13 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         status:statusOf(r)
       })),
       exemptionDetails,
+      // Show the coverage behind rider percentages: rows without an actual
+      // Driver/Rider ID or name cannot be assigned to an individual rider.
+      riderAttribution:{
+        eligibleParcels:actualParcelRecords.length,
+        attributedParcels:actualRecords.length,
+        unattributedParcels:Math.max(0,actualParcelRecords.length-actualRecords.length)
+      },
       riderPerformance:groupDetails,
       townPerformance:Object.entries(areaRows).flatMap(([area,areaList])=>{
         const byTown=new Map();
@@ -13620,7 +13628,7 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
       <button type="button" class="dh2-pill${ui.below?" is-on":""}" data-dh-below>Below 90%</button></div>`;
   }
   function statRow(o){
-    return `<div class="dh2-stats"><span><b>${fmt(o.delivered)}</b>Delivered</span><span><b>${fmt(o.delivering)}</b>Delivering</span><span><b>${fmt(o.onHold)}</b>On hold</span><span><b>${fmt(o.total)}</b>Total</span></div>`;
+    return `<div class="dh2-stats"><span><b>${fmt(o.delivered)}</b>Delivered</span><span><b>${fmt(o.onHold)}</b>On hold</span><span><b>${fmt(o.total)}</b>Total</span></div>`;
   }
   function tabRiders(s){
     let g=(Array.isArray(s.riderPerformance)?s.riderPerformance:[]).filter(x=>ui.area==="all"||clean(x.area).toUpperCase()===ui.area);
@@ -13638,15 +13646,17 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
         <div class="dh2-chips-sm">${(x.towns||[]).map(t=>`<span>${escH(t)}</span>`).join("")}</div>
         ${towns.length?`<details data-dh-open="${escH(key)}"${ui.open.has(key)?" open":""}><summary>Town breakdown</summary><div class="dh2-mini">${towns.map(t=>`<div><span>${escH(t.town)}</span><span>${fmt(t.delivered)}/${fmt(t.total)}</span><b class="sr-${srClass(t.successRate)||"none"}">${fmt1(t.successRate)}%</b></div>`).join("")}</div></details>`:""}
       </article>`}).join("");
-    return toolbar(true)+(cards?`<div class="dh2-grid">${cards}</div>`:'<div class="dh2-empty">No riders match these filters.</div>');
+    const a=s.riderAttribution&&typeof s.riderAttribution==="object"?s.riderAttribution:null;
+    const attributionNote=a?`<div class="dh2-note">Source: ${fmt(a.eligibleParcels)} unique eligible Parcel Count parcels; ${fmt(a.attributedParcels)} have an actual Driver/Rider ID or name and are included in rider rates; ${fmt(a.unattributedParcels)} without an identifiable actual rider are excluded. Success rate = Delivered ÷ attributed parcels. Planned Assigned Rider is not used.</div>`:"";
+    return toolbar(true)+attributionNote+(cards?`<div class="dh2-grid">${cards}</div>`:'<div class="dh2-empty">No riders match these filters.</div>');
   }
   function tabTowns(s){
     let t=(Array.isArray(s.townPerformance)?s.townPerformance:[]).filter(x=>x&&clean(x.town)&&(ui.area==="all"||clean(x.area).toUpperCase()===ui.area));
     t=t.filter(x=>matchQ(x.town));
     if(ui.below)t=t.filter(x=>n(x.successRate)<90);
     t=t.slice().sort((a,b)=>n(a.successRate)-n(b.successRate)||String(a.town).localeCompare(String(b.town)));
-    const rows=t.map(x=>`<tr><td><div class="dh2-town-cell"><strong>${escH(x.town)}</strong><small class="dh2-area-label">${escH(x.area)}</small></div></td><td>${fmt(x.delivered)}</td><td>${fmt(x.delivering)}</td><td>${fmt(x.onHold)}</td><td>${fmt(x.total)}</td><td><div class="dh2-rate"><i class="sr-${srClass(x.successRate)||"none"}" style="--w:${Math.min(100,n(x.successRate)).toFixed(1)}%"></i><b>${fmt1(x.successRate)}%</b></div></td></tr>`).join("");
-    return toolbar(false)+(rows?`<div class="dh2-tablewrap"><table class="dh2-table"><thead><tr><th>Town</th><th>Delivered</th><th>Delivering</th><th>On hold</th><th>Total</th><th>Success</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="dh2-empty">No towns match these filters.</div>');
+    const rows=t.map(x=>`<tr><td><div class="dh2-town-cell"><strong>${escH(x.town)}</strong><small class="dh2-area-label">${escH(x.area)}</small></div></td><td>${fmt(x.delivered)}</td><td>${fmt(x.onHold)}</td><td>${fmt(x.total)}</td><td><div class="dh2-rate"><i class="sr-${srClass(x.successRate)||"none"}" style="--w:${Math.min(100,n(x.successRate)).toFixed(1)}%"></i><b>${fmt1(x.successRate)}%</b></div></td></tr>`).join("");
+    return toolbar(false)+(rows?`<div class="dh2-tablewrap"><table class="dh2-table"><thead><tr><th>Town</th><th>Delivered</th><th>On hold</th><th>Total</th><th>Success</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="dh2-empty">No towns match these filters.</div>');
   }
   function tabCfr1(s){
     const c=s.cfr1&&typeof s.cfr1==="object"?s.cfr1:null,m=s.metrics||{};
@@ -13663,22 +13673,22 @@ html[data-theme="light"] #badocPickupInfoModal .pickup-info-card{
   function tabBoard(s){
     const l=Array.isArray(s.eodLeaderboard)?s.eodLeaderboard:[];
     if(!l.length)return '<div class="dh2-empty">No riders with recognized actual scans for this date.</div>';
-    return '<div class="dh2-tablewrap"><table class="dh2-table"><thead><tr><th>#</th><th>Rider</th><th>Vehicle</th><th>Scanned</th><th>Delivered</th><th>Delivering</th><th>On hold</th><th>Success</th></tr></thead><tbody>'+l.map(r=>
+    return '<div class="dh2-tablewrap"><table class="dh2-table"><thead><tr><th>#</th><th>Rider</th><th>Vehicle</th><th>Scanned</th><th>Delivered</th><th>On hold</th><th>Success</th></tr></thead><tbody>'+l.map(r=>
       '<tr><td>'+escH(r.rank)+'</td><td><strong>'+escH(r.name)+'</strong></td><td>'+escH(r.service||"—")+'</td>'+
-      '<td>'+fmt(r.scanned)+'</td><td>'+fmt(r.delivered)+'</td><td>'+fmt(r.delivering)+'</td><td>'+fmt(r.onHold)+'</td><td>'+fmt1(r.successRate)+'%</td></tr>').join("")+
+      '<td>'+fmt(r.scanned)+'</td><td>'+fmt(r.delivered)+'</td><td>'+fmt(r.onHold)+'</td><td>'+fmt1(r.successRate)+'%</td></tr>').join("")+
       '</tbody></table></div>';
   }
   function tabExceptions(s){
     const mis=Array.isArray(s.misroutedDetails)?s.misroutedDetails:[];
     const rawEx=Array.isArray(s.exemptionDetails)?s.exemptionDetails:[];
     const ex=rawEx.map(r=>typeof r==="string"?({tracking:r,orderId:"",town:"",currentStation:"",status:""}):(r||{}));
-    const parcelTable=rows=>rows.length?'<div class="dh2-tablewrap"><table class="dh2-table"><thead><tr><th>Tracking</th><th>Order ID</th><th>Town</th><th>Current station</th><th>Status</th></tr></thead><tbody>'+rows.map(r=>
+    const parcelTable=rows=>rows.length?'<div class="dh2-tablewrap"><table class="dh2-table dh2-exception-table"><thead><tr><th>Tracking</th><th>Order ID</th><th>Town</th><th>Current station</th><th>Status</th></tr></thead><tbody>'+rows.map(r=>
       '<tr><td>'+escH(r.tracking||"—")+'</td><td>'+escH(r.orderId||"—")+'</td><td>'+escH(r.town||"—")+'</td><td>'+escH(r.currentStation||"—")+'</td><td>'+escH(r.status||"—")+'</td></tr>').join("")+
       '</tbody></table></div>':'<div class="dh2-empty">No matching parcels.</div>';
-    return '<h4 class="dh2-h">Misrouted parcels <span>'+fmt(mis.length)+'</span></h4>'+
-      (mis.length?parcelTable(mis):'<div class="dh2-empty">No misrouted parcels.</div>')+
-      '<h4 class="dh2-h">Exemptions <span>'+fmt(ex.length)+'</span></h4>'+
-      (ex.length?parcelTable(ex):'<div class="dh2-empty">No exemptions.</div>');
+    return '<h4 class="dh2-h">Exemptions <span>'+fmt(ex.length)+'</span></h4>'+
+      (ex.length?parcelTable(ex):'<div class="dh2-empty">No exemptions.</div>')+
+      '<h4 class="dh2-h">Misrouted parcels <span>'+fmt(mis.length)+'</span></h4>'+
+      (mis.length?parcelTable(mis):'<div class="dh2-empty">No misrouted parcels.</div>');
   }
       function buildHtml(s,date,live){
     const m=s.metrics||{},prev=prevRow(date),groups=Array.isArray(s.riderPerformance)?s.riderPerformance:[],towns=Array.isArray(s.townPerformance)?s.townPerformance:[];
@@ -17706,5 +17716,43 @@ html[data-theme="dark"] #homeDashboard .dashboard-status-card.rts span{color:#fe
   padding:9px 11px!important;
   box-sizing:border-box!important;
 }
+</style>
+
+
+
+<style id="eod-layout-and-exception-header-fix-v1">
+/* Three rider KPIs after removing Delivering. */
+#dailyHistory #dh2TabBody article.dh2-rider .dh2-stats{
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+}
+/* Keep EOD exception headings aligned with the values beneath them. */
+#dailyHistory .dh2-exception-table{
+  width:100%!important;
+  min-width:760px!important;
+  table-layout:fixed!important;
+}
+#dailyHistory .dh2-exception-table th,
+#dailyHistory .dh2-exception-table td{
+  box-sizing:border-box!important;
+  padding:10px 14px!important;
+  text-align:left!important;
+  vertical-align:middle!important;
+}
+#dailyHistory .dh2-exception-table th{
+  white-space:nowrap!important;
+}
+#dailyHistory .dh2-exception-table td{
+  overflow-wrap:anywhere!important;
+}
+#dailyHistory .dh2-exception-table th:nth-child(1),
+#dailyHistory .dh2-exception-table td:nth-child(1){width:25%}
+#dailyHistory .dh2-exception-table th:nth-child(2),
+#dailyHistory .dh2-exception-table td:nth-child(2){width:20%}
+#dailyHistory .dh2-exception-table th:nth-child(3),
+#dailyHistory .dh2-exception-table td:nth-child(3){width:18%}
+#dailyHistory .dh2-exception-table th:nth-child(4),
+#dailyHistory .dh2-exception-table td:nth-child(4){width:21%}
+#dailyHistory .dh2-exception-table th:nth-child(5),
+#dailyHistory .dh2-exception-table td:nth-child(5){width:16%}
 </style>
 
