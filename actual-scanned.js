@@ -72,8 +72,13 @@ function build(){
     const tn=typeof window.spxTN==="function"?String(window.spxTN(row)||"").trim():"";
     const tnKey=key(tn);if(!tnKey||seen.has(tnKey))return;seen.add(tnKey);
     // Deliberately exclude "Assigned Rider" fields: they describe the plan, not who scanned the parcel.
-    const driverId=value(row,["Driver ID","Rider ID","Delivery Driver ID","Delivery Rider ID","Last Mile Driver ID","LM Driver ID","Scan Driver ID","Actual Driver ID","Courier ID"]);
-    const sourceName=value(row,["Driver Name","Rider Name","Delivery Driver Name","Delivery Rider Name","Last Mile Driver Name","LM Driver Name","Scan Driver Name","Actual Driver Name","Courier Name","Driver","Rider"]);
+    const rawDriverId=value(row,["Driver ID","Rider ID","Delivery Driver ID","Delivery Rider ID","Last Mile Driver ID","LM Driver ID","Scan Driver ID","Actual Driver ID","Courier ID"]);
+    // SPX uses 0 / blank-like values as an unassigned driver placeholder.
+    // Never turn that placeholder into a real "Driver 0" rider.
+    const invalidDriverValue=v=>/^(?:0+|N\/?A|NONE|NULL|UNKNOWN|UNASSIGNED|-)$/i.test(String(v||"").trim());
+    const driverId=invalidDriverValue(rawDriverId)?"":rawDriverId;
+    const rawSourceName=value(row,["Driver Name","Rider Name","Delivery Driver Name","Delivery Rider Name","Last Mile Driver Name","LM Driver Name","Scan Driver Name","Actual Driver Name","Courier Name","Driver","Rider"]);
+    const sourceName=invalidDriverValue(rawSourceName)?"":rawSourceName;
     const rider=(driverId&&roster.byId.get(key(driverId)))||(sourceName&&roster.byName.get(key(sourceName)))||null;
     const actualId=driverId||String(rider?.["Driver ID"]||"").trim();
     const actualName=(driverId&&rider?String(rider["Driver Name"]||"").trim():"")||sourceName||String(rider?.["Driver Name"]||"").trim();
@@ -90,13 +95,16 @@ function build(){
       comparison=actualId&&assignedId?(key(actualId)===key(assignedId)?"Match":"Mismatch"):(key(actualName)===key(assigned)?"Match":"Mismatch");
     }
     const status=value(row,["Parcel Status To","Status To","TO Status","To Status","Status To (Current)","Status","Parcel Status","Delivery Status","Current Status"])||"Unknown";
-    const statusKey=key(status),onhold=(tn&&(holdKeys.has(typeof window.badocOnholdKey==="function"?window.badocOnholdKey(tn):tn)))||statusKey.includes("ONHOLD")||statusKey.includes("ON HOLD");
+    const statusKey=key(status),onhold=!!((tn&&(holdKeys.has(typeof window.badocOnholdKey==="function"?window.badocOnholdKey(tn):tn)))||statusKey.includes("ONHOLD")||statusKey.includes("ON HOLD"));
+    // A current OnHold export takes precedence over a stale Delivered/Delivering status.
+    const delivered=!onhold&&statusKey.includes("DELIVERED");
+    const delivering=!onhold&&statusKey.includes("DELIVERING");
     records.push({
       row:row,tn:tn,orderId:value(row,["Order ID","Shopee Order SN","Order SN","Order Number"]),
       town:town,townKey:norm(town),actualId:actualId,actualName:actualName||(actualId?"Driver "+actualId:"Unidentified"),
       riderKey:riderKey,hasScanner:hasScanner,vehicle:vehicleType,assigned:assigned,
-      comparison:comparison,status:status,onhold:!!onhold,delivered:statusKey.includes("DELIVERED"),
-      delivering:statusKey.includes("DELIVERING"),area:String(row?._area||"").trim().toUpperCase(),
+      comparison:comparison,status:status,onhold:onhold,delivered:delivered,
+      delivering:delivering,area:String(row?._area||"").trim().toUpperCase(),
       date:activityDate(row,statusKey)
     });
   });
