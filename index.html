@@ -1719,10 +1719,8 @@ html[data-theme="light"] .side > .theme-switch-row{
 </style>
 
 <style id="dashboard-hub-performance-style">
-#homeDashboard .dashboard-hub-performance{margin:0 0 15px}
-#homeDashboard .dashboard-hub-performance .hub-performance-group{margin:0}
-#homeDashboard .dashboard-hub-performance .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-@media(max-width:650px){#homeDashboard .dashboard-hub-performance .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+#homeDashboard .dashboard-overview .hub-performance-group{min-width:0;margin:0}
+#homeDashboard .dashboard-overview .hub-performance-group .dashboard-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 </style>
 
 <style id="dashboard-two-column-layout-fix-v1">
@@ -1731,7 +1729,7 @@ html[data-theme="light"] .side > .theme-switch-row{
   grid-template-columns:repeat(2,minmax(0,1fr))!important;
 }
 #homeDashboard .dashboard-overview .dashboard-card-groups{
-  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  grid-template-columns:1.35fr 1.35fr 1fr!important;
   align-items:stretch;
 }
 #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
@@ -1752,6 +1750,9 @@ html[data-theme="light"] .side > .theme-switch-row{
 @media(max-width:1250px){
   #homeDashboard .dashboard-overview .dashboard-card-groups{
     grid-template-columns:minmax(0,1fr)!important;
+  }
+  #homeDashboard .dashboard-overview .hub-performance-group{
+    grid-column:auto;
   }
   #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
     grid-template-columns:repeat(5,minmax(0,1fr))!important;
@@ -2301,20 +2302,17 @@ html[data-theme="light"] #homeDashboard #dashboardKpiSummary .dashboard-kpi-card
               <div class="dashboard-status-card exemptions" data-dashboard-detail="exemptions" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span></div>
             </div>
           </section>
+          <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
+            <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div></div>
+            <div class="dashboard-status-grid">
+              <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small></small></div>
+              <div class="dashboard-status-card success"><strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span><small></small></div>
+            </div>
+          </section>
+
 
         </div>
       </div>
-    </div>
-
-    <div class="dashboard-hub-performance">
-      <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
-        <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div><span>03</span></div>
-        <div class="dashboard-status-grid">
-          <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span><small></small></div>
-          <div class="dashboard-status-card linehaul"><strong id="opIncomingLinehaul">0</strong><span>INCOMING LINEHAUL</span><small>Unique eligible SPX TNs</small></div>
-          <div class="dashboard-status-card success"><strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span><small></small></div>
-        </div>
-      </section>
     </div>
 
     <div class="section dashboard-kpi-summary" id="dashboardKpiSummary">
