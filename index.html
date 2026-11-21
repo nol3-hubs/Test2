@@ -6124,6 +6124,21 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     return true;
   };
   function fmPickupNameDisplay(group){
+    const orderRows=Array.isArray(group?.eligibleOrders)&&group.eligibleOrders.length
+      ?group.eligibleOrders:(group?.orders||[]);
+    if(group?.pickupOrderOnly){
+      // In Pickup Orders mode, task exports must not supply point names or
+      // seller details. The task join is reserved exclusively for Driver Name.
+      const orderNames=fmUniquePickupNames(orderRows);
+      if(orderNames.size)return [...orderNames.values()].join(" | ");
+      const sourceRow=orderRows[0]||{};
+      const pointId=fmNorm(fmPickupPointId(sourceRow));
+      const mapped=pointId?fmGetPointNameMap()[pointId]:"";
+      if(mapped)return mapped;
+      const sellerNames=fmUniquePickupNames(orderRows,fmSellerName);
+      return [...sellerNames.values()].join(" | ")||"—";
+    }
+
     const taskNames=fmUniquePickupNames(group?.tasks||[]);
     const orderNames=fmUniquePickupNames(group?.orders||[]);
     const direct=[...taskNames.values(),...orderNames.values()];
@@ -6143,23 +6158,21 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     ];
     return [...new Set(sellerNames)].join(" | ")||"—";
   }
+  const FM_DRIVER_NAME_FIELDS=[
+    "Driver Name","Assigned Driver Name","Rider Name","Assigned Rider",
+    "Pickup Driver Name","Pickup Rider Name","Driver","driver_name","rider_name"
+  ];
+  function fmTaskDriverName(task){
+    return fmValue(task,FM_DRIVER_NAME_FIELDS).trim();
+  }
   function fmAssignedRiderDisplay(group){
-    if(group?.pickupOrderOnly){
-      // Pickup Orders determine the row and status. Pickup Tasks contribute
-      // only the Driver Name after matching Pickup Point ID.
-      const latest=fmLatestTask(group);
-      const driver=latest?fmValue(latest,[
-        "Driver Name","Assigned Driver Name","Rider Name","Assigned Rider",
-        "Pickup Driver Name","Pickup Rider Name","Driver","driver_name","rider_name"
-      ]).trim():"";
-      return driver||"Unassigned";
-    }
-    const latest=fmLatestTask(group);
-    const driver=latest?fmValue(latest,[
-      "Driver Name","Assigned Driver Name","Rider Name","Assigned Rider",
-      "Pickup Driver Name","Pickup Rider Name","Driver","driver_name","rider_name"
-    ]).trim():"";
-    return driver||"Unassigned";
+    // Pickup Orders own the row, ETA, status, and point ID. Matched Pickup
+    // Tasks contribute only a non-empty Driver Name; prefer the latest named
+    // task so a newer blank assignment cannot hide an available rider name.
+    const tasks=Array.isArray(group?.tasks)?group.tasks:[];
+    const namedTasks=tasks.filter(task=>fmTaskDriverName(task));
+    const latest=fmLatestTask({tasks:namedTasks});
+    return latest?fmTaskDriverName(latest)||"Unassigned":"Unassigned";
   }
   function fmOrderId(row){return fmValue(row,[
     "Order ID","Order No","Order Number","Pickup Order ID","Pickup Order No",
@@ -6896,7 +6909,9 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
         continue;
       }
       if(orders.length!==1)continue;
-      const pointId=fmPickupPointId(orders[0])||fmPickupPointId((group.tasks||[])[0]||{});
+      // Pickup Orders are authoritative for the point ID; task rows supply
+      // only the Assigned Rider name above.
+      const pointId=fmPickupPointId(orders[0])||group.pickupPointId||"";
       for(const order of orders){
         const cells=[
           sheetDate,       // Column 1 - date (Asia/Manila)
