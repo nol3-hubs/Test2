@@ -95,10 +95,14 @@ function build(){
       comparison=actualId&&assignedId?(key(actualId)===key(assignedId)?"Match":"Mismatch"):(key(actualName)===key(assigned)?"Match":"Mismatch");
     }
     const status=value(row,["Parcel Status To","Status To","TO Status","To Status","Status To (Current)","Status","Parcel Status","Delivery Status","Current Status"])||"Unknown";
-    const statusKey=key(status),onhold=!!((tn&&(holdKeys.has(typeof window.badocOnholdKey==="function"?window.badocOnholdKey(tn):tn)))||statusKey.includes("ONHOLD")||statusKey.includes("ON HOLD"));
+    const statusNorm=norm(status).replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
+    const onholdStatus=/^(?:ONHOLD|ON HOLD|LMHUB ONHOLD|LMHUB ON HOLD)$/.test(statusNorm);
     // A current OnHold export takes precedence over a stale Delivered/Delivering status.
-    const delivered=!onhold&&statusKey.includes("DELIVERED");
-    const delivering=!onhold&&statusKey.includes("DELIVERING");
+    // Use exact operational status labels: substring matching would also treat
+    // negative labels such as "UNDELIVERED" / "NOT DELIVERED" as successful.
+    const onhold=!!((tn&&(holdKeys.has(typeof window.badocOnholdKey==="function"?window.badocOnholdKey(tn):tn)))||onholdStatus);
+    const delivered=!onhold&&statusNorm==="DELIVERED";
+    const delivering=!onhold&&statusNorm==="DELIVERING";
     records.push({
       row:row,tn:tn,orderId:value(row,["Order ID","Shopee Order SN","Order SN","Order Number"]),
       town:town,townKey:norm(town),actualId:actualId,actualName:actualName||(actualId?"Driver "+actualId:"Unidentified"),
