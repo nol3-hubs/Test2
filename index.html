@@ -6766,7 +6766,7 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
 
   // Scheduled First Mile button clicks and new-unassigned alarm (Philippine time).
   (function(){
-    const schedule=new Set(["10:00","11:00","12:00","13:00","14:00","15:00","15:30","15:40","15:50","15:57","15:59","16:00"]);
+    const schedule=new Set(["10:00","11:00","12:00","13:00","14:00","15:00","15:30","15:40","15:50","16:00","16:30"]);
     const statusEl=()=>document.getElementById("firstMileAutoAlertStatus");
     const manilaParts=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Manila",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date()).reduce((o,p)=>(o[p.type]=p.value,o),{});
     const ALARM_PREF_KEY="badoc_first_mile_alarm_enabled_v1";
