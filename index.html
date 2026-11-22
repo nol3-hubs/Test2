@@ -11257,17 +11257,31 @@ window.updateOperationProgress=function(){
   );
   const latestByKey=new Map();
   const cfr1PickupTimeByKey=new Map();
+  // Existing CFR1 ledger entries may be keyed by Order ID, while newer SPX
+  // delivery exports can identify the same parcel by SLS Tracking Number.
+  // Index each source row under BOTH identifiers so a current status is never
+  // missed simply because one export omitted the other identifier.
+  const cfr1LookupKeys=r=>{
+    const keys=[];
+    const oid=exceptionKey(r?.["Order ID"]);
+    const tn=tnKey(spxTN(r));
+    if(oid)keys.push("OID:"+oid);
+    if(tn)keys.push("TN:"+tn);
+    return [...new Set(keys)];
+  };
   cfr1Rows.forEach(x=>{
-    const key=cfr1Key(x.r); if(!key)return;
-    const prev=latestByKey.get(key);
-    if(!prev || x.btime>prev.btime || (x.btime===prev.btime && x.ri>prev.ri)) latestByKey.set(key,x);
-    // Keep the newest non-empty Pick Up Time across all source uploads.
-    // A newer delivery-status export may omit that field entirely.
+    const keys=cfr1LookupKeys(x.r); if(!keys.length)return;
     const pickup=cfr1PickUpTime(x.r);
-    const prevPickup=cfr1PickupTimeByKey.get(key);
-    if(pickup && (!prevPickup || x.btime>prevPickup.btime || (x.btime===prevPickup.btime && x.ri>prevPickup.ri))){
-      cfr1PickupTimeByKey.set(key,{value:pickup,btime:x.btime,ri:x.ri});
-    }
+    keys.forEach(key=>{
+      const prev=latestByKey.get(key);
+      if(!prev || x.btime>prev.btime || (x.btime===prev.btime && x.ri>prev.ri)) latestByKey.set(key,x);
+      // Keep the newest non-empty Pick Up Time across all source uploads.
+      // A newer delivery-status export may omit that field entirely.
+      const prevPickup=cfr1PickupTimeByKey.get(key);
+      if(pickup && (!prevPickup || x.btime>prevPickup.btime || (x.btime===prevPickup.btime && x.ri>prevPickup.ri))){
+        cfr1PickupTimeByKey.set(key,{value:pickup,btime:x.btime,ri:x.ri});
+      }
+    });
   });
 
   // Do not delete existing CFR1 members solely because their received date
