@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v117">
+<meta name="badoc-app-version" content="v118">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -11288,7 +11288,13 @@ window.updateOperationProgress=function(){
   // authoritative current-state source for EXISTING CFR1 members. This does
   // not add members to the frozen 7 AM ledger; it only refreshes their status
   // and retains any pickup timestamp present on the merged parcel row.
-  const cfr1DashboardRows=Array.isArray(current?.rows)?current.rows:[];
+  // Use the exact merged operational population used by Dashboard and
+  // Planning Board. getParcelCountRows() overlays the latest Assigned Today
+  // Forward/Return statuses onto the original Parcel Count records. Reading
+  // current.rows alone misses those external status updates.
+  const cfr1DashboardRows=typeof getParcelCountRows==="function"
+    ?getParcelCountRows({includeExemptions:true})
+    :(Array.isArray(current?.rows)?current.rows:[]);
   cfr1DashboardRows.forEach((r,ri)=>{
     const keys=cfr1LookupKeys(r); if(!keys.length)return;
     const live={r,btime:Number.MAX_SAFE_INTEGER,ri};
@@ -11514,6 +11520,8 @@ window.updateOperationProgress=function(){
     date:cfr1DateKey,
     ledgerRecords:Object.keys(cfr1Ledger.records||{}).length,
     liveStatusRefreshMatches:cfr1LiveStatusRefreshMatches,
+    dashboardStatusRows:cfr1DashboardRows.length,
+    assignedTodaySourceRows:Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows.length:0,
     latestSamples:cfr1LiveStatusRefreshSamples,
     scannedCount:cfr1ScannedRows.length,
     unscannedCount:cfr1UnscannedRows.length
