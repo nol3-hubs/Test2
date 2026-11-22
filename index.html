@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v118">
+<meta name="badoc-app-version" content="v119">
 
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 
@@ -7324,7 +7324,11 @@ $("clearRecordFilters").onclick=async()=>{
 $("misSearch").addEventListener("input",renderMis);
 function exportValidFiltered(){
   if(!current){alert("There is no current upload to export.");return;}
-  const all=Array.isArray(current.valid)?current.valid:[];
+  // Export the same merged parcel population used in Parcel Records, including
+  // the latest Assigned Today SPX Forward/Return status and pickup-time fields.
+  const all=typeof getParcelRecordRows==="function"
+    ?getParcelRecordRows()
+    :(Array.isArray(current.valid)?current.valid:[]);
   const filtered=Array.isArray(window.__parcelRecordFiltered)?window.__parcelRecordFiltered:all;
   const active=recordFiltersActive();
   const rows=active?filtered:all;
@@ -11252,9 +11256,21 @@ window.updateOperationProgress=function(){
     return norm(entry?.[1]??"");
   };
 
-  const cfr1Rows=(Array.isArray(batches)?batches:[]).flatMap(b=>
-    Array.isArray(b?.rows)?b.rows.map((r,i)=>({r,btime:Number(b?.time||0),ri:i})):[]
+  const cfr1BatchRows=(Array.isArray(batches)?batches:[]).flatMap(b=>
+    Array.isArray(b?.rows)?b.rows.map((r,i)=>({r,btime:Number(b?.time||0),ri:i,source:"uploaded-batch"})):[]
   );
+  // Assigned Today Forward/Return exports are persisted outside the parcel
+  // upload batches. Include their merged rows in CFR1 eligibility candidates.
+  // Rule A still requires Badoc Hub, an allowed town, and Current Station
+  // Received Time at/before 4:00 AM Manila time. Rule B still requires its
+  // original pre-4:00 AM uploaded-batch timestamp.
+  const cfr1DashboardRows=typeof getParcelCountRows==="function"
+    ?getParcelCountRows({includeExemptions:true})
+    :(Array.isArray(current?.rows)?current.rows:[]);
+  const cfr1Rows=[
+    ...cfr1BatchRows,
+    ...cfr1DashboardRows.map((r,i)=>({r,btime:0,ri:i,source:"dashboard-merged"}))
+  ];
   const latestByKey=new Map();
   const cfr1PickupTimeByKey=new Map();
   // Existing CFR1 ledger entries may be keyed by Order ID, while newer SPX
@@ -11292,9 +11308,6 @@ window.updateOperationProgress=function(){
   // Planning Board. getParcelCountRows() overlays the latest Assigned Today
   // Forward/Return statuses onto the original Parcel Count records. Reading
   // current.rows alone misses those external status updates.
-  const cfr1DashboardRows=typeof getParcelCountRows==="function"
-    ?getParcelCountRows({includeExemptions:true})
-    :(Array.isArray(current?.rows)?current.rows:[]);
   cfr1DashboardRows.forEach((r,ri)=>{
     const keys=cfr1LookupKeys(r); if(!keys.length)return;
     const live={r,btime:Number.MAX_SAFE_INTEGER,ri};
@@ -11520,7 +11533,9 @@ window.updateOperationProgress=function(){
     date:cfr1DateKey,
     ledgerRecords:Object.keys(cfr1Ledger.records||{}).length,
     liveStatusRefreshMatches:cfr1LiveStatusRefreshMatches,
+    uploadBatchCandidateRows:cfr1BatchRows.length,
     dashboardStatusRows:cfr1DashboardRows.length,
+    eligibilityCandidateRows:cfr1Rows.length,
     assignedTodaySourceRows:Array.isArray(window.__badocOnholdExportRows)?window.__badocOnholdExportRows.length:0,
     latestSamples:cfr1LiveStatusRefreshSamples,
     scannedCount:cfr1ScannedRows.length,
