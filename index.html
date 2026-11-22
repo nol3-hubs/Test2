@@ -11256,10 +11256,18 @@ window.updateOperationProgress=function(){
     Array.isArray(b?.rows)?b.rows.map((r,i)=>({r,btime:Number(b?.time||0),ri:i})):[]
   );
   const latestByKey=new Map();
+  const cfr1PickupTimeByKey=new Map();
   cfr1Rows.forEach(x=>{
     const key=cfr1Key(x.r); if(!key)return;
     const prev=latestByKey.get(key);
     if(!prev || x.btime>prev.btime || (x.btime===prev.btime && x.ri>prev.ri)) latestByKey.set(key,x);
+    // Keep the newest non-empty Pick Up Time across all source uploads.
+    // A newer delivery-status export may omit that field entirely.
+    const pickup=cfr1PickUpTime(x.r);
+    const prevPickup=cfr1PickupTimeByKey.get(key);
+    if(pickup && (!prevPickup || x.btime>prevPickup.btime || (x.btime===prevPickup.btime && x.ri>prevPickup.ri))){
+      cfr1PickupTimeByKey.set(key,{value:pickup,btime:x.btime,ri:x.ri});
+    }
   });
 
   // Do not delete existing CFR1 members solely because their received date
@@ -11330,7 +11338,7 @@ window.updateOperationProgress=function(){
         latestBatchTime:x.btime,
         latestRowTime:x.btime,
         status:String(statusTo(r)||r?.["Status"]||"").trim(),
-        scannedTime:isRuleB?"":cfr1PickUpTime(r),
+        scannedTime:isRuleB?"":(cfr1PickUpTime(r)||cfr1PickupTimeByKey.get(key)?.value||""),
         noTownFilter:isRuleB,
         ruleBUnscanned:isRuleB
       };
@@ -11364,9 +11372,11 @@ window.updateOperationProgress=function(){
       // still reports LMHub_Received. Rule B is explicitly unscanned.
       if(rec.ruleBUnscanned===true){
         rec.scannedTime="";
-      }else if(cfr1PickUpTime(r)){
-        // Refresh a stale prior-day pickup timestamp from the latest upload.
-        rec.scannedTime=cfr1PickUpTime(r);
+      }else{
+        // Prefer the latest row's pickup field; fall back to the newest
+        // non-empty timestamp retained from any SPX source upload for this TN.
+        const pickup=cfr1PickUpTime(r)||cfr1PickupTimeByKey.get(key)?.value||"";
+        if(pickup)rec.scannedTime=pickup;
       }
       const latestStation=norm(r?.["Current Station"]||"");
       const latestStatus=cfr1Status(r);
