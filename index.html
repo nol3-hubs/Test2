@@ -3685,7 +3685,7 @@ async function importParcelCsvText(text,fileName="export_forward_order.csv",sour
     if(!k)return;
     if(seen.has(k)){
       const idx=uniqueRows.findIndex(x=>spxTN(x)===k);
-      if(idx>=0)uniqueRows[idx]=r;
+      if(idx>=0)uniqueRows[idx]=mergeParcelRowsPreservingPickup(uniqueRows[idx],r);
       updated++;dupes++;return;
     }
     if(existingByKey.has(k)){updated++;dupes++;}else added++;
@@ -3996,13 +3996,40 @@ setExemptionCloudState("pending","Connecting to shared exemption list…");
 // Start polling immediately so a temporary startup/network failure is retried.
 startExemptionFallbackPoll();
 setTimeout(()=>syncExceptionsFromCloud(),500);
+function badocPickupTimeValue(row){
+  if(!row||typeof row!=="object")return "";
+  const keys=Object.keys(row);
+  const normalizeHeader=value=>String(value??"").toLowerCase().replace(/[^a-z0-9]/g,"");
+  const aliases=[
+    "Pick Up Time","Pick up time","PICK UP TIME","Pickup Time",
+    "First Pick Up Time","First Pickup Time","At Pick Up Time",
+    "Pickup Date Time","Pickup Datetime","Pickup Timestamp","Scanned Time","scannedTime"
+  ];
+  for(const alias of aliases){
+    const wanted=normalizeHeader(alias);
+    const key=keys.find(candidate=>normalizeHeader(candidate)===wanted&&String(row[candidate]??"").trim()!=="");
+    if(key)return String(row[key]).trim();
+  }
+  const key=keys.find(candidate=>normalizeHeader(candidate).includes("pickuptime")&&String(row[candidate]??"").trim()!=="");
+  return key?String(row[key]).trim():"";
+}
+function mergeParcelRowsPreservingPickup(previous,incoming){
+  const merged={...(previous||{}),...(incoming||{})};
+  // Delivery-status exports do not always include the first Pick Up Time.
+  // Keep the latest non-empty pickup timestamp already available for this TN.
+  const pickup=badocPickupTimeValue(incoming)||badocPickupTimeValue(previous);
+  if(pickup)merged["Pick Up Time"]=pickup;
+  return merged;
+}
 function mergeRowsUnique(rows){
   const map=new Map();
   for(const r of rows){
     const k=spxTN(r);
     // Parcel Count is keyed by SPX TN. Rows without an SPX TN are not parcels
     // and must not create a new count on every upload.
-    if(k) map.set(k,r);
+    if(!k)continue;
+    const previous=map.get(k);
+    map.set(k,previous?mergeParcelRowsPreservingPickup(previous,r):r);
   }
   return [...map.values()];
 }
@@ -5808,7 +5835,7 @@ function removeTown(key,i){if(role!=="Admin")return alert("Admin only.");if(conf
 function loadBatch(i){current=batches[i];render();showPage("dashboard")}
 async function deleteBatch(i){if(role!=="Admin")return alert("Admin only.");if(confirm("Delete this upload permanently from this browser?")){batches.splice(i,1);current=mergeAllBatches();saveTownSettings();render()}}
 function download(name,text,type="text/csv"){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-function csv(rows){if(!rows.length)return "";let keys=Object.keys(rows[0]).filter(k=>k!="_area");let q=x=>`"${String(x??"").replace(/"/g,'""')}"`;return [keys.map(q).join(","),...rows.map(r=>keys.map(k=>q(r[k])).join(","))].join("\n")}
+function csv(rows){if(!rows.length)return "";let keys=[...new Set(rows.flatMap(r=>Object.keys(r||{})))].filter(k=>k!="_area");let q=x=>`"${String(x??"").replace(/"/g,'""')}"`;return [keys.map(q).join(","),...rows.map(r=>keys.map(k=>q(r?.[k])).join(","))].join("\n")}
 let ridersData=[];
 const ridersFields=["Driver ID","Driver Name","Person ID","Gender","LSP Driver","Vehicle Type","Service Point Name","License Type","License Number","Plate Number","Pickup Station ID","Line Haul Station ID","Delivery Station ID","Return Station ID","Sort Code List","Create Time","Modify Time","License Expiry Date","Contract Type","Employee ID","Distance Coverage","Route Expertise","Default Rate","New Rate","Joined Date","Last Date","Effective Start","ShopeePay Account","Agency","Driver Group","Pickup Station Shift ID","Line Haul Station Shift ID","Delivery Station Shift ID","Return Station Shift ID","LSP Status","SPX Status","Suspension Reason","Terminated Reason","Trip Handover Level","Collect SF/COD channel","Settle SF/COD channel","Feeder Mode","AT Level Handover","Allow Feeders to Self-trigger Transferred Status","Zone","Parcel Transfer","Linked Account With Shopee","Calculated Rating","Number of Rating Received","Push Driver Photo To Frontend","(Driver-Station) Allow Driver to perform Bulk Handover","(Driver-Driver) Allow Driver to perform Bulk Handover","Blocklist","Pickup sub-function(use ',' as separator)"];
 function parseCsvText(text){
@@ -11146,7 +11173,7 @@ window.updateOperationProgress=function(){
   };
   const cfr1IsScannedStatus=r=>{
     if(r?.ruleBUnscanned===true)return false;
-    const statusScanned=["DELIVERING","DELIVERED","ONHOLD","ON HOLD","LMHUB ONHOLD"].includes(cfr1Status(r));
+    const statusScanned=["DELIVERING","LMHUB DELIVERING","DELIVERED","LMHUB DELIVERED","ONHOLD","ON HOLD","LMHUB ONHOLD","LMHUB ON HOLD"].includes(cfr1Status(r));
     return statusScanned || cfr1PickupIsToday(r);
   };
 
