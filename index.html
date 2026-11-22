@@ -11283,20 +11283,35 @@ window.updateOperationProgress=function(){
       }
     });
   });
+  // The dashboard's Combined uploads row set is the same merged parcel
+  // population used by its live status cards. Overlay these rows as the
+  // authoritative current-state source for EXISTING CFR1 members. This does
+  // not add members to the frozen 7 AM ledger; it only refreshes their status
+  // and retains any pickup timestamp present on the merged parcel row.
+  const cfr1DashboardRows=Array.isArray(current?.rows)?current.rows:[];
+  cfr1DashboardRows.forEach((r,ri)=>{
+    const keys=cfr1LookupKeys(r); if(!keys.length)return;
+    const live={r,btime:Number.MAX_SAFE_INTEGER,ri};
+    const pickup=cfr1PickUpTime(r);
+    keys.forEach(key=>{
+      latestByKey.set(key,live);
+      if(pickup)cfr1PickupTimeByKey.set(key,{value:pickup,btime:Number.MAX_SAFE_INTEGER,ri});
+    });
+  });
   // Resolve a saved CFR1 record using its original key plus both identifiers.
   // This is essential when the original record had an Order ID but a newer
   // SPX delivery export matches only by tracking number (or vice versa).
   const cfr1LatestForRecord=rec=>{
     const candidates=[
-      String(rec?.key||""),
+      rec?.tn?"TN:"+tnKey(rec.tn):"",
       rec?.orderId?"OID:"+exceptionKey(rec.orderId):"",
-      rec?.tn?"TN:"+tnKey(rec.tn):""
+      String(rec?.key||"")
     ].filter(Boolean);
     let best=null;
     [...new Set(candidates)].forEach(candidateKey=>{
       const candidate=latestByKey.get(candidateKey);
-      if(candidate && (!best || candidate.btime>best.btime ||
-        (candidate.btime===best.btime && candidate.ri>best.ri))) best=candidate;
+      // On equal source recency, prefer the exact tracking-number match.
+      if(candidate && (!best || candidate.btime>best.btime)) best=candidate;
     });
     return best;
   };
@@ -11399,10 +11414,19 @@ window.updateOperationProgress=function(){
   // (the daily CFR1 total membership). Statuses remain live after 7:00 AM:
   // later SPX imports must update each admitted parcel's current status and
   // its SCANNED / UNSCANNED classification without adding new parcel IDs.
+  let cfr1LiveStatusRefreshMatches=0;
+  const cfr1LiveStatusRefreshSamples=[];
   Object.keys(cfr1Ledger.records).forEach(key=>{
     const rec=cfr1Ledger.records[key];
     const latest=cfr1LatestForRecord(rec);
     if(latest){
+      cfr1LiveStatusRefreshMatches++;
+      if(cfr1LiveStatusRefreshSamples.length<12)cfr1LiveStatusRefreshSamples.push({
+        orderId:String(rec.orderId||""),
+        tn:String(rec.tn||""),
+        status:String(statusTo(latest.r)||latest.r?.["Status"]||""),
+        source:latest.btime===Number.MAX_SAFE_INTEGER?"dashboard-merged":"uploaded-batch"
+      });
       const r=latest.r;
       // Keep the latest parcel data live even when it is listed in Exemptions.
       // Exemptions only add an INTERCEPT cue to unscanned details; they do not
@@ -11483,6 +11507,16 @@ window.updateOperationProgress=function(){
     // The same eligible ledger rows feed both tabs, so scanned + unscanned
     // must equal the displayed CFR1 total.
     totalCount:cfr1ScannedRows.length+cfr1UnscannedRows.length
+  };
+  // Diagnostic snapshot for support: confirms whether an existing CFR1
+  // member matched a live merged parcel row and which latest status was used.
+  window.__badocCfr1Debug={
+    date:cfr1DateKey,
+    ledgerRecords:Object.keys(cfr1Ledger.records||{}).length,
+    liveStatusRefreshMatches:cfr1LiveStatusRefreshMatches,
+    latestSamples:cfr1LiveStatusRefreshSamples,
+    scannedCount:cfr1ScannedRows.length,
+    unscannedCount:cfr1UnscannedRows.length
   };
   setText("opCfr1Scanned",window.__badocCfr1Details.scannedCount);
   setText("opCfr1Total",window.__badocCfr1Details.totalCount);
