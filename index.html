@@ -11283,6 +11283,35 @@ window.updateOperationProgress=function(){
       }
     });
   });
+  // Resolve a saved CFR1 record using its original key plus both identifiers.
+  // This is essential when the original record had an Order ID but a newer
+  // SPX delivery export matches only by tracking number (or vice versa).
+  const cfr1LatestForRecord=rec=>{
+    const candidates=[
+      String(rec?.key||""),
+      rec?.orderId?"OID:"+exceptionKey(rec.orderId):"",
+      rec?.tn?"TN:"+tnKey(rec.tn):""
+    ].filter(Boolean);
+    let best=null;
+    [...new Set(candidates)].forEach(candidateKey=>{
+      const candidate=latestByKey.get(candidateKey);
+      if(candidate && (!best || candidate.btime>best.btime ||
+        (candidate.btime===best.btime && candidate.ri>best.ri))) best=candidate;
+    });
+    return best;
+  };
+  const cfr1PickupForRecord=rec=>{
+    const candidates=[
+      String(rec?.key||""),
+      rec?.orderId?"OID:"+exceptionKey(rec.orderId):"",
+      rec?.tn?"TN:"+tnKey(rec.tn):""
+    ].filter(Boolean);
+    for(const candidateKey of [...new Set(candidates)]){
+      const pickup=cfr1PickupTimeByKey.get(candidateKey)?.value;
+      if(pickup)return pickup;
+    }
+    return "";
+  };
 
   // Do not delete existing CFR1 members solely because their received date
   // is not today. Rule A uses the existing 4:00 AM cutoff without a same-day
@@ -11372,7 +11401,7 @@ window.updateOperationProgress=function(){
   // its SCANNED / UNSCANNED classification without adding new parcel IDs.
   Object.keys(cfr1Ledger.records).forEach(key=>{
     const rec=cfr1Ledger.records[key];
-    const latest=latestByKey.get(key);
+    const latest=cfr1LatestForRecord(rec);
     if(latest){
       const r=latest.r;
       // Keep the latest parcel data live even when it is listed in Exemptions.
@@ -11389,7 +11418,7 @@ window.updateOperationProgress=function(){
       }else{
         // Prefer the latest row's pickup field; fall back to the newest
         // non-empty timestamp retained from any SPX source upload for this TN.
-        const pickup=cfr1PickUpTime(r)||cfr1PickupTimeByKey.get(key)?.value||"";
+        const pickup=cfr1PickUpTime(r)||cfr1PickupForRecord(rec);
         if(pickup)rec.scannedTime=pickup;
       }
       const latestStation=norm(r?.["Current Station"]||"");
@@ -11413,7 +11442,7 @@ window.updateOperationProgress=function(){
   const cfr1ScannedRows=[], cfr1UnscannedRows=[];
   Object.values(cfr1Ledger.records).forEach(rec=>{
     const key=rec.key;
-    const latest=latestByKey.get(key)?.r;
+    const latest=cfr1LatestForRecord(rec)?.r;
     // Exemptions never remove a parcel from CFR1. They are only marked as
     // INTERCEPT in the Unscanned details when the current parcel is unscanned.
     const isIntercept=cfr1IsExempt(latest||rec);
