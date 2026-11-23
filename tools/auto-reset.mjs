@@ -84,11 +84,13 @@ try {
     process.exit(0);
   }
 
+  // An empty but successfully loaded Parcel Count dataset is valid. Wait for
+  // the import state itself, not for at least one parcel row; otherwise a
+  // legitimate empty day prevents the guarded reset forever.
   const waitForParcelData = async timeout => page.waitForFunction(() => {
     try {
-      const count = (Array.isArray(current && current.valid) ? current.valid.length : 0) +
-        (Array.isArray(current && current.mis) ? current.mis.length : 0);
-      return count > 0;
+      return !!current && Array.isArray(current.valid) && Array.isArray(current.mis) &&
+        Array.isArray(current.rows);
     } catch (_) { return false; }
   }, null, { timeout });
 
