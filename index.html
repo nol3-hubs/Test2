@@ -7,7 +7,7 @@
 <title>Badoc Hub</title>
 <meta name="description" content="Badoc Hub parcel receiving dashboard with SPX Bridge sync.">
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v148">
+<meta name="badoc-app-version" content="v149">
 <meta name="badoc-bridge-files" content="js/bridge-files.js?v=dbe15ec8">
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://badoc-hub-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app" crossorigin>
@@ -179,6 +179,15 @@
 
       <div class="dashboard-status-section">
         <div class="dashboard-card-groups">
+          <section class="dashboard-card-group delivery-status-group" aria-label="Delivery Status">
+            <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Backlogs and exception tracking</small></div></div>
+            <div class="dashboard-status-grid">
+              <div class="dashboard-status-card backlogs" data-dashboard-detail="backlogs" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opBacklogs">0</strong><span>BACKLOGS</span></div>
+              <div class="dashboard-status-card redelivery" data-dashboard-detail="redelivery" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opRedelivery">—</strong><span>REDELIVER</span></div>
+              <div class="dashboard-status-card rts" data-dashboard-detail="rts" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opRts">—</strong><span>RTS</span><small></small></div>
+              <div class="dashboard-status-card exemptions" data-dashboard-detail="exemptions" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span></div>
+            </div>
+          </section>
           <section class="dashboard-card-group parcel-overview-group" aria-label="Parcel Overview">
             <div class="dashboard-card-group-head"><div><strong>Parcel Overview</strong><small>Live parcel status totals</small></div></div>
             <div class="dashboard-status-grid">
@@ -187,15 +196,6 @@
               <div class="dashboard-status-card delivered"><strong id="opDelivered">0</strong><span>DELIVERED</span></div>
               <div class="dashboard-status-card onhold" data-dashboard-detail="onhold" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opOnHold">0</strong><span>ON-HOLD</span></div>
               <div class="dashboard-status-card cfr1" id="cfr1Card" role="button" tabindex="0" aria-label="CFR1 completion percentage. Click to view scanned and unscanned parcels." title="Click to view CFR1 scanned and unscanned parcels"><strong id="opCfr1Percentage">0.0%</strong><span>CFR1</span><small id="opCfr1Summary" hidden style="display:none!important" aria-hidden="true"></small><span hidden aria-hidden="true" style="display:none!important"><b id="opCfr1Scanned">0</b><em id="opCfr1Total">0</em></span></div>
-            </div>
-          </section>
-          <section class="dashboard-card-group delivery-status-group" aria-label="Delivery Status">
-            <div class="dashboard-card-group-head"><div><strong>Delivery Status</strong><small>Backlogs and exception tracking</small></div></div>
-            <div class="dashboard-status-grid">
-              <div class="dashboard-status-card backlogs" data-dashboard-detail="backlogs" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opBacklogs">0</strong><span>BACKLOGS</span></div>
-              <div class="dashboard-status-card redelivery" data-dashboard-detail="redelivery" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opRedelivery">—</strong><span>REDELIVER</span></div>
-              <div class="dashboard-status-card rts" data-dashboard-detail="rts" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opRts">—</strong><span>RTS</span><small></small></div>
-              <div class="dashboard-status-card exemptions" data-dashboard-detail="exemptions" role="button" tabindex="0" title="Click to view OIDs and statuses"><strong id="opExemptions">0</strong><span>EXEMPTIONS</span></div>
             </div>
           </section>
           <section class="dashboard-card-group hub-performance-group" aria-label="Hub Performance">
