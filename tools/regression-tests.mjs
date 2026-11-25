@@ -205,3 +205,17 @@ test('Light theme has readable colors for Planning Board, Collapse Menu and Line
   assert.match(css,/html\[data-theme="light"\] \.side > \.sidebar-footer > #sideCollapseBtn[\s\S]*?background:#edf5fc!important;[\s\S]*?color:#234967!important;/);
   assert.match(css,/html\[data-theme="light"\] #linehaul #syncLinehaulFromSPX[\s\S]*?background:#1d63bd!important;[\s\S]*?color:#fff!important;/);
 });
+
+
+test('Light mode keeps an expanded non-active Planning Board neutral',()=>{
+  const css=readFileSync(resolve(root,'css/app.css'),'utf8');
+  assert.match(css,/\.planning-board-nav\.open \.planning-board-primary:not\(\.active\)[\s\S]*?background:transparent!important;[\s\S]*?box-shadow:none!important;/);
+  assert.match(css,/\.planning-board-primary\.active\{[\s\S]*?background:#e8f2ff!important;/);
+});
+
+test('Light mode recolors the entire sidebar footer and theme switch row',()=>{
+  const css=readFileSync(resolve(root,'css/app.css'),'utf8');
+  assert.match(css,/html\[data-theme="light"\] \.side > \.sidebar-footer\{[\s\S]*?background:#f4f7fb!important;/);
+  assert.match(css,/html\[data-theme="light"\] \.side > \.sidebar-footer > \.theme-switch-row\{[\s\S]*?background:#edf4fa!important;/);
+  assert.match(css,/html\[data-theme="light"\] \.side > \.sidebar-footer \.theme-switch-label,[\s\S]*?color:#40566b!important;/);
+});

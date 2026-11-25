@@ -3110,3 +3110,58 @@ html[data-theme="light"] #linehaul #syncLinehaulFromSPX:focus-visible{
   outline:2px solid #1683e8!important;
   outline-offset:3px!important;
 }
+
+
+/* ===== light-mode-sidebar-neutral-footer-fix-v2 ===== */
+/* Expanded Planning Board is a group state, not a selected page. Keep it neutral
+   unless its own page button is actually active. */
+html[data-theme="light"] .side .planning-board-primary:not(.active),
+html[data-theme="light"] .side .planning-board-nav.open .planning-board-primary:not(.active){
+  background:transparent!important;
+  color:#30465b!important;
+  border:1px solid transparent!important;
+  box-shadow:none!important;
+}
+html[data-theme="light"] .side .planning-board-primary:not(.active):hover,
+html[data-theme="light"] .side .planning-board-primary:not(.active):focus-visible,
+html[data-theme="light"] .side .planning-board-nav.open .planning-board-primary:not(.active):hover,
+html[data-theme="light"] .side .planning-board-nav.open .planning-board-primary:not(.active):focus-visible{
+  background:#f0f5fa!important;
+  color:#234967!important;
+  border-color:#e0e8f0!important;
+  box-shadow:none!important;
+}
+/* Only the Planning Board page itself gets the selected light-blue treatment. */
+html[data-theme="light"] .side .planning-board-primary.active{
+  background:#e8f2ff!important;
+  color:#17436b!important;
+  border:1px solid #c8dcf4!important;
+  box-shadow:inset 3px 0 #1683e8!important;
+}
+
+/* The footer container, theme row, label and switch all use light surfaces. */
+html[data-theme="light"] .side > .sidebar-footer{
+  background:#f4f7fb!important;
+  border-top:1px solid #d8e2ec!important;
+}
+html[data-theme="light"] .side > .sidebar-footer > .theme-switch-row{
+  background:#edf4fa!important;
+  border:1px solid #d6e2ed!important;
+  border-radius:10px!important;
+  box-shadow:none!important;
+}
+html[data-theme="light"] .side > .sidebar-footer .theme-switch-label,
+html[data-theme="light"] .side > .sidebar-footer .theme-switch-text{
+  color:#40566b!important;
+}
+html[data-theme="light"] .side > .sidebar-footer .theme-switch-ico-sun,
+html[data-theme="light"] .side > .sidebar-footer .theme-switch-ico-moon{
+  color:#54718d!important;
+}
+html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn{
+  background:#e6eef5!important;
+  border-color:#bdcddb!important;
+}
+html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn .theme-switch-thumb{
+  background:#078cff!important;
+}
