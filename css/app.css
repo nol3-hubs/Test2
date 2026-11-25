@@ -3024,3 +3024,16 @@ html[data-theme="light"] tbody tr:hover{background:#f3f7fc!important}
   max-height:none!important;
   white-space:normal!important;
 }
+
+
+/* Sidebar height compensation for the app's desktop 80% page zoom. */
+/* Keep the visible sidebar equal to the viewport after the 80% html zoom. */
+.side{
+  top:0!important;
+  bottom:auto!important;
+  height:125vh!important;
+  min-height:125vh!important;
+  max-height:125vh!important;
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+}
