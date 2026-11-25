@@ -109,3 +109,33 @@ test('cloud row insert is atomic and cannot overwrite a concurrent existing row'
   assert.equal(second.duplicate,true);
   assert.equal(second.row.value,'first');
 });
+
+
+test('menu navigation defers heavy page rendering and avoids duplicate forecast recalculation',()=>{
+  const start=core.indexOf('function showPage(p){');assert.notEqual(start,-1);
+  const end=core.indexOf('\\n$("parcelIncomingVolumeBtn")',start);assert.notEqual(end,-1);
+  const nav=core.slice(start,end);
+  assert.match(nav,/requestAnimationFrame/);
+  assert.match(nav,/badocMenuRenderToken/);
+  assert.doesNotMatch(nav,/updateOperationProgress/);
+});
+
+test('Linehaul rendering shares parcel indexes across tasks and clears its detail cache',()=>{
+  const start=core.indexOf('function renderLinehaulCore(){');assert.notEqual(start,-1);
+  const end=core.indexOf('\\nfunction renderLinehaul(){',start);assert.notEqual(end,-1);
+  const block=core.slice(start,end);
+  const taskLoop=block.indexOf('linehaulTasks.forEach((task,taskIndex)=>{');
+  assert.notEqual(taskLoop,-1);
+  assert.ok(block.indexOf('const taskMisMap=new Map();')<taskLoop);
+  assert.ok(block.indexOf('const parcelOrderIndex=new Set();')<taskLoop);
+  const inner=block.slice(taskLoop);
+  assert.doesNotMatch(inner,/const taskMisMap=new Map\(\)/);
+  assert.doesNotMatch(inner,/const parcelOrderIndex=new Set\(\)/);
+  assert.match(block,/detailStore\.clear\(\)/);
+});
+
+test('KPI menu reuses fresh sheet data and deduplicates concurrent pulls',()=>{
+  assert.match(core,/__badocKpiLastSuccessAt/);
+  assert.match(core,/__badocKpiLoadPromise/);
+  assert.match(core,/now-lastSuccess<REFRESH_MS/);
+});

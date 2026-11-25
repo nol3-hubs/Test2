@@ -2648,6 +2648,7 @@ function renderRiderPerformance(){
   const byId=new Map(),byName=new Map();
   (Array.isArray(ridersData)?ridersData:[]).forEach(r=>{const id=String(r["Driver ID"]||"").trim(),name=String(r["Driver Name"]||"").trim();if(id)byId.set(id,r);if(name)byName.set(riderPerformanceNorm(name),r);});
   const grouped=new Map();
+  const onholdKeys=window.__badocOnholdTnKeys instanceof Set?window.__badocOnholdTnKeys:new Set();
   rows.forEach(row=>{
     const riderId=riderPerformanceValue(row,["Rider ID","Driver ID","Assigned Rider ID","Delivery Rider ID"]);
     const riderName=riderPerformanceValue(row,["Rider Name","Driver Name","Assigned Rider","Delivery Rider","Rider"]);
@@ -2658,7 +2659,7 @@ function renderRiderPerformance(){
     const key=resolvedId||riderPerformanceNorm(resolvedName);
     if(!grouped.has(key))grouped.set(key,{id:resolvedId,name:resolvedName,rider,parcels:0,delivered:0,onHold:0,cod:0,pickup:""});
     const item=grouped.get(key);item.parcels++;item.cod+=riderPerformanceAmount(riderPerformanceValue(row,["COD Amount","COD","Cash on Delivery","COD Collection Amount","Collect COD"]));
-    const status=riderPerformanceNorm(riderPerformanceValue(row,["Status","Parcel Status","Delivery Status","Current Status"]));if(status.includes("DELIVERED"))item.delivered++;const tn=spxTN(row);const onholdKeys=window.__badocOnholdTnKeys instanceof Set?window.__badocOnholdTnKeys:new Set();if(tn&&onholdKeys.has(badocOnholdKey(tn)))item.onHold++;
+    const status=riderPerformanceNorm(riderPerformanceValue(row,["Status","Parcel Status","Delivery Status","Current Status"]));if(status.includes("DELIVERED"))item.delivered++;const tn=spxTN(row);if(tn&&onholdKeys.has(badocOnholdKey(tn)))item.onHold++;
     const pickup=riderPerformanceValue(row,["Pickup Time","Pickup Date Time","Pickup Datetime","Pickup Timestamp","First Pickup Time"]);if(pickup&&(!item.pickup||pickup<item.pickup))item.pickup=pickup;
   });
   const search=riderPerformanceNorm($("riderPerformanceSearch")?.value);
@@ -3921,18 +3922,41 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
   window.__badocUpdateFirstMileLastUpdated?.();
 })();
 
+// Cache the static navigation collections; these nodes are created with the app shell.
+var badocNavigationPageNodes=Array.from(document.querySelectorAll(".page"));
+var badocNavigationButtons=Array.from(document.querySelectorAll(".nav button"));
+var badocNavigationTitles={homeDashboard:"Dashboard",dashboard:"Planning Board",actualScannedByRiders:"Actual Scanned by Riders",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyRiderPerformance:"Rider Performance",ridersData:"Riders Data",dailyHistory:"EOD Data",reports:"Reports",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};
+var badocMenuRenderToken=0;
+
 function showPage(p){
- document.querySelectorAll(".page").forEach(x=>x.classList.remove("active"));
- const page=$(p);if(page)page.classList.add("active");
- document.querySelectorAll(".nav button").forEach(x=>x.classList.toggle("active",x.dataset.page===p));
- const titles={homeDashboard:"Dashboard",dashboard:"Planning Board",actualScannedByRiders:"Actual Scanned by Riders",volumeForecastBoard:"Volume Forecast",kpi:"KPI",records:"Parcel Records",linehaul:"Linehaul Task",receivedChecking:"Dispatch",podPoohChecker:"POD/POOH Checker",misrouted:"Misrouted Parcels",dailyRiderPerformance:"Rider Performance",ridersData:"Riders Data",dailyHistory:"EOD Data",reports:"Reports",instructions:"Instructions",firstMile:"Pickup",settings:"Settings"};
- $("pageTitle").textContent=titles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");
+ const page=$(p);
+ badocNavigationPageNodes.forEach(x=>x.classList.remove("active"));
+ if(page)page.classList.add("active");
+ badocNavigationButtons.forEach(x=>x.classList.toggle("active",x.dataset.page===p));
+ $("pageTitle").textContent=badocNavigationTitles[p]||p.replace(/^\w/,c=>c.toUpperCase()).replace("Towns","Town Management");
  document.body.classList.toggle("pickup-page-active",p==="firstMile");
- if(p==="firstMile")window.__badocRenderFirstMileCombined?.();
- if(p==="linehaul")renderLinehaul();
- if(p==="dailyRiderPerformance")renderRiderPerformance();
- if(p==="actualScannedByRiders")window.__badocRenderActualScannedByRiders?.();
- if(p==="volumeForecastBoard"){window.updateOperationProgress?.();window.__badocRenderForecastBoard?.();}
+
+ // Let the selected page paint first. A newer menu selection cancels queued work.
+ const renderToken=++badocMenuRenderToken;
+ const renderMenuContent=()=>{
+   if(renderToken!==badocMenuRenderToken||!page||!page.classList.contains("active"))return;
+   try{
+     if(p==="firstMile")window.__badocRenderFirstMileCombined?.();
+     if(p==="linehaul")renderLinehaul();
+     if(p==="dailyRiderPerformance")renderRiderPerformance();
+     if(p==="actualScannedByRiders")window.__badocRenderActualScannedByRiders?.();
+     // Operational metrics are already refreshed on startup, after data changes,
+     // and by the 30-second operation-runtime refresh. Do not recalculate them
+     // synchronously every time the user opens Volume Forecast.
+     if(p==="volumeForecastBoard")window.__badocRenderForecastBoard?.();
+   }catch(error){console.warn("Menu render failed for "+p+":",error);}
+ };
+ if(page&&["firstMile","linehaul","dailyRiderPerformance","actualScannedByRiders","volumeForecastBoard"].includes(p)){
+   const schedule=()=>window.setTimeout(renderMenuContent,0);
+   if(typeof window.requestAnimationFrame==="function")window.requestAnimationFrame(schedule);
+   else schedule();
+ }
+
  if(p==="actualScannedByRiders"||p==="volumeForecastBoard"){
    document.getElementById("planningBoardNav")?.classList.add("open");
    document.getElementById("planningBoardToggle")?.setAttribute("aria-expanded","true");
@@ -4196,11 +4220,22 @@ function kpiCsv(text){
 function kn(v){return String(v??"").trim().toLowerCase().replace(/\s+/g," ")}
 function kv(id,v){const e=$(id);if(e)e.textContent=(v===undefined||v==="")?"—":v}
 
-async function loadLiveKPI(){
+async function loadLiveKPI(forceRefreshArg){
   const SHEET_ID="11heDz_BMJPM9UDXEZ5nF4cyi6t53pbcLk--1cI62-70";
   const GID="0";
   const REFRESH_MS=5*60*1000;
   const STATION_NAME="Badoc Hub";
+  const forceRefresh=forceRefreshArg===true||!!(forceRefreshArg&&typeof forceRefreshArg==="object");
+  const ensureRefreshTimer=()=>{
+    if(!window.__kpiRefreshTimer)window.__kpiRefreshTimer=__badocEvery(()=>loadLiveKPI(true),REFRESH_MS);
+  };
+  if(window.__badocKpiLoadPromise)return window.__badocKpiLoadPromise;
+  const now=Date.now();
+  const lastSuccess=Number(window.__badocKpiLastSuccessAt)||0;
+  const lastAttempt=Number(window.__badocKpiLastAttemptAt)||0;
+  if(!forceRefresh&&lastSuccess&&now-lastSuccess<REFRESH_MS){ensureRefreshTimer();return;}
+  if(!forceRefresh&&lastAttempt>lastSuccess&&now-lastAttempt<30000){ensureRefreshTimer();return;}
+  window.__badocKpiLastAttemptAt=now;
 
   const status=t=>{const e=$("kpiStatus");if(e)e.textContent=t};
   const setText=(id,v)=>{const e=$(id);if(e)e.textContent=(v==null||String(v).trim()==="")?"—":String(v).trim()};
@@ -4542,6 +4577,7 @@ async function loadLiveKPI(){
         renderMonth(inner,"M-1 • "+previous.month,rows,previous,false);
       }
 
+      window.__badocKpiLastSuccessAt=Date.now();
       status("GOOGLE SHEET • LIVE • AUTO REFRESH 5 MIN");
     }catch(err){
       console.warn("KPI pull failed:",err);
@@ -4549,9 +4585,13 @@ async function loadLiveKPI(){
     }
   };
 
-  await run();
-  clearInterval(window.__kpiRefreshTimer);
-  window.__kpiRefreshTimer=__badocEvery(run,REFRESH_MS);
+  const request=run();
+  window.__badocKpiLoadPromise=request;
+  try{await request;}
+  finally{
+    if(window.__badocKpiLoadPromise===request)window.__badocKpiLoadPromise=null;
+    ensureRefreshTimer();
+  }
 }
 
 loadLiveKPI();
@@ -4892,6 +4932,28 @@ function renderLinehaulCore(){
   const body=$("linehaulBody");
   let rows=[], visibleTasks=0;
 
+  // These parcel lookups are shared by every Linehaul Task. Building them
+  // inside the task loop made menu navigation scale as tasks × parcel rows.
+  const hasTaskRows=Array.isArray(linehaulTasks)&&linehaulTasks.some(task=>!task?.blank&&String(task?.id||"").trim());
+  const allMisrouted=hasTaskRows&&Array.isArray(current?.mis)?current.mis:[];
+  const misKey=r=>normJoin(r?.["SLS Tracking Number"]||r?.["Order ID"]||r?.["SPX TN"]||r?.["SPX Tracking Number"]||"");
+  const taskMisMap=new Map();
+  allMisrouted.forEach(r=>{
+    const k=misKey(r);
+    if(k&&!taskMisMap.has(k))taskMisMap.set(k,r);
+  });
+  const parcelOrderIndex=new Set();
+  if(hasTaskRows){
+    (current?.rows||[]).forEach(r=>{
+      const k=normJoin(r?.["Order ID"]||r?.["SPX TN"]||r?.["SPX Tracking Number"]||"");
+      if(k)parcelOrderIndex.add(k);
+    });
+  }
+  const detailStore=window.__lhTaskDetails instanceof Map
+    ?window.__lhTaskDetails
+    :(window.__lhTaskDetails=new Map());
+  detailStore.clear();
+
   linehaulTasks.forEach(task=>{
     const taskId=String(task.id||"").trim();
     if(!taskId || task.blank)return;
@@ -4947,6 +5009,9 @@ function renderLinehaulCore(){
     ["SALANAP","BARBAR","BUNGRO","PUGAOAN"]
   ];
 
+  const badocTownNames=badocGroups.flat();
+  const piniliTownNames=piniliGroups.flat();
+
   const packedForTask=(task)=>{
     const rows=task.exportRows||[];
     const seen=new Set();
@@ -4954,7 +5019,7 @@ function renderLinehaulCore(){
     return seen.size;
   };
 
-  linehaulTasks.forEach(task=>{
+  linehaulTasks.forEach((task,taskIndex)=>{
     const taskId=String(task?.id||"").trim();
     if(!taskId||task.blank)return;
 
@@ -4965,27 +5030,14 @@ function renderLinehaulCore(){
       if(t)counts[t]=(g.items||[]).length;
     });
 
-    const badocTotal=badocGroups.flat().reduce((s,t)=>s+(counts[t]||0),0);
-    const piniliTotal=piniliGroups.flat().reduce((s,t)=>s+(counts[t]||0),0);
+    const badocTotal=badocTownNames.reduce((s,t)=>s+(counts[t]||0),0);
+    const piniliTotal=piniliTownNames.reduce((s,t)=>s+(counts[t]||0),0);
     const packedTotal=packedForTask(task);
 
     // Misrouted for this specific Linehaul Task:
     // Match the task SPX TNs against the existing Parcel Count misrouted records.
     // This is display-only and does not change the existing classification logic.
     // Build lookup indexes once for all tasks. Keep the per-task UI lightweight.
-    const allMisrouted=Array.isArray(current?.mis)?current.mis:[];
-    const misKey=r=>normJoin(r?.["SLS Tracking Number"]||r?.["Order ID"]||r?.["SPX TN"]||r?.["SPX Tracking Number"]||"");
-    const taskMisMap=new Map();
-    allMisrouted.forEach(r=>{
-      const k=misKey(r);
-      if(k&&!taskMisMap.has(k))taskMisMap.set(k,r);
-    });
-    const parcelOrderIndex=new Set();
-    (current?.rows||[]).forEach(r=>{
-      const k=normJoin(r?.["Order ID"]||r?.["SPX TN"]||r?.["SPX Tracking Number"]||"");
-      if(k)parcelOrderIndex.add(k);
-    });
-
     const taskMisrouted=[],taskUnmatched=[];
     const misSeen=new Set(),unmatchedSeen=new Set();
     (task.exportRows||[]).forEach(er=>{
@@ -4997,9 +5049,8 @@ function renderLinehaulCore(){
     });
 
     // Keep detail rows in memory and render them only when the user expands a panel.
-    const detailKey=`lhdetail_${Math.random().toString(36).slice(2)}`;
-    if(!window.__lhTaskDetails)window.__lhTaskDetails=new Map();
-    window.__lhTaskDetails.set(detailKey,{mis:taskMisrouted,unmatched:taskUnmatched,taskId});
+    const detailKey=`lhdetail_${taskIndex}`;
+    detailStore.set(detailKey,{mis:taskMisrouted,unmatched:taskUnmatched,taskId});
 
     // Total task volume is shown as valid matched / total exported SPX TNs.
     // Valid matched excludes task-specific misrouted and unmatched parcels.
