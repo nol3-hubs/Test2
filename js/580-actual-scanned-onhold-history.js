@@ -16,6 +16,8 @@
   const TASK_MAP_STORAGE_KEY = "badoc_actual_scanned_assignment_tasks_v1";
   const AT_NUMBER_ALIASES = ["AT Number", "AT No", "Assignment Task Number", "Assignment Task No", "Assignment Task ID", "assignment_task_number", "assignment_task_id", "Task Number", "Task No"];
   const TASK_TN_ALIASES = ["SPX Tracking Number", "SPX TN", "SLS Tracking Number", "Tracking Number", "Tracking No", "SPX Tracking No", "Waybill Number", "AWB"];
+  const TASK_RIDER_ID_ALIASES = [...RIDER_ID_ALIASES, "Assigned Rider ID", "Assigned Driver ID", "Task Rider ID"];
+  const TASK_RIDER_NAME_ALIASES = [...RIDER_NAME_ALIASES, "Assigned Rider", "Assigned Driver Name", "Assigned Driver", "Task Rider Name"];
   const INVALID_DRIVER = /^(?:0+|N\/?A|NONE|NULL|UNKNOWN|UNASSIGNED|-)$/i;
   const ALL_DATES_VALUE = "__ALL_DATES__";
   const UNATTRIBUTED_RIDER_KEY = "UNATTRIBUTED_ONHOLD";
@@ -192,8 +194,8 @@
       dateKey: rowActivityDate(row, liveDate || todayManilaKey()),
       trackingNumber: field(row, TASK_TN_ALIASES),
       atNumber: field(row, AT_NUMBER_ALIASES),
-      riderId: field(row, RIDER_ID_ALIASES),
-      riderName: field(row, RIDER_NAME_ALIASES)
+      riderId: field(row, TASK_RIDER_ID_ALIASES),
+      riderName: field(row, TASK_RIDER_NAME_ALIASES)
     })).filter(row => row.trackingNumber);
     return stored.concat(liveMapped);
   }
@@ -303,8 +305,8 @@
     const parsed = sourceRows.map(row => ({
       dateKey: rowActivityDate(row, fallbackDate),
       atNumber: field(row, AT_NUMBER_ALIASES),
-      riderId: field(row, RIDER_ID_ALIASES),
-      riderName: field(row, RIDER_NAME_ALIASES)
+      riderId: field(row, TASK_RIDER_ID_ALIASES),
+      riderName: field(row, TASK_RIDER_NAME_ALIASES)
     })).filter(row => row.dateKey && key(row.atNumber) && (row.riderId || row.riderName));
     if (!parsed.length) throw new Error("No usable rows found. Required columns: DATE, AT Number, and RIDER ID or RIDER NAME.");
     const merged = atMapRows();
@@ -322,8 +324,8 @@
       dateKey: rowActivityDate(row, fallbackDate),
       trackingNumber: field(row, TASK_TN_ALIASES),
       atNumber: field(row, AT_NUMBER_ALIASES),
-      riderId: field(row, RIDER_ID_ALIASES),
-      riderName: field(row, RIDER_NAME_ALIASES)
+      riderId: field(row, TASK_RIDER_ID_ALIASES),
+      riderName: field(row, TASK_RIDER_NAME_ALIASES)
     })).filter(row => row.dateKey && key(row.trackingNumber) && (key(row.atNumber) || row.riderId || row.riderName));
     if (!parsed.length) throw new Error("No usable rows found. Required: SPX Tracking Number plus AT Number or Rider ID/Rider Name.");
     const merged = readStoredRows(TASK_MAP_STORAGE_KEY);
