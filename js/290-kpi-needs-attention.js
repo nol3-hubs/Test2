@@ -62,6 +62,7 @@
     syncNeedsAttention();
   }
   window.__badocSyncKpiNeedsAttention=syncNeedsAttention;
+  window.addEventListener("badoc-kpi-data-ready",syncNeedsAttention);
   if(document.readyState==="loading"){
     document.addEventListener("DOMContentLoaded",observe,{once:true});
   }else{
