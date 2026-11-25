@@ -67,3 +67,18 @@ Both extension bridge scripts report their package version during the handshake.
 - `nol3-hubs/test` was used as the source and was not changed.
 - Production `nol3-hubs/badoc-hub` was not changed.
 - Test2's existing GitHub Actions workflows are retained.
+
+## OnHold history update (November 25, 2026)
+
+This package includes an update to **Actual Scanned by Riders** and the Forward/Return export merge:
+
+- The export merge now uses the shared row-preservation helper, so a newer SPX status export with a blank `Pick Up Time` does not erase the original pickup timestamp used by the fixed **3:00 PM Manila** OnHold cutoff.
+- The rider table now displays **Ever OnHold / Current OnHold** separately. Current OnHold follows the latest parcel status; Ever OnHold retains a dated event and rider attribution after a later status change.
+- Historical OnHold events are included in rider/town breakdowns, the selected rider detail panel, and the filtered CSV export.
+- The history store is browser-local IndexedDB (`BadocHubActualScannedHistoryV1`). It is **not synchronized across devices or browsers** in this package.
+
+**Historical-data limitation:** the app can preserve OnHold events it sees after this update is deployed, and it can capture older events when the source still contains an explicit OnHold timestamp/status. It cannot reliably recreate an OnHold transition that has already been overwritten in every available export and local history.
+
+## Package and deployment boundary
+
+This archive is the complete modular **Test2-derived** project snapshot saved on November 23, 2026, with the OnHold changes above applied locally. It is not a fresh export of the current production `nol3-hubs/badoc-hub` main branch; that repository currently uses a different, monolithic `index.html` layout. Do not replace that production repository with this modular archive unless you have intentionally chosen this Test2-derived build as your deployment baseline. No GitHub repository was modified while preparing this package.

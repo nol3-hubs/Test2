@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://badoc-hub-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app" crossorigin>
 <script>(function(){try{var t=localStorage.getItem('badochub-theme');if(t!=='dark'&&t!=='light'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
-<link rel="stylesheet" href="css/app.css?v=ui20261124a">
+<link rel="stylesheet" href="css/app.css?v=6db870aa">
 
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -22,7 +22,7 @@
 <script src="js/020-poll-gate.js?v=f6b5e909" id="badoc-poll-gate"></script>
 <script src="js/030-health-early.js?v=99045c9d" id="badoc-health-early"></script>
 <script src="js/040-time.js?v=23911514" id="badoc-time"></script>
-<script src="js/050-cloud-adapter.js?v=0a97d1a3" id="cloud-adapter"></script>
+<script src="js/050-cloud-adapter.js?v=71dceb5e" id="cloud-adapter"></script>
 
 
 <script src="js/060-dashboard-config.js?v=de8fd2f1" id="v2-config"></script>
@@ -455,7 +455,7 @@
       <div><label for="actualScanStatus">STATUS</label><select id="actualScanStatus"><option value="">All statuses</option></select></div>
     </div>
     <div class="actual-scan-table-wrap"><table class="actual-scan-table">
-      <thead><tr><th>RIDER</th><th>VEHICLE</th><th class="num">PARCELS</th><th class="num">DELIVERED</th><th class="num">ONHOLD</th><th class="num">MISMATCH</th><th>TOWN BREAKDOWN</th></tr></thead>
+      <thead><tr><th>RIDER</th><th>VEHICLE</th><th class="num">PARCELS</th><th class="num">DELIVERED</th><th class="num">EVER / CURRENT ONHOLD</th><th class="num">MISMATCH</th><th>TOWN BREAKDOWN</th></tr></thead>
       <tbody id="actualScannedRiderBody"><tr><td colspan="7" class="actual-scan-empty">No actual scan data loaded.</td></tr></tbody>
     </table></div>
   </div>
@@ -895,7 +895,7 @@
 </main>
 </div>
 
-<script src="js/120-app-core.js?v=54bc5857"></script>
+<script src="js/120-app-core.js?v=a58119e1"></script>
 
 <script src="js/130-kpi-m1-sheet.js?v=d31d12a2"></script>
 <nav id="mobileBottomNav" class="mobile-bottom-nav" aria-label="Mobile navigation">
@@ -1053,6 +1053,7 @@
 <script src="js/560-sidebar-state-sync.js?v=6f625cd0" id="badoc-sidebar-state-sync-v2"></script>
 <script src="js/570-settings-center.js?v=62625ccf" id="badoc-settings-center-runtime"></script>
 <script src="actual-scanned.js?v=8e67dbde"></script>
+<script src="js/580-actual-scanned-onhold-history.js?v=82046ea4"></script>
 
 </body>
 </html>

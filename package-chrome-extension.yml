@@ -1,0 +1,107 @@
+name: Package Chrome SPX Bridge
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "extension/**"
+      - ".github/workflows/package-chrome-extension.yml"
+      - "tools/sync_bridge.py"
+      - "tools/stamp-assets.mjs"
+
+concurrency:
+  group: badoc-chrome-package
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate package
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path("extension")
+          manifest = json.loads((root / "manifest.json").read_text())
+          assert manifest["manifest_version"] == 3
+          service_worker = manifest["background"].get("service_worker")
+          assert service_worker and (root / service_worker).is_file(), service_worker
+          for script in manifest["content_scripts"]:
+              for name in script["js"]:
+                  assert (root / name).is_file(), name
+          for resource in manifest.get("web_accessible_resources", []):
+              for name in resource["resources"]:
+                  assert (root / name).is_file(), name
+          for name in manifest["icons"].values():
+              assert (root / name).is_file(), name
+          print("Chrome manifest and packaged files validated.")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write("PACKAGE_VERSION=" + manifest["version"] + "\n")
+          PY
+      - name: Create ZIP
+        shell: bash
+        run: |
+          cd extension
+          zip -X -qr "$GITHUB_WORKSPACE/SPX-BRIDGE-BADOC-HUB-CHROME-${PACKAGE_VERSION}.zip" .
+          cd "$GITHUB_WORKSPACE"
+          sha256sum "SPX-BRIDGE-BADOC-HUB-CHROME-${PACKAGE_VERSION}.zip" > "SPX-BRIDGE-BADOC-HUB-CHROME-${PACKAGE_VERSION}.sha256"
+      - name: Refresh embedded Chrome bridge in dashboard
+        shell: bash
+        run: |
+          python3 tools/sync_bridge.py
+          node tools/stamp-assets.mjs
+
+      - name: Publish ZIP in repository
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          published=0
+          for attempt in 1 2 3; do
+            # Start from the latest main branch and regenerate the embedded bridge there.
+            git fetch origin "${GITHUB_REF_NAME}"
+            git reset --hard "origin/${GITHUB_REF_NAME}"
+            mkdir -p downloads
+            cp -f "SPX-BRIDGE-BADOC-HUB-CHROME-${PACKAGE_VERSION}.zip" downloads/
+            cp -f "SPX-BRIDGE-BADOC-HUB-CHROME-${PACKAGE_VERSION}.sha256" downloads/
+            python3 tools/sync_bridge.py
+            node tools/stamp-assets.mjs
+            git add index.html sw.js js "downloads/SPX-BRIDGE-BADOC-HUB-CHROME-${PACKAGE_VERSION}.zip" "downloads/SPX-BRIDGE-BADOC-HUB-CHROME-${PACKAGE_VERSION}.sha256"
+            if git diff --cached --quiet; then
+              echo "Chrome package files are already current."
+              published=1
+              break
+            fi
+            git commit -m "Publish Chrome SPX Bridge ${PACKAGE_VERSION} package"
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              published=1
+              break
+            fi
+            echo "Publish attempt ${attempt} raced with another branch update; refreshing and rebuilding."
+            sleep 2
+          done
+          if [ "$published" -ne 1 ]; then
+            echo "Could not publish Chrome package after 3 attempts."
+            exit 1
+          fi
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPX-BRIDGE-BADOC-HUB-CHROME-${{ env.PACKAGE_VERSION }}
+          path: |
+            SPX-BRIDGE-BADOC-HUB-CHROME-*.zip
+            SPX-BRIDGE-BADOC-HUB-CHROME-*.sha256
+          if-no-files-found: error
+          retention-days: 30
