@@ -437,7 +437,7 @@
               if(typeof postBadocSpxMessage!=="function"){
                 finishAssignmentTaskReportError("SPX bridge is not available on this dashboard page.");
               }else{
-                armAssignmentTaskReportWatchdog(15000,"The Assignment Task command was not forwarded by the extension page bridge within 15 seconds. Check that Badoc Hub Extension v1.5.23 is enabled, then reload the extension and refresh Badoc Hub.");
+                armAssignmentTaskReportWatchdog(15000,"The installed SPX extension did not forward the Assignment Task export command. This Test2 extension bundle currently lacks that command handler; the automatic rider mapping cannot complete until the extension bridge supports Assignment Task export.");
                 postBadocSpxMessage("BADOC_START_ASSIGNMENT_TASK_EXPORT",{selectedDate:today});
               }
             }
