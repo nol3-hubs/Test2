@@ -3667,3 +3667,32 @@ html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn .theme-switch-t
     grid-template-columns:1fr!important;
   }
 }
+
+
+/* ===== dashboard-parcel-grid-placement-fix-v7 ===== */
+/* Clear the older, more-specific special positions for On-Hold and CFR1.
+   All five Parcel Overview metrics now occupy equal-width cells in normal flow. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card:nth-child(4),
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card:nth-child(5){
+  grid-column:auto!important;
+  grid-row:auto!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  grid-auto-flow:row!important;
+  grid-auto-rows:minmax(100px,auto)!important;
+  align-items:stretch!important;
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card:nth-child(4),
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card:nth-child(5){
+    grid-column:auto!important;
+    grid-row:auto!important;
+  }
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
