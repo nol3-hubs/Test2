@@ -3432,8 +3432,15 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
         searchableValues.push(fmPickupTaskNumber(task),fmTaskStatusRaw(task),fmTaskDriverName(task),fmPickupPointId(task),...Object.values(task));
       });
       return searchableValues.some(value=>fmNorm(value).includes(search));
+    }).map((group,index)=>({group,index,rider:fmAssignedRiderDisplay(group)}));
+    const riderCollator=new Intl.Collator("en",{sensitivity:"base",numeric:true});
+    filtered.sort((a,b)=>{
+      const aUnassigned=fmNorm(a.rider)==="unassigned",bUnassigned=fmNorm(b.rider)==="unassigned";
+      if(aUnassigned!==bUnassigned)return aUnassigned?1:-1;
+      return riderCollator.compare(a.rider,b.rider)||a.index-b.index;
     });
-    firstMileVisibleRows=filtered;
+    const visibleGroups=filtered.map(item=>item.group);
+    firstMileVisibleRows=visibleGroups;
 
     if(meta)meta.textContent="Showing "+filtered.length.toLocaleString()+" of "+firstMileCombinedRows.length.toLocaleString()+" rows: "+eligibleOrderGroups.length.toLocaleString()+" orders with ETA today and "+taskOnlyRows.length.toLocaleString()+" standalone tasks created today (Philippine time). Matched tasks stay on their order row; unmatched tasks appear separately regardless of status. Hidden "+excludedCancelledWithoutDisabled.toLocaleString()+" cancelled orders without a matched Disabled task.";
 
@@ -3443,7 +3450,6 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     if(copyBtn){copyBtn.disabled=!hasSheetRows;copyBtn.textContent=hasSheetRows?"Copy for Sheet ("+sheetRowCount+")":"Copy for Sheet";}
 
     const columns=[
-      ["Record Type",g=>g.taskOnly?"Pickup Task":"Pickup Order"],
       ["Order Number",g=>fmOrderId(g.eligibleOrders?.[0]||{})||"—"],
       ["Pickup Task Number",g=>fmPickupTaskNumber(fmLatestTask(g)||g.tasks?.[0]||{})||"—"],
       ["Pickup Point ID",g=>{
@@ -3475,10 +3481,8 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           :"No Pickup Orders have an ETA today and no Pickup Tasks were created today ("+today+").";
         table.innerHTML='<div class="first-mile-combined-empty">'+fmEsc(emptyMessage)+'</div>';
       }else{
-        const maxRows=Math.min(filtered.length,2000);
-        const rowHeight=48,overscan=8;
         const columnsHtml='<thead><tr>'+columns.map(c=>'<th>'+fmEsc(c[0])+'</th>').join('')+'</tr></thead>';
-        const rowHtml=g=>'<tr class="fm-virtual-row">'+columns.map(c=>{
+        const rowHtml=g=>'<tr>'+columns.map(c=>{
           const value=c[1](g);
           if(c[0]==="Status"){
             const key=fmNorm(value);
@@ -3492,35 +3496,8 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           }
           if(c[0]==="PROOF")return '<td class="fm-pickup-info-cell">'+(value||"—")+'</td>';
           return '<td title="'+fmEsc(value)+'">'+fmEsc(value)+'</td>';
-        }).join("")+'</tr>';
-        const renderWindow=()=>{
-          const viewportHeight=table.clientHeight||560;
-          const rowsPerViewport=Math.max(1,Math.ceil(Math.max(120,viewportHeight-44)/rowHeight));
-          let start=Math.max(0,Math.floor(Math.max(0,table.scrollTop-44)/rowHeight)-overscan);
-          const windowSize=rowsPerViewport+overscan*2;
-          let end=Math.min(maxRows,start+windowSize);
-          if(end-start<windowSize)start=Math.max(0,end-windowSize);
-          const topHeight=start*rowHeight,bottomHeight=(maxRows-end)*rowHeight;
-          const topSpacer=topHeight?'<tr class="fm-virtual-spacer" aria-hidden="true"><td colspan="'+columns.length+'" style="height:'+topHeight+'px;padding:0;border:0;line-height:0"></td></tr>':"";
-          const bottomSpacer=bottomHeight?'<tr class="fm-virtual-spacer" aria-hidden="true"><td colspan="'+columns.length+'" style="height:'+bottomHeight+'px;padding:0;border:0;line-height:0"></td></tr>':"";
-          table.innerHTML='<table>'+columnsHtml+'<tbody>'+topSpacer+filtered.slice(start,end).map(rowHtml).join("")+bottomSpacer+'</tbody></table>'+
-            (filtered.length>2000?'<div class="first-mile-combined-empty">Showing first 2,000 of '+filtered.length.toLocaleString()+' rows.</div>':"");
-          table.dataset.virtualStart=String(start);
-          table.dataset.virtualEnd=String(end);
-        };
-        if(!table.__badocVirtualScrollBound){
-          table.addEventListener("scroll",()=>{
-            if(table.__badocVirtualRaf)return;
-            table.__badocVirtualRaf=requestAnimationFrame(()=>{
-              table.__badocVirtualRaf=0;
-              if(typeof table.__badocVirtualRender==="function")table.__badocVirtualRender();
-            });
-          },{passive:true});
-          table.__badocVirtualScrollBound=true;
-        }
-        table.__badocVirtualRender=renderWindow;
-        table.scrollTop=0;
-        renderWindow();
+        }).join('')+'</tr>';
+        table.innerHTML='<table>'+columnsHtml+'<tbody>'+visibleGroups.map(rowHtml).join('')+'</tbody></table>';
       }
     }
     if(downloadBtn)downloadBtn.disabled=!filtered.length;

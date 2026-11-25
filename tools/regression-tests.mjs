@@ -165,3 +165,25 @@ test('Volume Forecast skips full rendering while its page is hidden at startup',
   const forecast=readFileSync(resolve(root,'js/510-volume-forecast-board.js'),'utf8');
   assert.match(forecast,/function init\(\)\{\s*bind\(\);\s*if\(el\("volumeForecastBoard"\)\?\.classList\.contains\("active"\)\)render\(\);/);
 });
+
+
+test('Pickup results hide Record Type and sort assigned rider names ascending',()=>{
+  const marker='const columns=[';
+  const start=core.indexOf(marker);assert.notEqual(start,-1);
+  const end=core.indexOf('if(table&&$("firstMile")',start);assert.notEqual(end,-1);
+  const columns=core.slice(start,end);
+  assert.doesNotMatch(columns,/Record Type/);
+  assert.match(core,/new Intl\.Collator\("en",\{sensitivity:"base",numeric:true\}\)/);
+  assert.match(core,/riderCollator\.compare\(a\.rider,b\.rider\)/);
+  assert.match(core,/aUnassigned\?1:-1/);
+});
+
+test('Pickup results render every filtered row without virtual scrolling or a 2000-row cap',()=>{
+  const start=core.indexOf('if(table&&$("firstMile")',core.indexOf('function renderFirstMileCombined'));
+  const end=core.indexOf('if(downloadBtn)downloadBtn.disabled=!filtered.length;',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const render=core.slice(start,end);
+  assert.match(render,/visibleGroups\.map\(rowHtml\)\.join\(''\)/);
+  assert.doesNotMatch(render,/renderWindow|virtualStart|virtualEnd|maxRows|2000/);
+  assert.match(readFileSync(resolve(root,'css/app.css'),'utf8'),/\.first-mile-combined-table\{[\s\S]*?max-height:none!important;[\s\S]*?overflow-y:visible!important;/);
+});

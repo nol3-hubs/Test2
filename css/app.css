@@ -384,7 +384,7 @@ html[data-theme="dark"] #firstMile.page{color:#e7f0fb}
 #firstMile .first-mile-combined-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:10px 0}
 #firstMile #firstMileCombinedSearch{flex:1 1 260px;min-width:180px;background:#091625;border:1px solid #2a405d;border-radius:9px;color:#e7f0fb;padding:10px 12px}
 #firstMile #firstMileCombinedMeta{font-size:11px;color:#91a8c1}
-#firstMile .first-mile-combined-table{overflow:auto;max-height:560px;border:1px solid #263d59;border-radius:10px;background:#091625}
+#firstMile .first-mile-combined-table{overflow-x:auto;overflow-y:visible;max-height:none;border:1px solid #263d59;border-radius:10px;background:#091625}
 #firstMile .first-mile-combined-table table{width:100%;border-collapse:collapse;min-width:1050px;font-size:12px}
 #firstMile .first-mile-combined-table th{position:sticky;top:0;background:#152941;color:#d8e8f8;text-align:left;z-index:1;white-space:nowrap}
 #firstMile .first-mile-combined-table td,#firstMile .first-mile-combined-table th{padding:10px 11px;border-bottom:1px solid #1d3148}
@@ -3011,3 +3011,16 @@ html[data-theme="light"] tbody tr:hover{background:#f3f7fc!important}
   .table-wrap,.table-scroll,.dh2-tablewrap,.forecast-board-table-wrap,.actual-scan-table-wrap{-webkit-overflow-scrolling:touch}
 }
 @media(max-width:380px){.page{padding:10px!important}.top{padding:9px 11px!important}}
+
+
+/* Pickup results: show the full filtered result list in the normal page flow. */
+#firstMile .first-mile-combined-table{
+  max-height:none!important;
+  height:auto!important;
+  overflow-y:visible!important;
+}
+#firstMile .first-mile-combined-table tbody tr:not(.fm-virtual-spacer)>td{
+  height:auto!important;
+  max-height:none!important;
+  white-space:normal!important;
+}
