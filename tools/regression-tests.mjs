@@ -113,7 +113,7 @@ test('cloud row insert is atomic and cannot overwrite a concurrent existing row'
 
 test('menu navigation defers heavy page rendering and avoids duplicate forecast recalculation',()=>{
   const start=core.indexOf('function showPage(p){');assert.notEqual(start,-1);
-  const end=core.indexOf('\\n$("parcelIncomingVolumeBtn")',start);assert.notEqual(end,-1);
+  const end=core.indexOf('\n$("parcelIncomingVolumeBtn")',start);assert.notEqual(end,-1);
   const nav=core.slice(start,end);
   assert.match(nav,/requestAnimationFrame/);
   assert.match(nav,/badocMenuRenderToken/);
@@ -122,7 +122,7 @@ test('menu navigation defers heavy page rendering and avoids duplicate forecast 
 
 test('Linehaul rendering shares parcel indexes across tasks and clears its detail cache',()=>{
   const start=core.indexOf('function renderLinehaulCore(){');assert.notEqual(start,-1);
-  const end=core.indexOf('\\nfunction renderLinehaul(){',start);assert.notEqual(end,-1);
+  const end=core.indexOf('\nfunction renderLinehaul(){',start);assert.notEqual(end,-1);
   const block=core.slice(start,end);
   const taskLoop=block.indexOf('linehaulTasks.forEach((task,taskIndex)=>{');
   assert.notEqual(taskLoop,-1);
