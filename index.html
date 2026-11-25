@@ -7,7 +7,7 @@
 <title>Badoc Hub</title>
 <meta name="description" content="Badoc Hub parcel receiving dashboard with SPX Bridge sync.">
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v158">
+<meta name="badoc-app-version" content="v159">
 <meta name="badoc-bridge-files" content="js/bridge-files.js?v=dbe15ec8">
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://badoc-hub-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app" crossorigin>
@@ -444,17 +444,10 @@
       <div class="kpi"><div class="num" id="actualScannedFlexi">0</div><div class="lab">FLEXI</div></div>
       <div class="kpi"><div class="num" id="actualScannedMismatches">0</div><div class="lab">RIDER MISMATCHES</div></div>
     </div>
-    <p class="actual-scan-note" id="actualScannedNote">Actual workload is read from actual driver/rider fields in parcel and OnHold events. Assignment-task / AT matching is used only when event identity is missing; planned town assignments are never treated as scan proof.</p>
+    <p class="actual-scan-note" id="actualScannedNote">Actual workload is read from parcel and OnHold events. The app automatically requests today's Assignment Task data from SPX to resolve missing rider identities; planned town assignments are never treated as scan proof.</p>
   </div>
   <div class="section">
-    <div class="actual-scan-section-head"><h2>Actual Rider Workload</h2><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn secondary" type="button" id="actualScanAtMapImport">Import Rider AT Map</button><button class="btn secondary" type="button" id="actualScanTaskImport">Import Assignment Task CSV</button><button class="btn secondary" type="button" id="actualScanReset">Reset Filters</button><button class="btn secondary" type="button" id="actualScannedExport">Export Filtered CSV</button></div></div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px">
-      <label for="actualScanImportDate" style="font-size:10px;font-weight:800;letter-spacing:.05em">IMPORT DATE</label>
-      <input id="actualScanImportDate" type="date" style="max-width:165px">
-      <span class="hint" id="actualScanAtImportStatus" aria-live="polite">No AT map or Assignment Task file loaded.</span>
-      <input id="actualScanAtMapFile" type="file" accept=".csv,text/csv" hidden>
-      <input id="actualScanTaskFile" type="file" accept=".csv,text/csv" hidden>
-    </div>
+    <div class="actual-scan-section-head"><h2>Actual Rider Workload</h2><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn secondary" type="button" id="actualScanReset">Reset Filters</button><button class="btn secondary" type="button" id="actualScannedExport">Export Filtered CSV</button></div></div>
     <div class="actual-scan-filters">
       <div><label for="actualScanSearch">SEARCH</label><input id="actualScanSearch" type="search" placeholder="Rider, ID, tracking number or town"></div>
       <div><label for="actualScanDate">ACTIVITY DATE</label><select id="actualScanDate"><option value="">All dates</option></select></div>
@@ -686,7 +679,7 @@
     </div>
   </div>
 
-  <script src="js/090-reports-tabs.js?v=4543d623" id="badoc-reports-tabs-runtime"></script>
+  <script src="js/090-reports-tabs.js?v=assignment-auto-v159" id="badoc-reports-tabs-runtime"></script>
 </section>
 <section id="kpi" class="page">
   <div class="kpi-sheet" id="kpiLiveSheet">
@@ -1063,7 +1056,7 @@
 <script src="js/560-sidebar-state-sync.js?v=6f625cd0" id="badoc-sidebar-state-sync-v2"></script>
 <script src="js/570-settings-center.js?v=62625ccf" id="badoc-settings-center-runtime"></script>
 <script src="actual-scanned.js?v=2e1a076e"></script>
-<script src="js/580-actual-scanned-onhold-history.js?v=3cccd6b4"></script>
+<script src="js/580-actual-scanned-onhold-history.js?v=assignment-auto-v159"></script>
 
 </body>
 </html>
