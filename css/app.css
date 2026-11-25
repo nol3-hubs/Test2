@@ -3696,3 +3696,38 @@ html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn .theme-switch-t
     grid-template-columns:repeat(2,minmax(0,1fr))!important;
   }
 }
+
+
+/* ===== dashboard-parcel-cards-centered-v8 ===== */
+/* Center the two remaining Parcel Overview tiles together on row two. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+  display:grid!important;
+  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  grid-auto-flow:row!important;
+  grid-auto-rows:minmax(100px,auto)!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card{
+  grid-column:span 2!important;
+  grid-row:auto!important;
+  min-width:0!important;
+  width:100%!important;
+  max-width:100%!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card:nth-child(4){
+  grid-column:2 / span 2!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card:nth-child(5){
+  grid-column:4 / span 2!important;
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card,
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card:nth-child(4),
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card:nth-child(5){
+    grid-column:auto!important;
+    grid-row:auto!important;
+  }
+}
