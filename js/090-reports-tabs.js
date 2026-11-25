@@ -229,6 +229,7 @@
               fileName:String(data.fileName||"assignment_task.csv"),
               savedAt:Date.now()
             };
+            window.dispatchEvent(new CustomEvent("badoc:assignment-task-updated"));
             assignmentTaskExportPending=false;
             const button=assignmentTaskReportButton;
             assignmentTaskReportButton=null;
