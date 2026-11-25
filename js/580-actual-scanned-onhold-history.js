@@ -12,6 +12,10 @@
   const DB_NAME = "BadocHubActualScannedHistoryV1";
   const STORE_NAME = "onhold";
   const HISTORY_KEY = "badoc_hold_history_v2"; // existing legacy TN-only history
+  const AT_MAP_STORAGE_KEY = "badoc_actual_scanned_at_rider_map_v1";
+  const TASK_MAP_STORAGE_KEY = "badoc_actual_scanned_assignment_tasks_v1";
+  const AT_NUMBER_ALIASES = ["AT Number", "AT No", "Assignment Task Number", "Assignment Task No", "Assignment Task ID", "assignment_task_number", "assignment_task_id", "Task Number", "Task No"];
+  const TASK_TN_ALIASES = ["SPX Tracking Number", "SPX TN", "SLS Tracking Number", "Tracking Number", "Tracking No", "SPX Tracking No", "Waybill Number", "AWB"];
   const INVALID_DRIVER = /^(?:0+|N\/?A|NONE|NULL|UNKNOWN|UNASSIGNED|-)$/i;
   const ALL_DATES_VALUE = "__ALL_DATES__";
   const UNATTRIBUTED_RIDER_KEY = "UNATTRIBUTED_ONHOLD";
@@ -142,6 +146,194 @@
       return new Set(Array.isArray(raw) ? raw.map(key).filter(Boolean) : []);
     } catch (_) { return new Set(); }
   }
+  function dateKeyFromRaw(rawValue, fallback = "") {
+    const raw = String(rawValue ?? "").trim();
+    if (!raw) return fallback;
+    let match = raw.match(/^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})/);
+    if (match) return match[1] + "-" + String(Number(match[2])).padStart(2, "0") + "-" + String(Number(match[3])).padStart(2, "0");
+    match = raw.match(/^(\\d{1,2})[/-](\\d{1,2})[/-](\\d{2,4})/);
+    if (match) {
+      let year = Number(match[3]); if (year < 100) year += 2000;
+      return String(year) + "-" + String(Number(match[1])).padStart(2, "0") + "-" + String(Number(match[2])).padStart(2, "0");
+    }
+    const parsed = parseManilaStamp(raw);
+    return parsed?.dateKey || fallback;
+  }
+  function rowActivityDate(row, fallback) {
+    return dateKeyFromRaw(field(row, ["Assigned Time", "Assignment Time", "AT Date", "Task Date", "Assignment Date", "Date", "Activity Date", "DATE"]), fallback);
+  }
+  function readStoredRows(storageKey) {
+    try {
+      const rows = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      return Array.isArray(rows) ? rows.filter(row => row && typeof row === "object") : [];
+    } catch (_) { return []; }
+  }
+  function saveStoredRows(storageKey, rows) {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(rows));
+      return true;
+    } catch (error) {
+      console.warn("BADOC Actual Scanned AT/task map could not be saved:", error);
+      return false;
+    }
+  }
+  function importDateDefault() {
+    const input = document.getElementById("actualScanImportDate");
+    return input?.value || todayManilaKey();
+  }
+  function atMapRows() {
+    return readStoredRows(AT_MAP_STORAGE_KEY);
+  }
+  function taskMapRows() {
+    const stored = readStoredRows(TASK_MAP_STORAGE_KEY);
+    const live = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : [];
+    const liveDate = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
+    const liveMapped = live.map(row => ({
+      dateKey: rowActivityDate(row, liveDate || todayManilaKey()),
+      trackingNumber: field(row, TASK_TN_ALIASES),
+      atNumber: field(row, AT_NUMBER_ALIASES),
+      riderId: field(row, RIDER_ID_ALIASES),
+      riderName: field(row, RIDER_NAME_ALIASES)
+    })).filter(row => row.trackingNumber);
+    return stored.concat(liveMapped);
+  }
+  function uniqueIdentity(rows) {
+    const identities = new Map();
+    rows.forEach(row => {
+      const id = String(row.riderId || "").trim();
+      const name = String(row.riderName || "").trim();
+      const identityKey = id ? "ID:" + key(id) : (name ? "NAME:" + key(name) : "");
+      if (identityKey) identities.set(identityKey, row);
+    });
+    return identities.size === 1 ? [...identities.values()][0] : null;
+  }
+  function findAtMapRider(atNumber, dateKey) {
+    const atKey = key(atNumber);
+    if (!atKey || !dateKey) return null;
+    const matches = atMapRows().filter(row => row.dateKey === dateKey && key(row.atNumber) === atKey);
+    return uniqueIdentity(matches);
+  }
+  function findTaskMatch(tn, dateKey) {
+    const tnKey = key(tn);
+    if (!tnKey || !dateKey) return null;
+    const matches = taskMapRows().filter(row => row.dateKey === dateKey && key(row.trackingNumber) === tnKey);
+    if (!matches.length) return null;
+    const direct = uniqueIdentity(matches);
+    const atNumbers = [...new Set(matches.map(row => key(row.atNumber)).filter(Boolean))];
+    if (direct) return { ...direct, atNumber: matches.find(row => row.atNumber)?.atNumber || "", source: "Assignment Task export" };
+    if (atNumbers.length === 1) {
+      return { atNumber: matches.find(row => row.atNumber)?.atNumber || "", source: "Assignment Task AT match" };
+    }
+    return null;
+  }
+  function riderVehicle(riderId, riderName, fallback = "") {
+    const roster = typeof ridersData !== "undefined" && Array.isArray(ridersData) ? ridersData : [];
+    const matched = roster.find(row =>
+      (riderId && key(row["Driver ID"]) === key(riderId)) ||
+      (riderName && key(row["Driver Name"]) === key(riderName))
+    );
+    return matched?.["Vehicle Type"] || fallback || "";
+  }
+  function resolveOnholdAttribution({ tn, row = null, event = null, date = "", actualId = "", actualName = "", hasScanner = false } = {}) {
+    const dateKey = dateKeyFromRaw(date, todayManilaKey());
+    const eventId = String(event?.riderId || "").trim();
+    const eventName = String(event?.riderName || "").trim();
+    const rowId = String(actualId || "").trim();
+    const rowName = String(actualName || "").trim();
+    const directId = eventId || (hasScanner ? rowId : "");
+    const directName = eventName || (hasScanner ? rowName : "");
+    if (directId || directName) {
+      return {
+        riderId: directId, riderName: directName || (directId ? "Driver " + directId : ""),
+        riderKey: directId ? "ID:" + key(directId) : "NAME:" + key(directName),
+        vehicle: event?.vehicle || riderVehicle(directId, directName, ""),
+        atNumber: event?.atNumber || field(row, AT_NUMBER_ALIASES),
+        source: eventId || eventName ? "OnHold event" : "Current scanner"
+      };
+    }
+    const task = findTaskMatch(tn, dateKey);
+    if (task?.riderId || task?.riderName) {
+      return {
+        riderId: task.riderId || "", riderName: task.riderName || (task.riderId ? "Driver " + task.riderId : ""),
+        riderKey: task.riderId ? "ID:" + key(task.riderId) : "NAME:" + key(task.riderName),
+        vehicle: riderVehicle(task.riderId, task.riderName, event?.vehicle || ""),
+        atNumber: task.atNumber || event?.atNumber || field(row, AT_NUMBER_ALIASES),
+        source: "Assignment Task export"
+      };
+    }
+    const atNumber = task?.atNumber || event?.atNumber || field(row, AT_NUMBER_ALIASES);
+    const mapped = findAtMapRider(atNumber, dateKey);
+    if (mapped) {
+      return {
+        riderId: mapped.riderId || "", riderName: mapped.riderName || (mapped.riderId ? "Driver " + mapped.riderId : ""),
+        riderKey: mapped.riderId ? "ID:" + key(mapped.riderId) : "NAME:" + key(mapped.riderName),
+        vehicle: riderVehicle(mapped.riderId, mapped.riderName, event?.vehicle || ""),
+        atNumber, source: "AT Number map"
+      };
+    }
+    return {
+      riderId: "", riderName: "Unattributed OnHold", riderKey: "",
+      vehicle: event?.vehicle || "", atNumber, source: "Unattributed OnHold"
+    };
+  }
+  function setAtImportStatus(message, isError = false) {
+    const element = document.getElementById("actualScanAtImportStatus");
+    if (!element) return;
+    element.textContent = message;
+    element.style.color = isError ? "var(--danger, #ef4444)" : "";
+  }
+  function refreshAtImportStatus() {
+    const maps = atMapRows();
+    const tasks = taskMapRows();
+    const today = todayManilaKey();
+    const atCount = maps.filter(row => row.dateKey === today).length;
+    const taskCount = tasks.filter(row => row.dateKey === today).length;
+    setAtImportStatus("Today: " + atCount.toLocaleString() + " AT rider map row(s) · " + taskCount.toLocaleString() + " assignment-task parcel row(s)");
+  }
+  async function readCsvFile(file) {
+    const text = await file.text();
+    if (typeof parseCsvText !== "function") throw new Error("CSV parser is not available. Reload the dashboard and try again.");
+    const rows = parseCsvText(text);
+    if (!Array.isArray(rows) || !rows.length) throw new Error("The selected CSV is empty or could not be parsed.");
+    return rows;
+  }
+  async function importAtRiderMap(file) {
+    const fallbackDate = importDateDefault();
+    const sourceRows = await readCsvFile(file);
+    const parsed = sourceRows.map(row => ({
+      dateKey: rowActivityDate(row, fallbackDate),
+      atNumber: field(row, AT_NUMBER_ALIASES),
+      riderId: field(row, RIDER_ID_ALIASES),
+      riderName: field(row, RIDER_NAME_ALIASES)
+    })).filter(row => row.dateKey && key(row.atNumber) && (row.riderId || row.riderName));
+    if (!parsed.length) throw new Error("No usable rows found. Required columns: DATE, AT Number, and RIDER ID or RIDER NAME.");
+    const merged = atMapRows();
+    parsed.forEach(row => {
+      const signature = row.dateKey + "|" + key(row.atNumber) + "|" + (row.riderId ? key(row.riderId) : key(row.riderName));
+      if (!merged.some(old => old.dateKey + "|" + key(old.atNumber) + "|" + (old.riderId ? key(old.riderId) : key(old.riderName)) === signature)) merged.push(row);
+    });
+    if (!saveStoredRows(AT_MAP_STORAGE_KEY, merged.slice(-3000))) throw new Error("AT rider map could not be saved in this browser.");
+    return parsed.length;
+  }
+  async function importAssignmentTaskCsv(file) {
+    const fallbackDate = importDateDefault();
+    const sourceRows = await readCsvFile(file);
+    const parsed = sourceRows.map(row => ({
+      dateKey: rowActivityDate(row, fallbackDate),
+      trackingNumber: field(row, TASK_TN_ALIASES),
+      atNumber: field(row, AT_NUMBER_ALIASES),
+      riderId: field(row, RIDER_ID_ALIASES),
+      riderName: field(row, RIDER_NAME_ALIASES)
+    })).filter(row => row.dateKey && key(row.trackingNumber) && (key(row.atNumber) || row.riderId || row.riderName));
+    if (!parsed.length) throw new Error("No usable rows found. Required: SPX Tracking Number plus AT Number or Rider ID/Rider Name.");
+    const merged = readStoredRows(TASK_MAP_STORAGE_KEY);
+    parsed.forEach(row => {
+      const signature = row.dateKey + "|" + key(row.trackingNumber) + "|" + key(row.atNumber) + "|" + (row.riderId ? key(row.riderId) : key(row.riderName));
+      if (!merged.some(old => old.dateKey + "|" + key(old.trackingNumber) + "|" + key(old.atNumber) + "|" + (old.riderId ? key(old.riderId) : key(old.riderName)) === signature)) merged.push(row);
+    });
+    if (!saveStoredRows(TASK_MAP_STORAGE_KEY, merged.slice(-12000))) throw new Error("Assignment Task parcel map could not be saved in this browser.");
+    return parsed.length;
+  }
   function saveLegacyKeys() {
     const keys = loadLegacyKeys();
     historyByKey.forEach(record => { if (record.tn) keys.add(key(record.tn)); });
@@ -168,6 +360,7 @@
       onholdAt: eventRaw || new Date().toISOString(),
       riderId,
       riderName,
+      atNumber: field(row, AT_NUMBER_ALIASES),
       town: field(row, ["Town Name", "Town", "Delivery Town", "Municipality"]),
       vehicle: field(row, ["Vehicle Type", "Rider Vehicle Type", "Driver Vehicle Type"]),
       area: String(row?._area || "").trim().toUpperCase(),
@@ -202,6 +395,7 @@
           ...previous,
           riderId: previous.riderId || record.riderId,
           riderName: previous.riderName || record.riderName,
+          atNumber: previous.atNumber || record.atNumber,
           town: previous.town || record.town,
           vehicle: previous.vehicle || record.vehicle,
           area: previous.area || record.area,
@@ -290,11 +484,19 @@
       // Keep current scan attribution and current activity date intact. OnHold
       // history has its own rider/town/vehicle fields so a later status or rider
       // update cannot rewrite who originally handled the OnHold parcel.
-      record.onholdRiderId = historical?.riderId || (record.currentOnhold ? record.actualId : "");
-      record.onholdRiderName = historical?.riderName || (record.currentOnhold ? record.actualName : "");
-      record.onholdRiderKey = historyRiderKey(historical) || (record.currentOnhold ? record.riderKey : "");
+      const onholdAttribution = record.currentOnhold
+        ? resolveOnholdAttribution({
+            tn: record.tn, row: record.row, event: historical, date: record.date,
+            actualId: record.actualId, actualName: record.actualName, hasScanner: record.hasScanner
+          })
+        : null;
+      record.onholdRiderId = onholdAttribution?.riderId || "";
+      record.onholdRiderName = onholdAttribution?.riderName || "";
+      record.onholdRiderKey = onholdAttribution?.riderKey || "";
+      record.onholdAtNumber = onholdAttribution?.atNumber || historical?.atNumber || field(record.row, AT_NUMBER_ALIASES);
+      record.onholdAttribution = onholdAttribution?.source || (record.everOnhold ? "Historical OnHold" : "");
       record.onholdTown = historical?.town || (record.currentOnhold ? record.town : "");
-      record.onholdVehicle = historical?.vehicle || (record.currentOnhold ? record.vehicle : "");
+      record.onholdVehicle = onholdAttribution?.vehicle || historical?.vehicle || (record.currentOnhold ? record.vehicle : "");
       record.onholdDate = historical?.onholdDate || "";
     });
     data.historyRecords = [...historyByKey.values()];
@@ -336,7 +538,8 @@
     return true;
   }
   function historyRowMatches(record, filters) {
-    const riderKey = historyRiderKey(record) || UNATTRIBUTED_RIDER_KEY;
+    const resolved = resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate });
+    const riderKey = resolved.riderKey || UNATTRIBUTED_RIDER_KEY;
     if (filters.date && filters.date !== ALL_DATES_VALUE && record.onholdDate !== filters.date) return false;
     if (filters.vehicle && normalizedVehicle(record.vehicle) !== filters.vehicle) return false;
     if (filters.rider && riderKey !== filters.rider) return false;
@@ -361,8 +564,9 @@
     const riderValues = new Map();
     current.filter(record => record.hasScanner).forEach(record => riderValues.set(record.riderKey, record.actualName));
     history.forEach(record => {
-      const riderKey = historyRiderKey(record) || UNATTRIBUTED_RIDER_KEY;
-      const name = record.riderName || (record.riderId ? "Driver " + record.riderId : "Unattributed OnHold");
+      const resolved = resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate });
+      const riderKey = resolved.riderKey || UNATTRIBUTED_RIDER_KEY;
+      const name = resolved.riderName || "Unattributed OnHold";
       if (name && !riderValues.has(riderKey)) riderValues.set(riderKey, name);
     });
     const dateSelect = document.getElementById("actualScanDate");
@@ -429,9 +633,10 @@
       }
     });
     historyRows.forEach(record => {
-      const riderKey = historyRiderKey(record) || UNATTRIBUTED_RIDER_KEY;
-      const name = record.riderName || (record.riderId ? "Driver " + record.riderId : "Unattributed OnHold");
-      const group = ensureRider(riderKey, record.riderId, name, record.vehicle);
+      const resolved = resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate });
+      const riderKey = resolved.riderKey || UNATTRIBUTED_RIDER_KEY;
+      const name = resolved.riderName || "Unattributed OnHold";
+      const group = ensureRider(riderKey, resolved.riderId, name, resolved.vehicle || record.vehicle);
       if (!group) return;
       const tnKey = key(record.tn);
       if (tnKey) group.everTns.add(tnKey);
@@ -443,10 +648,14 @@
     // Never substitute a planned town assignment; unknowns remain explicitly visible.
     currentRows.filter(record => record.currentOnhold).forEach(record => {
       const historical = findHistory(record.tn, record.row, record.date);
-      const id = historical?.riderId || (record.hasScanner ? record.actualId : "");
-      const name = historical?.riderName || (record.hasScanner ? record.actualName : "Unattributed OnHold");
-      const riderKey = historyRiderKey(historical) || (record.hasScanner ? record.riderKey : UNATTRIBUTED_RIDER_KEY);
-      const group = ensureRider(riderKey, id, name, historical?.vehicle || record.vehicle);
+      const resolved = resolveOnholdAttribution({
+        tn: record.tn, row: record.row, event: historical, date: record.date,
+        actualId: record.actualId, actualName: record.actualName, hasScanner: record.hasScanner
+      });
+      const id = resolved.riderId;
+      const name = resolved.riderName || "Unattributed OnHold";
+      const riderKey = resolved.riderKey || UNATTRIBUTED_RIDER_KEY;
+      const group = ensureRider(riderKey, id, name, resolved.vehicle || historical?.vehicle || record.vehicle);
       if (!group) return;
       const tnKey = key(record.tn);
       if (tnKey) group.currentTns.add(tnKey);
@@ -480,11 +689,11 @@
     // A matching OnHold event is also evidence of an actual rider scan, even
     // when the current parcel snapshot has no Driver ID / Driver Name fields.
     historyRows.forEach(record => {
-      const riderKey = historyRiderKey(record);
+      const riderKey = resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate }).riderKey;
       if (riderKey) actualRiderKeys.add(riderKey);
     });
     currentRows.filter(record => record.currentOnhold).forEach(record => {
-      const riderKey = record.onholdRiderKey || (record.hasScanner ? record.riderKey : "");
+      const riderKey = record.onholdRiderKey || "";
       if (riderKey && riderKey !== UNATTRIBUTED_RIDER_KEY) actualRiderKeys.add(riderKey);
     });
     const actualRiders = riders.filter(rider => actualRiderKeys.has(rider.key));
@@ -498,21 +707,26 @@
     if (note) {
       const currentOnholdRows = currentRows.filter(record => record.currentOnhold);
       const currentCount = currentOnholdRows.length;
-      const attributedCurrentCount = currentOnholdRows.filter(record => record.onholdRiderKey || (record.hasScanner && record.riderKey)).length;
+      const attributedCurrentCount = currentOnholdRows.filter(record => !!record.onholdRiderKey).length;
       const unattributedCurrentCount = Math.max(0, currentCount - attributedCurrentCount);
+      const taskCount = currentOnholdRows.filter(record => record.onholdAttribution === "Assignment Task export").length;
+      const atCount = currentOnholdRows.filter(record => record.onholdAttribution === "AT Number map" || record.onholdAttribution === "Assignment Task AT match").length;
       const historyCount = historyRows.length;
       note.textContent = currentRows.filter(record => record.hasScanner).length.toLocaleString() +
         ' current scanned parcel(s); ' + currentCount.toLocaleString() + ' current OnHold (' +
-        attributedCurrentCount.toLocaleString() + ' attributed to an actual OnHold event/scanner and ' +
-        unattributedCurrentCount.toLocaleString() + ' unattributed); ' + historyCount.toLocaleString() +
-        ' OnHold history event(s) in the selected filters. Unattributed OnHold parcels are shown separately, never assigned to the planned town rider. History is preserved in this browser.';
+        attributedCurrentCount.toLocaleString() + ' attributed, ' + taskCount.toLocaleString() +
+        ' via Assignment Task export, ' + atCount.toLocaleString() + ' via AT Number map, and ' +
+        unattributedCurrentCount.toLocaleString() + ' still unattributed). ' + historyCount.toLocaleString() +
+        ' OnHold history event(s) in the selected filters. Event scanner identity takes priority; AT matching is used only when event/scanner identity is missing. Town assignment is never used as proof of actual scanning.';
     }
 
     const selectedRider = filters.rider || window.__actualScannedSelectedRider || "";
     const detail = document.getElementById("actualScannedDetail");
     const detailBody = document.getElementById("actualScannedDetailBody");
     if (detailBody) detailBody.querySelectorAll("tr[data-history-event-row]").forEach(row => row.remove());
-    const selectedHistory = historyRows.filter(record => (historyRiderKey(record) || UNATTRIBUTED_RIDER_KEY) === selectedRider);
+    const selectedHistory = historyRows.filter(record =>
+      (resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate }).riderKey || UNATTRIBUTED_RIDER_KEY) === selectedRider
+    );
     if (detail && detailBody && selectedRider && selectedHistory.length) {
       detail.hidden = false;
       const rider = riderStats.get(selectedRider);
@@ -521,9 +735,10 @@
       selectedHistory.forEach(record => {
         const row = document.createElement("tr");
         row.dataset.historyEventRow = "true";
+        const resolved = resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate });
         row.innerHTML = '<td>' + esc(record.orderId || "—") + '</td><td>' + esc(record.tn) + '</td><td>' + esc(record.town || "—") + '</td>' +
-          '<td>Historical OnHold · ' + esc(record.onholdDate || "") + '</td><td>' + esc(record.riderName || (record.riderId ? 'Driver ' + record.riderId : 'Unattributed OnHold')) + '</td><td>—</td>' +
-          '<td><span class="actual-scan-pill unplanned">History</span></td>';
+          '<td>Historical OnHold · ' + esc(record.onholdDate || "") + '</td><td>' + esc(resolved.riderName || "Unattributed OnHold") + '</td><td>—</td>' +
+          '<td><span class="actual-scan-pill unplanned">' + esc(resolved.source) + '</span></td>';
         detailBody.appendChild(row);
       });
       const detailNote = document.getElementById("actualScannedDetailNote");
@@ -533,32 +748,39 @@
     const currentCsv = currentRows.map(record => {
       const histories = historiesForTrackingNumber(record.tn);
       const onholdEvent = record.currentOnhold ? findHistory(record.tn, record.row, record.date) : null;
-      const onholdRiderId = onholdEvent?.riderId || (record.currentOnhold && record.hasScanner ? record.actualId : "");
-      const onholdRiderName = onholdEvent?.riderName || (record.currentOnhold && record.hasScanner ? record.actualName : "");
-      const onholdAttribution = !record.currentOnhold
-        ? (histories.length ? "Historical OnHold recorded" : "Not OnHold")
-        : ((onholdRiderId || onholdRiderName) ? "Attributed from OnHold event/actual scanner" : "Unattributed OnHold");
+      const resolved = record.currentOnhold ? resolveOnholdAttribution({
+        tn: record.tn, row: record.row, event: onholdEvent, date: record.date,
+        actualId: record.actualId, actualName: record.actualName, hasScanner: record.hasScanner
+      }) : null;
+      const onholdRiderId = resolved?.riderId || "";
+      const onholdRiderName = resolved?.riderName || "";
+      const onholdAttribution = record.currentOnhold ? (resolved?.source || "Unattributed OnHold") :
+        (histories.length ? "Historical OnHold recorded" : "Not OnHold");
       return {
         "Record Type": "Current parcel", "Order ID": record.orderId, "SPX Tracking Number": record.tn,
         "Town": record.town, "Activity Date": record.date, "Status": record.status,
         "Actual Rider": record.actualName, "Actual Rider ID": record.actualId, "Vehicle": record.vehicle,
         "OnHold Rider": record.currentOnhold ? (onholdRiderName || "Unattributed OnHold") : "",
-        "OnHold Rider ID": onholdRiderId, "OnHold Attribution": onholdAttribution,
+        "OnHold Rider ID": onholdRiderId, "OnHold AT Number": resolved?.atNumber || "",
+        "OnHold Attribution": onholdAttribution,
         "Assigned Rider": record.assigned, "Assignment Result": record.comparison,
         "Ever OnHold": histories.length || record.currentOnhold ? "Yes" : "No",
         "Current OnHold": record.currentOnhold ? "Yes" : "No",
         "OnHold Dates": [...new Set(histories.map(item => item.onholdDate).filter(Boolean))].join("; ")
       };
     });
-    const historyCsv = historyRows.map(record => ({
-      "Record Type": "OnHold history", "Order ID": record.orderId || "", "SPX Tracking Number": record.tn,
-      "Town": record.town || "", "Activity Date": record.onholdDate || "", "Status": "Historical OnHold",
-      "Actual Rider": record.riderName || "", "Actual Rider ID": record.riderId || "",
-      "OnHold Rider": record.riderName || "Unattributed OnHold", "OnHold Rider ID": record.riderId || "",
-      "OnHold Attribution": historyRiderKey(record) ? "Attributed from OnHold event" : "Unattributed OnHold",
-      "Vehicle": normalizedVehicle(record.vehicle), "Assigned Rider": "", "Assignment Result": "Historical event",
-      "Ever OnHold": "Yes", "Current OnHold": "Unknown", "OnHold Dates": record.onholdDate || ""
-    }));
+    const historyCsv = historyRows.map(record => {
+      const resolved = resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate });
+      return {
+        "Record Type": "OnHold history", "Order ID": record.orderId || "", "SPX Tracking Number": record.tn,
+        "Town": record.town || "", "Activity Date": record.onholdDate || "", "Status": "Historical OnHold",
+        "Actual Rider": record.riderName || "", "Actual Rider ID": record.riderId || "",
+        "OnHold Rider": resolved.riderName || "Unattributed OnHold", "OnHold Rider ID": resolved.riderId || "",
+        "OnHold AT Number": resolved.atNumber || record.atNumber || "", "OnHold Attribution": resolved.source,
+        "Vehicle": normalizedVehicle(resolved.vehicle || record.vehicle), "Assigned Rider": "", "Assignment Result": "Historical event",
+        "Ever OnHold": "Yes", "Current OnHold": "Unknown", "OnHold Dates": record.onholdDate || ""
+      };
+    });
     root.__actualCsv = [...currentCsv, ...historyCsv];
   }
 
@@ -594,6 +816,33 @@
     captureRows(Array.isArray(message.onholdRows) ? message.onholdRows : []);
   }, true);
   window.addEventListener("badoc:parcel-data-updated", captureCurrentState);
+  window.addEventListener("badoc:assignment-task-updated", function () {
+    refreshAtImportStatus();
+    window.__badocRenderActualScannedByRiders?.();
+  });
+  document.addEventListener("click", event => {
+    if (event.target?.closest?.("#actualScanAtMapImport")) document.getElementById("actualScanAtMapFile")?.click();
+    if (event.target?.closest?.("#actualScanTaskImport")) document.getElementById("actualScanTaskFile")?.click();
+  });
+  document.addEventListener("change", async event => {
+    const input = event.target;
+    if (!input || !["actualScanAtMapFile", "actualScanTaskFile"].includes(input.id)) return;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      setAtImportStatus("Reading " + file.name + "…");
+      const count = input.id === "actualScanAtMapFile"
+        ? await importAtRiderMap(file)
+        : await importAssignmentTaskCsv(file);
+      refreshAtImportStatus();
+      setAtImportStatus("Imported " + count.toLocaleString() + " row(s) from " + file.name + ". AT/task matches will be used only when event identity is missing.");
+      window.__badocRenderActualScannedByRiders?.();
+    } catch (error) {
+      setAtImportStatus(error?.message || String(error), true);
+    } finally {
+      input.value = "";
+    }
+  });
 
   baseRender = window.__badocRenderActualScannedByRiders || null;
   baseGetData = window.__badocGetActualScannedByRidersData || null;
@@ -606,6 +855,9 @@
   if (baseRender) window.__badocRenderActualScannedByRiders = patchedRender;
 
   // Load history first, then capture the currently available uploads/exports.
+  const importDate = document.getElementById("actualScanImportDate");
+  if (importDate && !importDate.value) importDate.value = todayManilaKey();
+  refreshAtImportStatus();
   loadHistory().then(() => captureCurrentState());
   Promise.resolve(window.__badocOnholdExportsReady).then(() => captureCurrentState()).catch(() => {});
 })();
