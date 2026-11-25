@@ -10,5 +10,7 @@
     if(ds)ds.textContent=(score&&score.textContent.trim())||"—";
     if(dg)dg.textContent=(grade&&grade.textContent.trim())||"—";
   }
+  window.__badocSyncDashboardKpiSummary=sync;
+  window.addEventListener("badoc-kpi-data-ready",sync);
   sync();
 })();
