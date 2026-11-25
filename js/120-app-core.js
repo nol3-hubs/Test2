@@ -4527,7 +4527,7 @@ async function loadLiveKPI(forceRefreshArg){
     status("GOOGLE SHEET • UNAVAILABLE");
     const c=$("kpiCategories");
     if(c)c.innerHTML=`<div class="kpi-data-error">${esc(msg)}<br><button type="button" class="btn primary" id="kpiRetryBtn" style="margin-top:12px">↻ Retry KPI</button></div>`;
-    $("kpiRetryBtn")?.addEventListener("click",loadLiveKPI);
+    $("kpiRetryBtn")?.addEventListener("click",()=>loadLiveKPI(true));
   };
 
   // Rendering is shared by the cached snapshot and the live response. This keeps
@@ -4567,6 +4567,16 @@ async function loadLiveKPI(forceRefreshArg){
       details.appendChild(inner);
       container.appendChild(details);
       renderMonth(inner,"M-1 • "+previous.month,rows,previous,false);
+    }
+    // Notify Dashboard summary and attention widgets after DOM-ready so
+    // consumers loaded later in the script bundle receive the update immediately.
+    const notifyDashboardKpi=()=>{
+      try{window.dispatchEvent(new Event("badoc-kpi-data-ready"));}catch(e){}
+    };
+    if(document.readyState==="loading"){
+      document.addEventListener("DOMContentLoaded",notifyDashboardKpi,{once:true});
+    }else{
+      notifyDashboardKpi();
     }
     return true;
   };
