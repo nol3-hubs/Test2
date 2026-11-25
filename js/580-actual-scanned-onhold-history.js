@@ -477,6 +477,16 @@
     }).join("") : '<tr><td colspan="7" class="actual-scan-empty">No rider scan or OnHold history for these filters.</td></tr>';
 
     const actualRiderKeys = new Set(currentRows.filter(record => record.hasScanner).map(record => record.riderKey));
+    // A matching OnHold event is also evidence of an actual rider scan, even
+    // when the current parcel snapshot has no Driver ID / Driver Name fields.
+    historyRows.forEach(record => {
+      const riderKey = historyRiderKey(record);
+      if (riderKey) actualRiderKeys.add(riderKey);
+    });
+    currentRows.filter(record => record.currentOnhold).forEach(record => {
+      const riderKey = record.onholdRiderKey || (record.hasScanner ? record.riderKey : "");
+      if (riderKey && riderKey !== UNATTRIBUTED_RIDER_KEY) actualRiderKeys.add(riderKey);
+    });
     const actualRiders = riders.filter(rider => actualRiderKeys.has(rider.key));
     setNumber("actualScannedParcels", currentRows.filter(record => record.hasScanner).length);
     setNumber("actualScannedRiders", actualRiders.length);
