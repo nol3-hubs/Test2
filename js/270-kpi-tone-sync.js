@@ -41,6 +41,8 @@
     }
   }
 
+  window.__badocSyncDashboardKpiTone=updateDashboardKpiSummary;
+  window.addEventListener("badoc-kpi-data-ready",updateDashboardKpiSummary);
   updateDashboardKpiSummary();
   if(typeof __badocEvery==="function")__badocEvery(updateDashboardKpiSummary,5000);
   else setInterval(updateDashboardKpiSummary,5000);
