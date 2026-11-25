@@ -187,3 +187,13 @@ test('Pickup results render every filtered row without virtual scrolling or a 20
   assert.doesNotMatch(render,/renderWindow|virtualStart|virtualEnd|maxRows|2000/);
   assert.match(readFileSync(resolve(root,'css/app.css'),'utf8'),/\.first-mile-combined-table\{[\s\S]*?max-height:none!important;[\s\S]*?overflow-y:visible!important;/);
 });
+
+
+test('Pickup CSV export also omits the Record Type field',()=>{
+  const start=core.indexOf('$("downloadFirstMileCombined")?.addEventListener("click"');
+  const end=core.indexOf('$("downloadFirstMileOrders")',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const exporter=core.slice(start,end);
+  assert.match(exporter,/const headers=\["Order Number","Pickup Task Number"/);
+  assert.doesNotMatch(exporter,/Record Type|g\.taskOnly\?"Pickup Task"/);
+});

@@ -3859,13 +3859,12 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     // Export all currently visible Pickup Order and standalone Pickup Task rows.
     const exportRows=firstMileVisibleRows||[];
     if(!exportRows.length)return;
-    const headers=["Record Type","Order Number","Pickup Task Number","Pickup Point ID","Seller Name","Pickup Type","ETA / Create Time","Status","Assigned Rider"];
+    const headers=["Order Number","Pickup Task Number","Pickup Point ID","Seller Name","Pickup Type","ETA / Create Time","Status","Assigned Rider"];
     const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
     const lines=[headers.map(q).join(","),...exportRows.map(g=>{
       const order=g.eligibleOrders?.[0]||{};
       const task=fmLatestTask(g)||g.tasks?.[0]||{};
       return [
-        g.taskOnly?"Pickup Task":"Pickup Order",
         fmOrderId(order),
         fmPickupTaskNumber(task),
         fmPickupPointId(order)||fmPickupPointId(task)||g.pickupPointId,
