@@ -7,7 +7,7 @@
 <title>Badoc Hub</title>
 <meta name="description" content="Badoc Hub parcel receiving dashboard with SPX Bridge sync.">
 <meta name="badoc-main-app" content="v2">
-<meta name="badoc-app-version" content="v150">
+<meta name="badoc-app-version" content="v151">
 <meta name="badoc-bridge-files" content="js/bridge-files.js?v=dbe15ec8">
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://badoc-hub-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app" crossorigin>
@@ -66,6 +66,419 @@
 
 
 
+
+
+<!-- Dashboard-only visual refresh. Keep the existing Badoc Hub palette and all data behavior. -->
+<style id="dashboard-visual-refresh-v151">
+#homeDashboard .dashboard-overview{
+  margin:9px 0 12px!important;
+  padding:14px!important;
+  border-radius:14px!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-overview-head{
+  align-items:center!important;
+  gap:12px!important;
+  margin:0 2px 10px!important;
+}
+#homeDashboard .dashboard-overview-head h2{
+  margin:2px 0 0!important;
+  font-size:18px!important;
+  line-height:1.15!important;
+  letter-spacing:-.025em!important;
+}
+#homeDashboard .dashboard-summary-grid{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:10px!important;
+  padding:0!important;
+  margin:0 0 12px!important;
+}
+#homeDashboard .dashboard-summary-card{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:4px!important;
+  min-width:0!important;
+  min-height:80px!important;
+  height:auto!important;
+  padding:11px 12px!important;
+  border-radius:11px!important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.045),0 5px 14px rgba(0,0,0,.08)!important;
+  text-align:center!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-summary-card>strong{
+  display:block!important;
+  width:100%!important;
+  margin:0!important;
+  font-size:clamp(25px,2vw,31px)!important;
+  line-height:1!important;
+  font-weight:950!important;
+  font-variant-numeric:tabular-nums!important;
+  letter-spacing:-.045em!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-summary-card>span{
+  display:block!important;
+  width:100%!important;
+  margin:0!important;
+  font-size:9px!important;
+  line-height:1.2!important;
+  font-weight:900!important;
+  letter-spacing:.065em!important;
+  text-align:center!important;
+  overflow-wrap:anywhere!important;
+}
+#homeDashboard .dashboard-summary-card>small{
+  margin-top:1px!important;
+  font-size:8px!important;
+  line-height:1.15!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-status-section{padding:0!important;margin:0!important}
+#homeDashboard .dashboard-card-groups{
+  display:grid!important;
+  grid-template-columns:minmax(0,1.22fr) minmax(0,1.22fr) minmax(0,.9fr)!important;
+  gap:10px!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-card-group{
+  min-width:0!important;
+  padding:12px!important;
+  border-radius:12px!important;
+  box-shadow:0 5px 16px rgba(0,0,0,.07)!important;
+}
+#homeDashboard .dashboard-card-group-head{margin-bottom:8px!important;gap:8px!important}
+#homeDashboard .dashboard-card-group-head strong{
+  font-size:13px!important;
+  line-height:1.15!important;
+  font-weight:900!important;
+}
+#homeDashboard .dashboard-card-group-head small{
+  margin-top:3px!important;
+  font-size:9px!important;
+  line-height:1.2!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-grid{
+  display:grid!important;
+  grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  grid-auto-flow:row!important;
+  grid-auto-rows:minmax(66px,auto)!important;
+  gap:7px!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card{
+  grid-column:span 2!important;
+  min-width:0!important;
+  min-height:66px!important;
+  height:auto!important;
+  padding:7px 5px!important;
+  gap:3px!important;
+  border-radius:9px!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card:nth-child(4){
+  grid-column:2/span 2!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card:nth-child(5){
+  grid-column:4/span 2!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card>strong{
+  width:100%!important;
+  margin:0!important;
+  font-size:22px!important;
+  line-height:1!important;
+  font-weight:950!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card>span:not([hidden]){
+  width:100%!important;
+  margin:2px 0 0!important;
+  font-size:8px!important;
+  line-height:1.1!important;
+  font-weight:900!important;
+  letter-spacing:.045em!important;
+  text-align:center!important;
+  white-space:normal!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card.onhold>small{
+  display:none!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card.cfr1{
+  position:relative!important;
+  isolation:isolate!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-height:66px!important;
+  padding:5px!important;
+  border-radius:9px!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card.cfr1::before{
+  content:""!important;
+  position:absolute!important;
+  z-index:-1!important;
+  left:50%!important;
+  top:50%!important;
+  width:53px!important;
+  height:53px!important;
+  transform:translate(-50%,-50%)!important;
+  border:3px solid rgba(192,132,252,.28)!important;
+  border-top-color:#c084fc!important;
+  border-right-color:#a855f7!important;
+  border-radius:50%!important;
+  box-shadow:0 0 10px rgba(168,85,247,.16),inset 0 0 8px rgba(168,85,247,.07)!important;
+  pointer-events:none!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card.cfr1>strong{
+  position:relative!important;
+  z-index:1!important;
+  width:100%!important;
+  margin:0!important;
+  font-size:14px!important;
+  line-height:1!important;
+  letter-spacing:-.35px!important;
+  color:var(--c-b56cff-text,#c084fc)!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card.cfr1>span:not([hidden]){
+  position:relative!important;
+  z-index:1!important;
+  width:100%!important;
+  margin:2px 0 0!important;
+  font-size:8px!important;
+  line-height:1!important;
+  letter-spacing:0!important;
+  color:var(--c-f2e7ff-text,#f2e7ff)!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Parcel Overview"] .dashboard-status-grid{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  grid-auto-rows:minmax(66px,auto)!important;
+  gap:8px!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Parcel Overview"] .dashboard-status-card{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-width:0!important;
+  min-height:66px!important;
+  padding:8px 7px!important;
+  gap:3px!important;
+  border-radius:9px!important;
+  text-align:center!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Parcel Overview"] .dashboard-status-card>strong{
+  width:100%!important;
+  margin:0!important;
+  font-size:21px!important;
+  line-height:1!important;
+  font-weight:950!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Parcel Overview"] .dashboard-status-card>span{
+  width:100%!important;
+  margin:2px 0 0!important;
+  font-size:8px!important;
+  line-height:1.1!important;
+  font-weight:900!important;
+  letter-spacing:.045em!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Hub Performance"] .dashboard-status-grid{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:8px!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Hub Performance"] .dashboard-status-card{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-width:0!important;
+  min-height:118px!important;
+  padding:9px 7px!important;
+  gap:4px!important;
+  border-radius:9px!important;
+  text-align:center!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Hub Performance"] .dashboard-status-card>strong{
+  width:100%!important;
+  margin:0!important;
+  font-size:22px!important;
+  line-height:1!important;
+  font-weight:950!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Hub Performance"] .dashboard-status-card>span{
+  width:100%!important;
+  margin:2px 0 0!important;
+  font-size:8px!important;
+  line-height:1.1!important;
+  font-weight:900!important;
+  letter-spacing:.04em!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-card-group[aria-label="Hub Performance"] .dashboard-status-card.success{
+  gap:3px!important;
+}
+#homeDashboard .dashboard-success-trend{
+  display:block!important;
+  flex:0 0 auto!important;
+  width:38px!important;
+  height:29px!important;
+  margin:0 auto 1px!important;
+  color:#38e3a0!important;
+  filter:drop-shadow(0 0 5px rgba(56,227,160,.2))!important;
+}
+#homeDashboard #dashboardKpiSummary{
+  margin:11px 0 14px!important;
+  padding:13px!important;
+  border-radius:13px!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-head{margin-bottom:9px!important}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-title{
+  font-size:15px!important;
+  font-weight:950!important;
+  letter-spacing:.1em!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid{
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  gap:8px!important;
+  margin:0!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid>.dashboard-kpi-card:not(.dashboard-kpi-attention-card){
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-width:0!important;
+  min-height:68px!important;
+  padding:9px 10px!important;
+  border-radius:10px!important;
+  text-align:center!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid>.dashboard-kpi-card:not(.dashboard-kpi-attention-card) .label{
+  display:block!important;
+  width:100%!important;
+  margin:0!important;
+  font-size:8px!important;
+  line-height:1.2!important;
+  letter-spacing:.1em!important;
+  text-align:center!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid>.dashboard-kpi-card:not(.dashboard-kpi-attention-card)>strong{
+  display:block!important;
+  width:100%!important;
+  margin:4px 0 0!important;
+  font-size:26px!important;
+  line-height:1!important;
+  font-variant-numeric:tabular-nums!important;
+  text-align:center!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-card{
+  grid-column:1/-1!important;
+  min-width:0!important;
+  padding:11px!important;
+  border-radius:11px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head{margin-bottom:8px!important}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head .label{
+  font-size:9px!important;
+  font-weight:950!important;
+  letter-spacing:.1em!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-head strong{
+  min-width:28px!important;
+  height:28px!important;
+  font-size:14px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-list{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:7px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-item{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  min-width:0!important;
+  min-height:58px!important;
+  padding:8px 9px!important;
+  gap:8px!important;
+  border-radius:8px!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-name{
+  min-width:0!important;
+  font-size:9px!important;
+  line-height:1.25!important;
+}
+#homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-value{
+  flex:0 0 auto!important;
+  font-size:16px!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+}
+@media(max-width:1250px){
+  #homeDashboard .dashboard-card-groups{
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+  #homeDashboard .dashboard-card-group[aria-label="Hub Performance"] .dashboard-status-card{
+    min-height:82px!important;
+  }
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-summary-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-summary-card:last-child{grid-column:1/-1!important}
+  #homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-grid{
+    grid-template-columns:repeat(6,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card{
+    min-height:62px!important;
+  }
+  #homeDashboard .dashboard-card-group[aria-label="Parcel Overview"] .dashboard-status-card{
+    min-height:62px!important;
+  }
+  #homeDashboard .dashboard-card-group[aria-label="Hub Performance"] .dashboard-status-card{
+    min-height:82px!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-attention-list{
+    grid-template-columns:1fr!important;
+  }
+}
+@media(max-width:460px){
+  #homeDashboard .dashboard-summary-grid{grid-template-columns:1fr!important}
+  #homeDashboard .dashboard-summary-card:last-child{grid-column:auto!important}
+  #homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card,
+  #homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card:nth-child(4),
+  #homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card:nth-child(5){
+    grid-column:auto!important;
+  }
+  #homeDashboard .dashboard-card-group[aria-label="Delivery Status"] .dashboard-status-card.cfr1::before{
+    width:53px!important;height:53px!important;
+  }
+  #homeDashboard #dashboardKpiSummary .dashboard-kpi-summary-grid{
+    grid-template-columns:1fr 1fr!important;
+  }
+}
+</style>
 
 </head>
 <body data-app-version="21">
@@ -202,7 +615,16 @@
             <div class="dashboard-card-group-head"><div><strong>Hub Performance</strong><small>Workload and delivery performance</small></div></div>
             <div class="dashboard-status-grid">
               <div class="dashboard-status-card riders"><strong id="opTotalRiders">—</strong><span>TOTAL RIDERS</span></div>
-              <div class="dashboard-status-card success"><strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span></div>
+              <div class="dashboard-status-card success">
+                <svg class="dashboard-success-trend" viewBox="0 0 48 36" aria-hidden="true" focusable="false">
+                  <rect x="4" y="24" width="6" height="8" rx="1.4" fill="currentColor" opacity=".72"></rect>
+                  <rect x="15" y="19" width="6" height="13" rx="1.4" fill="currentColor" opacity=".82"></rect>
+                  <rect x="26" y="13" width="6" height="19" rx="1.4" fill="currentColor" opacity=".92"></rect>
+                  <rect x="37" y="7" width="6" height="25" rx="1.4" fill="currentColor"></rect>
+                  <path d="M5 21 L17 15 L25 17 L41 4 M33 4 H41 V12" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+                <strong id="opSuccessRate">—</strong><span>SUCCESS RATE</span>
+              </div>
             </div>
           </section>
 
