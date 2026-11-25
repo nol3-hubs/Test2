@@ -805,20 +805,24 @@
     }
   }
 
-  // Capture the previous export snapshot in the capture phase (before the
-  // dashboard's normal message listener replaces it with the newer snapshot).
+  // Capture the previous export snapshot before the dashboard replaces it,
+  // then request the separate Assignment Task mapping automatically.
   window.addEventListener("message", event => {
     const message = event?.data;
     if (message?.type !== "BADOC_ASSIGNED_ONHOLD_TODAY_COMPLETE") return;
     captureRows(Array.isArray(window.__badocOnholdExportRows) ? window.__badocOnholdExportRows : []);
     captureRows(Array.isArray(message.onholdRows) ? message.onholdRows : []);
+    requestAssignmentTaskExport();
   }, true);
   window.addEventListener("badoc:parcel-data-updated", captureCurrentState);
   window.addEventListener("badoc:assignment-task-updated", function () {
     acceptAssignmentTaskExport().catch(error => setAssignmentTaskStatus(error?.message || String(error), true));
   });
-  // Assignment Task data is requested automatically from SPX; no manual CSV import UI.
-  window.addEventListener("BADOC_ASSIGNED_ONHOLD_TODAY_COMPLETE", requestAssignmentTaskExport);
+  // Surface automatic Assignment Task bridge errors and allow a later retry.
+  window.addEventListener("badoc:assignment-task-error", event => {
+    assignmentTaskRequestDate = "";
+    setAssignmentTaskStatus(event.detail?.message || "Automatic Assignment Task export failed.", true);
+  });
 
   baseRender = window.__badocRenderActualScannedByRiders || null;
   baseGetData = window.__badocGetActualScannedByRidersData || null;
