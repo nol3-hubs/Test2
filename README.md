@@ -30,7 +30,7 @@ To add a script, create `js/NNN-name.js` and add a `<script src>` tag in `index.
 Run `node tools/regression-tests.mjs` from the repository root before publishing. The checks cover CSV parsing, parcel identity reconciliation, preservation of parcel metadata, CFR1 upload-time provenance, Daily History read-back verification, storage recovery controls, cloud writer locking, and Chrome/Firefox package structure.
 
 ## Included
-- BADOC Hub dashboard v148
+- BADOC Hub dashboard v149
 - Chrome extension v1.5.32, including direct Assignment Task export and Batch Search Result automation with robust modal Submit detection
 - Firefox extension v69.5.15
 - First Mile XLSX-to-CSV support
