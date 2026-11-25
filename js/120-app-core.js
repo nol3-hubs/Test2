@@ -4270,7 +4270,7 @@ async function loadLiveKPI(forceRefreshArg){
           while(cells.length && cleanCell(cells[cells.length-1])==="")cells.pop();
           rows.push(cells);
         });
-        resolve(rows);
+        finish(null,rows);
       }catch(err){finish(err)}
     };
     script.onerror=()=>finish(new Error("Google KPI endpoint could not be reached."));
@@ -4505,6 +4505,24 @@ async function loadLiveKPI(forceRefreshArg){
     container.appendChild(section);
   };
 
+  const KPI_CACHE_KEY="badoc_kpi_sheet_rows_v1";
+  const readKpiCache=()=>{
+    try{
+      const cached=JSON.parse(localStorage.getItem(KPI_CACHE_KEY)||"null");
+      if(cached&&cached.version===1&&Array.isArray(cached.rows)&&cached.rows.length&&Number(cached.savedAt)>0)return cached;
+    }catch(e){}
+    return null;
+  };
+  const writeKpiCache=rows=>{
+    try{
+      const payload=JSON.stringify({version:1,savedAt:Date.now(),rows});
+      // Avoid filling browser storage if the source sheet unexpectedly grows very large.
+      if(payload.length<=3*1024*1024)localStorage.setItem(KPI_CACHE_KEY,payload);
+    }catch(e){
+      console.warn("KPI cache write skipped:",e);
+    }
+  };
+
   const showError=msg=>{
     status("GOOGLE SHEET • UNAVAILABLE");
     const c=$("kpiCategories");
@@ -4512,54 +4530,94 @@ async function loadLiveKPI(forceRefreshArg){
     $("kpiRetryBtn")?.addEventListener("click",loadLiveKPI);
   };
 
+  // Rendering is shared by the cached snapshot and the live response. This keeps
+  // all existing month selection, KPI thresholds, grades, and scoring rules intact.
+  const renderRows=rows=>{
+    if(!rows||!rows.length)throw new Error("Google KPI sheet returned no data.");
+    const blocks=findMonthBlocks(rows);
+    if(!blocks.length)throw new Error("KPI month/value block not found.");
+
+    blocks.sort((a,b)=>b.monthDate-a.monthDate||b.data-a.data);
+    const current=blocks[0];
+    const previous=blocks[1];
+    const container=$("kpiCategories");
+    if(!container)throw new Error("KPI display container not found.");
+    container.innerHTML="";
+
+    renderMonth(container,"CURRENT KPI • "+current.month,rows,current,true);
+
+    if(previous){
+      const details=document.createElement("details");
+      details.className="kpi-v3-m1";
+      const summary=document.createElement("summary");
+      summary.className="m1-summary-toggle";
+      const m1Headers=rows[previous.meta]||[];
+      const m1Data=rows[previous.data]||[];
+      const score=col(m1Headers,"Score");
+      summary.innerHTML=`<span class="m1-summary-title">M-1 • ${esc(previous.month)}</span><span class="m1-summary-score"><small>OVERALL SCORE</small><strong>${esc(score>=0?(m1Data[score]||"—"):"—")}</strong></span>`;
+      details.appendChild(summary);
+
+      const inner=document.createElement("div");
+      inner.className="kpi-m1-inner";
+      const card=document.createElement("div");
+      card.className="kpi-m1-summary-card";
+      const grade=col(m1Headers,"Grade"), remarks=col(m1Headers,"Remarks"), region=col(m1Headers,"Region"), sub=col(m1Headers,"Subregion");
+      card.innerHTML=`<div class="kpi-m1-summary-head"><div class="kpi-m1-summary-kicker">SHOWING SCORE FOR THE MONTH OF:</div><div class="kpi-m1-summary-month">${esc(previous.month)}</div><div class="kpi-m1-summary-score"><span>OVERALL SCORE</span><strong>${esc(score>=0?(m1Data[score]||"—"):"—")}</strong></div></div><div class="kpi-m1-summary-meta"><div><span>REGION</span><b>${esc(region>=0?(m1Data[region]||"—"):"—")}</b></div><div><span>SUBREGION</span><b>${esc(sub>=0?(m1Data[sub]||"—"):"—")}</b></div><div><span>CURRENT STATION</span><b>${esc(STATION_NAME)}</b></div><div><span>GRADE</span><b>${esc(grade>=0?(m1Data[grade]||"—"):"—")}</b></div><div><span>REMARKS</span><b>${esc(remarks>=0?(m1Data[remarks]||"—"):"—")}</b></div></div>`;
+      inner.appendChild(card);
+      details.appendChild(inner);
+      container.appendChild(details);
+      renderMonth(inner,"M-1 • "+previous.month,rows,previous,false);
+    }
+    return true;
+  };
+
+  // Show the last successful sheet response before starting a network request.
+  // A fresh snapshot avoids a new Google request on every reload; stale snapshots
+  // remain visible while the live response refreshes in the background.
+  let cachedSnapshot=readKpiCache();
+  let cachedRendered=false;
+  let cachedRowsJson="";
+  if(cachedSnapshot){
+    try{
+      renderRows(cachedSnapshot.rows);
+      cachedRendered=true;
+      cachedRowsJson=JSON.stringify(cachedSnapshot.rows);
+      window.__badocKpiLastSuccessAt=Number(cachedSnapshot.savedAt)||0;
+      status("GOOGLE SHEET • CACHED • REFRESHING");
+    }catch(cacheError){
+      console.warn("Saved KPI cache could not be rendered; loading live sheet:",cacheError);
+      cachedSnapshot=null;
+    }
+  }
+
   const run=async()=>{
-    status("GOOGLE SHEET • CONNECTING");
+    if(!cachedRendered)status("GOOGLE SHEET • CONNECTING");
     try{
       const rows=await readGoogle();
       if(!rows||!rows.length)throw new Error("Google KPI sheet returned no data.");
-
-      const blocks=findMonthBlocks(rows);
-      if(!blocks.length)throw new Error("KPI month/value block not found.");
-
-      blocks.sort((a,b)=>b.monthDate-a.monthDate||b.data-a.data);
-      const current=blocks[0];
-      const previous=blocks[1];
-      const container=$("kpiCategories");
-      if(!container)throw new Error("KPI display container not found.");
-      container.innerHTML="";
-
-      renderMonth(container,"CURRENT KPI • "+current.month,rows,current,true);
-
-      if(previous){
-        const details=document.createElement("details");
-        details.className="kpi-v3-m1";
-        const summary=document.createElement("summary");
-        summary.className="m1-summary-toggle";
-        const m1Headers=rows[previous.meta]||[];
-        const m1Data=rows[previous.data]||[];
-        const score=col(m1Headers,"Score");
-        summary.innerHTML=`<span class="m1-summary-title">M-1 • ${esc(previous.month)}</span><span class="m1-summary-score"><small>OVERALL SCORE</small><strong>${esc(score>=0?(m1Data[score]||"—"):"—")}</strong></span>`;
-        details.appendChild(summary);
-
-        const inner=document.createElement("div");
-        inner.className="kpi-m1-inner";
-        const card=document.createElement("div");
-        card.className="kpi-m1-summary-card";
-        const grade=col(m1Headers,"Grade"), remarks=col(m1Headers,"Remarks"), region=col(m1Headers,"Region"), sub=col(m1Headers,"Subregion");
-        card.innerHTML=`<div class="kpi-m1-summary-head"><div class="kpi-m1-summary-kicker">SHOWING SCORE FOR THE MONTH OF:</div><div class="kpi-m1-summary-month">${esc(previous.month)}</div><div class="kpi-m1-summary-score"><span>OVERALL SCORE</span><strong>${esc(score>=0?(m1Data[score]||"—"):"—")}</strong></div></div><div class="kpi-m1-summary-meta"><div><span>REGION</span><b>${esc(region>=0?(m1Data[region]||"—"):"—")}</b></div><div><span>SUBREGION</span><b>${esc(sub>=0?(m1Data[sub]||"—"):"—")}</b></div><div><span>CURRENT STATION</span><b>${esc(STATION_NAME)}</b></div><div><span>GRADE</span><b>${esc(grade>=0?(m1Data[grade]||"—"):"—")}</b></div><div><span>REMARKS</span><b>${esc(remarks>=0?(m1Data[remarks]||"—"):"—")}</b></div></div>`;
-        inner.appendChild(card);
-        details.appendChild(inner);
-        container.appendChild(details);
-        renderMonth(inner,"M-1 • "+previous.month,rows,previous,false);
-      }
-
+      const liveRowsJson=JSON.stringify(rows);
+      // Do not rebuild all KPI cards if the live data is identical to the cache.
+      if(!cachedRendered||liveRowsJson!==cachedRowsJson)renderRows(rows);
+      writeKpiCache(rows);
       window.__badocKpiLastSuccessAt=Date.now();
       status("GOOGLE SHEET • LIVE • AUTO REFRESH 5 MIN");
     }catch(err){
       console.warn("KPI pull failed:",err);
-      showError(err?.message||"Unable to read the public KPI sheet.");
+      if(cachedRendered){
+        status("GOOGLE SHEET • CACHED DATA • REFRESH FAILED");
+      }else{
+        showError(err?.message||"Unable to read the public KPI sheet.");
+      }
     }
   };
+
+  // If the saved snapshot is still within the five-minute refresh window, use it
+  // without hitting Google. The timer below will fetch fresh data at the next interval.
+  const cachedAge=cachedSnapshot?Date.now()-Number(cachedSnapshot.savedAt):Infinity;
+  if(!forceRefresh&&cachedRendered&&cachedAge>=0&&cachedAge<REFRESH_MS){
+    ensureRefreshTimer();
+    return;
+  }
 
   const request=run();
   window.__badocKpiLoadPromise=request;
