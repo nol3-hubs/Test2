@@ -1,7 +1,7 @@
 (function(){
 const BRIDGE_VERSION="1";
   const BRIDGE_CHECK_TIMEOUT=5000;
-  const REQUIRED_CHROME_VERSION="1.5.32";
+  const REQUIRED_CHROME_VERSION="1.5.2";
   const REQUIRED_FIREFOX_VERSION="69.5.15";
   let installedPackageVersion="";
   const isFirefox=/Firefox\//i.test(navigator.userAgent);
