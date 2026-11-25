@@ -3037,3 +3037,76 @@ html[data-theme="light"] tbody tr:hover{background:#f3f7fc!important}
   overflow-x:hidden!important;
   overflow-y:auto!important;
 }
+
+
+/* ===== light-mode-control-contrast-fix-v1 ===== */
+/* Planning Board: replace the dark open-state treatment with a light-theme surface. */
+html[data-theme="light"] .side .planning-board-primary,
+html[data-theme="light"] .side .planning-board-nav.open .planning-board-primary,
+html[data-theme="light"] .side .planning-board-primary:hover,
+html[data-theme="light"] .side .planning-board-primary:focus-visible,
+html[data-theme="light"] .side .planning-board-primary.active{
+  background:#e8f2ff!important;
+  color:#17436b!important;
+  border:1px solid #c8dcf4!important;
+  box-shadow:inset 3px 0 #1683e8!important;
+}
+html[data-theme="light"] .side .planning-board-primary .ico{
+  color:#0878df!important;
+}
+html[data-theme="light"] .side .planning-board-nav.open .planning-board-toggle,
+html[data-theme="light"] .side .planning-board-toggle{
+  color:#42627f!important;
+  background:transparent!important;
+}
+html[data-theme="light"] .side .planning-board-toggle:hover{
+  color:#075985!important;
+  background:#e8f2ff!important;
+}
+
+/* Collapse Menu: give the footer control readable text and a soft blue surface. */
+html[data-theme="light"] .side > .sidebar-footer > #sideCollapseBtn{
+  background:#edf5fc!important;
+  color:#234967!important;
+  border:1px solid #c7d9e9!important;
+  box-shadow:0 1px 2px rgba(22,64,100,.08)!important;
+}
+html[data-theme="light"] .side > .sidebar-footer > #sideCollapseBtn .side-collapse-icon{
+  color:#0878df!important;
+}
+html[data-theme="light"] .side > .sidebar-footer > #sideCollapseBtn:hover{
+  background:#e0effc!important;
+  color:#123f68!important;
+  border-color:#83b9e8!important;
+}
+html[data-theme="light"] .side > .sidebar-footer > #sideCollapseBtn:focus-visible{
+  outline:2px solid #1683e8!important;
+  outline-offset:2px!important;
+}
+
+/* Linehaul sync: ensure white text remains legible on the blue primary action. */
+html[data-theme="light"] #linehaul #syncLinehaulFromSPX{
+  background:#1d63bd!important;
+  background-image:none!important;
+  border:1px solid #1556a8!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+  font-weight:750!important;
+  text-shadow:none!important;
+  box-shadow:0 2px 5px rgba(21,86,168,.18)!important;
+}
+html[data-theme="light"] #linehaul #syncLinehaulFromSPX:hover:not(:disabled){
+  background:#174f9c!important;
+  background-image:none!important;
+  border-color:#124684!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff!important;
+}
+html[data-theme="light"] #linehaul #syncLinehaulFromSPX:active:not(:disabled){
+  background:#123f80!important;
+  border-color:#10386f!important;
+}
+html[data-theme="light"] #linehaul #syncLinehaulFromSPX:focus-visible{
+  outline:2px solid #1683e8!important;
+  outline-offset:3px!important;
+}

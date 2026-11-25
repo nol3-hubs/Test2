@@ -197,3 +197,11 @@ test('Pickup CSV export also omits the Record Type field',()=>{
   assert.match(exporter,/const headers=\["Order Number","Pickup Task Number"/);
   assert.doesNotMatch(exporter,/Record Type|g\.taskOnly\?"Pickup Task"/);
 });
+
+
+test('Light theme has readable colors for Planning Board, Collapse Menu and Linehaul sync',()=>{
+  const css=readFileSync(resolve(root,'css/app.css'),'utf8');
+  assert.match(css,/html\[data-theme="light"\] \.side \.planning-board-nav\.open \.planning-board-primary[\s\S]*?background:#e8f2ff!important;[\s\S]*?color:#17436b!important;/);
+  assert.match(css,/html\[data-theme="light"\] \.side > \.sidebar-footer > #sideCollapseBtn[\s\S]*?background:#edf5fc!important;[\s\S]*?color:#234967!important;/);
+  assert.match(css,/html\[data-theme="light"\] #linehaul #syncLinehaulFromSPX[\s\S]*?background:#1d63bd!important;[\s\S]*?color:#fff!important;/);
+});
