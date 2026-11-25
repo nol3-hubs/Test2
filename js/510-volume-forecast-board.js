@@ -14,22 +14,31 @@
   var statusKey=function(v){return key(v)};
   var statusLabel=function(v){var k=statusKey(v);var map={RECEIVED:"RECEIVED",LMHUBRECEIVED:"LMHub Received",SOCLHTRANSPORTING:"SOC LH Transporting",SOCLHTRANSPORTED:"SOC LH Transported",SOCLHPACKED:"SOC LH Packed",SOCLHPACKING:"SOC LH Packing",SOCPACKED:"SOC Packed",SOCPACKING:"SOC Packing"};return map[k]||text(v||"Unknown")};
   var shortStatus=function(k){var map={RECEIVED:"R",LMHUBRECEIVED:"R",SOCLHTRANSPORTING:"TR",SOCLHTRANSPORTED:"TD",SOCLHPACKED:"P",SOCLHPACKING:"PK",SOCPACKED:"P",SOCPACKING:"PK"};return map[k]||k.slice(0,4)};
+  var sourceRowsDetailsCache=null,sourceRowsArrayCache=null,sourceRowsCache=[];
   function sourceRows(){
     var d=window.__badocForecastDetails;
     var boardRows=d&&(Array.isArray(d.allDayRows)?d.allDayRows:d.rows);
-    if(!d||!Array.isArray(boardRows))return {details:null,rows:[]};
+    if(!d||!Array.isArray(boardRows)){
+      sourceRowsDetailsCache=null;sourceRowsArrayCache=null;sourceRowsCache=[];
+      return {details:null,rows:[]};
+    }
+    if(sourceRowsDetailsCache!==d||sourceRowsArrayCache!==boardRows){
+      sourceRowsDetailsCache=d;
+      sourceRowsArrayCache=boardRows;
+      sourceRowsCache=[];
+      boardRows.forEach(function(item){
+        var r=item.record||item.row;
+        if(!r||typeof r!=="object")return;
+        var tn=tnOf(r,item);if(!tn)return;
+        sourceRowsCache.push({item:item,row:r,tn:tn,town:townOf(r),station:text(item.station||r["Current Station"]||""),status:text(item.status||r["Parcel Status To"]||r.Status||"")});
+      });
+    }
     var enabled=typeof window.__badocForecastGroupEnabled==="function"?window.__badocForecastGroupEnabled:function(){return true};
     var out=[];
-    boardRows.forEach(function(item){
-      if(!enabled(item.station,item.status))return;
-      var r=item.record||item.row;
-      if(!r||typeof r!=="object")return;
-      var tn=tnOf(r,item);if(!tn)return;
-      out.push({item:item,row:r,tn:tn,town:townOf(r),station:text(item.station||r["Current Station"]||""),status:text(item.status||r["Parcel Status To"]||r.Status||"")});
-    });
+    sourceRowsCache.forEach(function(x){if(enabled(x.station,x.status))out.push(x);});
     return {details:d,rows:out};
   }
-  function areaSets(){
+    function areaSets(){
     var b=typeof towns!=="undefined"&&Array.isArray(towns.badoc)?towns.badoc:[];
     var p=typeof towns!=="undefined"&&Array.isArray(towns.pinili)?towns.pinili:[];
     return {badoc:new Set(b.map(normText)),pinili:new Set(p.map(normText)),badocList:b,piniliList:p};
@@ -75,13 +84,13 @@
     if(!riders.length&&counts.total)note="Upload Riders Data to classify assigned riders by vehicle type. Assigned riders are still included in the total.";
     if(noteNode)noteNode.textContent=note;
   }
-  function selectedRows(){
-    var source=sourceRows().rows;
+  function selectedRows(source){
+    var sourceRowsList=Array.isArray(source)?source:sourceRows().rows;
     var q=normText(el(ids.search)?.value||"");
     var town=normText(el(ids.town)?.value||"");
     var station=normText(el(ids.station)?.value||"");
     var status=normText(el(ids.status)?.value||"");
-    return source.filter(function(x){
+    return sourceRowsList.filter(function(x){
       if(town&&normText(x.town)!==town)return false;
       if(station&&normText(x.station)!==station)return false;
       if(status&&normText(statusLabel(x.status))!==status)return false;
@@ -89,7 +98,7 @@
       return true;
     });
   }
-  function updateSelects(rows){
+    function updateSelects(rows){
     [[ids.town,"All towns",function(x){return x.town;}],[ids.station,"All stations",function(x){return x.station;}],[ids.status,"All statuses",function(x){return statusLabel(x.status);}]].forEach(function(spec){
       var node=el(spec[0]);if(!node)return;var old=node.value;var vals=Array.from(new Set(rows.map(spec[2]).filter(Boolean))).sort(function(a,b){return a.localeCompare(b)});
       node.innerHTML='<option value="">'+spec[1]+'</option>'+vals.map(function(v){return '<option value="'+esc(v)+'">'+esc(v)+'</option>'}).join("");
@@ -151,7 +160,19 @@
     window.updateOperationProgress?.();
     render();
   }
-  function renderTownGroups(targetId,areaKey,groups,rows){
+  function buildTownStats(rows){
+    var byTown=new Map();
+    (rows||[]).forEach(function(x){
+      var name=normText(x.town);if(!name)return;
+      var stat=byTown.get(name);
+      if(!stat){stat={count:0,zones:new Set()};byTown.set(name,stat);}
+      stat.count++;
+      var z=text(x.row["Zone ID"]??x.row["ZoneId"]??x.row["zone id"]??"").trim();
+      if(z)stat.zones.add(z);
+    });
+    return byTown;
+  }
+  function renderTownGroups(targetId,areaKey,groups,townStats){
     var node=el(targetId);if(!node)return;
     var columns=[[],[]];(groups||[]).forEach(function(g,i){columns[i%2].push(g)});
     node.innerHTML="";
@@ -159,24 +180,21 @@
     columns.forEach(function(column){var col=document.createElement("div");col.className="forecast-town-column";
       column.forEach(function(group){
         var card=document.createElement("div");card.className="forecast-town-group";
-        var total=rows.filter(function(x){return group.some(function(n){return normText(n)===normText(x.town)})}).length;
+        var total=(group||[]).reduce(function(sum,name){var stat=townStats.get(normText(name));return sum+(stat?stat.count:0)},0);
         var head=document.createElement("div");head.className="forecast-town-group-head";head.innerHTML='<span>TOWN GROUP</span><span class="forecast-town-group-total">'+total.toLocaleString()+'</span>';card.appendChild(head);
         group.forEach(function(name){
-          var townRows=rows.filter(function(x){return normText(x.town)===normText(name)}),counts=statCounts(townRows);
-          var row=document.createElement("div");row.className="forecast-town-item";
-          var st=[];[["RECEIVED","R"],["LMHUBRECEIVED","R"],["SOCLHTRANSPORTING","TR"],["SOCLHTRANSPORTED","TD"],["SOCLHPACKED","P"],["SOCLHPACKING","PK"],["SOCPACKED","P"],["SOCPACKING","PK"]].forEach(function(pair){var n=counts[pair[0]]||0;if(n)st.push([pair[1],n])});
-          var merged={};st.forEach(function(x){merged[x[0]]=(merged[x[0]]||0)+x[1]});
-          var bulky=0,highValue=0,zones=new Set();townRows.forEach(function(x){if(typeof parcelMetricFlags==="function"){var mf=parcelMetricFlags(x.row);if(mf.bulky)bulky++;if(mf.highValue)highValue++;}var z=text(x.row["Zone ID"]??x.row["ZoneId"]??x.row["zone id"]??"").trim();if(z)zones.add(z)});
-          if(bulky)merged.B=bulky;if(highValue)merged.HV=highValue;
+          var stat=townStats.get(normText(name)),count=stat?stat.count:0;
+          var zones=stat?stat.zones:new Set();
           var zoneText=zones.size?"Zone "+Array.from(zones).sort().join(", "):"Zone not provided";
-          row.innerHTML='<span class="forecast-town-name" title="'+esc(name+' · '+zoneText)+'">'+esc(name)+'<small class="forecast-town-zone">'+esc(zoneText)+'</small></span><strong class="forecast-town-count">'+townRows.length.toLocaleString()+'</strong>';
+          var row=document.createElement("div");row.className="forecast-town-item";
+          row.innerHTML='<span class="forecast-town-name" title="'+esc(name+' · '+zoneText)+'">'+esc(name)+'<small class="forecast-town-zone">'+esc(zoneText)+'</small></span><strong class="forecast-town-count">'+count.toLocaleString()+'</strong>';
           card.appendChild(row);
         });
         col.appendChild(card);
       });node.appendChild(col);
     });
   }
-  function csvCell(v){var s=text(v);return '"'+s.replace(/"/g,'""')+'"';}
+    function csvCell(v){var s=text(v);return '"'+s.replace(/"/g,'""')+'"';}
   function renderTable(rows){
     var node=el(ids.table),meta=el(ids.meta),pager=el(ids.pagination);if(!node)return;
     filteredRows=rows;var count=rows.length,totalPages=Math.max(1,Math.ceil(count/pageSize));page=Math.max(1,Math.min(page,totalPages));
@@ -196,23 +214,31 @@
     else{el(ids.state).textContent=rows.length.toLocaleString()+" selected unique parcels · all-day view · same station/status selections";}
     renderStatusControls(details);
     updateSelects(rows);
-    var shown=selectedRows();
-    var badoc=shown.filter(function(x){return sets.badoc.has(normText(x.town))}),pinili=shown.filter(function(x){return sets.pinili.has(normText(x.town))});
+    var shown=selectedRows(rows),townStats=buildTownStats(shown);
+    var badocCount=0,piniliCount=0,bulky=0,highValue=0,stations=new Set();
+    shown.forEach(function(x){
+      var townKey=normText(x.town);
+      if(sets.badoc.has(townKey))badocCount++;
+      if(sets.pinili.has(townKey))piniliCount++;
+      var station=normText(x.station);if(station)stations.add(station);
+      if(typeof parcelMetricFlags==="function"){
+        var mf=parcelMetricFlags(x.row);if(mf.bulky)bulky++;if(mf.highValue)highValue++;
+      }
+    });
     if(el(ids.total))el(ids.total).textContent=shown.length.toLocaleString();
-    if(el(ids.badoc))el(ids.badoc).textContent=badoc.length.toLocaleString();
-    if(el(ids.pinili))el(ids.pinili).textContent=pinili.length.toLocaleString();
-    var bulky=0,highValue=0;shown.forEach(function(x){if(typeof parcelMetricFlags==="function"){var mf=parcelMetricFlags(x.row);if(mf.bulky)bulky++;if(mf.highValue)highValue++;}});
+    if(el(ids.badoc))el(ids.badoc).textContent=badocCount.toLocaleString();
+    if(el(ids.pinili))el(ids.pinili).textContent=piniliCount.toLocaleString();
     if(el("forecastBoardBulky"))el("forecastBoardBulky").textContent=bulky.toLocaleString();
     if(el("forecastBoardHighValue"))el("forecastBoardHighValue").textContent=highValue.toLocaleString();
-    if(el(ids.stations))el(ids.stations).textContent=new Set(shown.map(function(x){return normText(x.station)}).filter(Boolean)).size.toLocaleString();
+    if(el(ids.stations))el(ids.stations).textContent=stations.size.toLocaleString();
     renderStats(shown);
     var bGroups=typeof getTownLayout==="function"?getTownLayout("badoc"):sets.badocList.map(function(n){return [n]});
     var pGroups=typeof getTownLayout==="function"?getTownLayout("pinili"):sets.piniliList.map(function(n){return [n]});
-    renderTownGroups(ids.badocGrid,"badoc",bGroups,badoc);
-    renderTownGroups(ids.piniliGrid,"pinili",pGroups,pinili);
+    renderTownGroups(ids.badocGrid,"badoc",bGroups,townStats);
+    renderTownGroups(ids.piniliGrid,"pinili",pGroups,townStats);
     page=1;renderTable(shown);
   }
-  function exportCsv(){var rows=selectedRows();if(!rows.length){alert("No all-day parcel records to export.");return;}var fields=["SPX Tracking Number","Order ID","Town","Current Station","Status","Destination Station","Zone ID"];var lines=[fields.map(csvCell).join(",")];rows.forEach(function(x){var r=x.row;lines.push([x.tn,orderOf(r),x.town,x.station,statusLabel(x.status),r["Destination Station"]??""].map(csvCell).join(","))});var blob=new Blob(["\ufeff"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="badoc-all-day-volume-"+new Date().toISOString().slice(0,10)+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},1000);}
+    function exportCsv(){var rows=selectedRows();if(!rows.length){alert("No all-day parcel records to export.");return;}var fields=["SPX Tracking Number","Order ID","Town","Current Station","Status","Destination Station","Zone ID"];var lines=[fields.map(csvCell).join(",")];rows.forEach(function(x){var r=x.row;lines.push([x.tn,orderOf(r),x.town,x.station,statusLabel(x.status),r["Destination Station"]??""].map(csvCell).join(","))});var blob=new Blob(["\ufeff"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="badoc-all-day-volume-"+new Date().toISOString().slice(0,10)+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},1000);}
   function copyTns(){var rows=selectedRows(),value=rows.map(function(x){return x.tn}).filter(Boolean).join("\n");if(!value){alert("No tracking numbers to copy.");return;}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(value).then(function(){alert(rows.length.toLocaleString()+" tracking numbers copied.")}).catch(function(){fallbackCopy(value,rows.length)})}else fallbackCopy(value,rows.length);}
   function fallbackCopy(value,count){var t=document.createElement("textarea");t.value=value;t.style.position="fixed";t.style.opacity="0";document.body.appendChild(t);t.select();var ok=false;try{ok=document.execCommand("copy")}catch(e){}t.remove();alert(ok?count.toLocaleString()+" tracking numbers copied.":"Copy failed. Please select the tracking numbers from the table.");}
   function bind(){
@@ -229,7 +255,10 @@
   }
   window.__badocRenderDashboardRiderSummary=renderRiderSummary;
   window.__badocRenderForecastBoard=render;
-  function init(){bind();render();}
+  function init(){
+    bind();
+    if(el("volumeForecastBoard")?.classList.contains("active"))render();
+  }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init,{once:true});else init();
   // Forecast is recalculated by the existing dashboard logic after imports and syncs.
   // Refresh this view only while it is visible; no second dataset or background poll is created.

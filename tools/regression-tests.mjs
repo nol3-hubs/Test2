@@ -139,3 +139,29 @@ test('KPI menu reuses fresh sheet data and deduplicates concurrent pulls',()=>{
   assert.match(core,/__badocKpiLoadPromise/);
   assert.match(core,/now-lastSuccess<REFRESH_MS/);
 });
+
+
+test('Volume Forecast maps parcel rows once per source dataset and reuses them for filtering',()=>{
+  const forecast=readFileSync(resolve(root,'js/510-volume-forecast-board.js'),'utf8');
+  assert.match(forecast,/sourceRowsDetailsCache!==d\|\|sourceRowsArrayCache!==boardRows/);
+  assert.match(forecast,/sourceRowsCache\.push\(/);
+  assert.match(forecast,/selectedRows\(rows\)/);
+  assert.doesNotMatch(forecast,/var shown=selectedRows\(\)/);
+});
+
+test('Volume Forecast town cards use a single town aggregation instead of filtering the full list per town',()=>{
+  const forecast=readFileSync(resolve(root,'js/510-volume-forecast-board.js'),'utf8');
+  assert.match(forecast,/function buildTownStats\(rows\)/);
+  assert.match(forecast,/var townStats=buildTownStats\(shown\)/);
+  const start=forecast.indexOf('function renderTownGroups(');
+  const end=forecast.indexOf('function csvCell(',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const renderer=forecast.slice(start,end);
+  assert.doesNotMatch(renderer,/rows\.filter\(/);
+  assert.match(renderer,/townStats\.get\(normText\(name\)\)/);
+});
+
+test('Volume Forecast skips full rendering while its page is hidden at startup',()=>{
+  const forecast=readFileSync(resolve(root,'js/510-volume-forecast-board.js'),'utf8');
+  assert.match(forecast,/function init\(\)\{\s*bind\(\);\s*if\(el\("volumeForecastBoard"\)\?\.classList\.contains\("active"\)\)render\(\);/);
+});
