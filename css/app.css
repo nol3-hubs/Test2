@@ -3165,3 +3165,249 @@ html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn{
 html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn .theme-switch-thumb{
   background:#078cff!important;
 }
+
+
+/* ===== dashboard-metric-fit-v1 ===== */
+/* Let every Dashboard metric use the width available in its own card. */
+#homeDashboard .dashboard-overview .dashboard-card-group,
+#homeDashboard .dashboard-overview .dashboard-card-group .dashboard-status-grid{
+  min-width:0!important;
+}
+#homeDashboard .dashboard-overview .dashboard-card-group .dashboard-status-grid{
+  display:grid!important;
+  width:100%!important;
+  max-width:100%!important;
+  align-items:stretch!important;
+}
+#homeDashboard .dashboard-overview .hub-performance-group .dashboard-status-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  grid-auto-columns:minmax(0,1fr)!important;
+  grid-auto-rows:minmax(76px,auto)!important;
+  width:100%!important;
+  max-width:100%!important;
+  gap:10px!important;
+  justify-content:stretch!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-card{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  gap:3px!important;
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+  min-height:76px!important;
+  height:auto!important;
+  max-height:none!important;
+  margin:0!important;
+  padding:10px clamp(7px,.75vw,12px)!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+  container-type:inline-size;
+}
+#homeDashboard .dashboard-overview .dashboard-status-card>strong{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  margin:0!important;
+  font-size:clamp(14px,27cqi,24px)!important;
+  font-weight:900!important;
+  line-height:1!important;
+  letter-spacing:-.45px!important;
+  font-variant-numeric:tabular-nums!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:clip!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-card>span{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  margin:2px 0 0!important;
+  font-size:clamp(8px,10cqi,10px)!important;
+  font-weight:850!important;
+  line-height:1.15!important;
+  letter-spacing:.15px!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  word-break:normal!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-card>small{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  margin:2px 0 0!important;
+  font-size:clamp(7px,8cqi,9px)!important;
+  line-height:1.2!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-card.cfr1{
+  align-items:center!important;
+}
+#homeDashboard .dashboard-overview .dashboard-status-card.cfr1>strong,
+#homeDashboard .dashboard-overview .dashboard-status-card.cfr1>span,
+#homeDashboard .dashboard-overview .dashboard-status-card.cfr1>small{
+  text-align:center!important;
+}
+#homeDashboard .dashboard-overview .hub-performance-group .dashboard-status-card{
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+  min-height:76px!important;
+  height:auto!important;
+  max-height:none!important;
+  padding:10px clamp(8px,1vw,12px)!important;
+}
+#homeDashboard .dashboard-overview .dashboard-summary-card{
+  min-width:0!important;
+  box-sizing:border-box!important;
+  overflow:hidden!important;
+}
+#homeDashboard .dashboard-overview .dashboard-summary-card>strong{
+  max-width:100%!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:clip!important;
+  font-variant-numeric:tabular-nums!important;
+}
+#homeDashboard .dashboard-overview .dashboard-summary-card>span{
+  max-width:100%!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  line-height:1.2!important;
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-overview .dashboard-status-card{
+    min-height:72px!important;
+    padding:9px 8px!important;
+  }
+  #homeDashboard .dashboard-overview .hub-performance-group .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
+
+
+/* ===== dashboard-delivering-cfr1-fit-v2 ===== */
+/* Keep the long DELIVERING label and CFR1 percentage fully inside their tiles. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.delivering>span{
+  font-size:clamp(7px,8cqi,8px)!important;
+  letter-spacing:0!important;
+  line-height:1.1!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1>strong{
+  width:100%!important;
+  max-width:100%!important;
+  font-size:clamp(13px,18cqi,17px)!important;
+  letter-spacing:-.55px!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1{
+  padding-left:5px!important;
+  padding-right:5px!important;
+}
+
+
+/* ===== dashboard-delivering-cfr1-fit-v3 ===== */
+/* Wrap the long status label instead of clipping it at the card edge. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.delivering>span{
+  width:100%!important;
+  max-width:100%!important;
+  font-size:7px!important;
+  letter-spacing:0!important;
+  line-height:1.05!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  word-break:normal!important;
+  text-overflow:clip!important;
+}
+/* Keep the complete percentage, including %, inside the narrow CFR1 tile. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1>strong{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+  padding:0!important;
+  font-size:12px!important;
+  letter-spacing:-.65px!important;
+  line-height:1.05!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+  text-align:center!important;
+  font-variant-numeric:tabular-nums!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1{
+  padding-left:4px!important;
+  padding-right:4px!important;
+  overflow:hidden!important;
+}
+
+
+/* ===== dashboard-delivering-cfr1-width-v4 ===== */
+/* Reserve extra column width for the two longest Dashboard metrics. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1.25fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.25fr)!important;
+  gap:8px!important;
+  width:100%!important;
+  max-width:100%!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card{
+  min-width:0!important;
+  max-width:100%!important;
+  box-sizing:border-box!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.delivering>span{
+  display:block!important;
+  width:100%!important;
+  font-size:8px!important;
+  letter-spacing:0!important;
+  line-height:1.05!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  word-break:normal!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1{
+  padding-left:5px!important;
+  padding-right:5px!important;
+  align-items:center!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1>strong{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+  font-size:clamp(11px,15cqi,14px)!important;
+  letter-spacing:-.45px!important;
+  line-height:1.05!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-align:center!important;
+}
+@media(max-width:700px){
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.delivering>span{
+    font-size:7px!important;
+  }
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1>strong{
+    font-size:12px!important;
+  }
+}
+@media(max-width:420px){
+  #homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
