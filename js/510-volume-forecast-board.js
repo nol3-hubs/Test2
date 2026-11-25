@@ -160,17 +160,20 @@
     window.updateOperationProgress?.();
     render();
   }
-  function buildTownStats(rows){
-    var byTown=new Map();
+  function buildTownStats(rows,sets){
+    var byArea={badoc:new Map(),pinili:new Map()};
     (rows||[]).forEach(function(x){
       var name=normText(x.town);if(!name)return;
-      var stat=byTown.get(name);
-      if(!stat){stat={count:0,zones:new Set()};byTown.set(name,stat);}
-      stat.count++;
       var z=text(x.row["Zone ID"]??x.row["ZoneId"]??x.row["zone id"]??"").trim();
-      if(z)stat.zones.add(z);
+      ["badoc","pinili"].forEach(function(area){
+        if(!sets[area].has(name))return;
+        var map=byArea[area],stat=map.get(name);
+        if(!stat){stat={count:0,zones:new Set()};map.set(name,stat);}
+        stat.count++;
+        if(z)stat.zones.add(z);
+      });
     });
-    return byTown;
+    return byArea;
   }
   function renderTownGroups(targetId,areaKey,groups,townStats){
     var node=el(targetId);if(!node)return;
@@ -214,7 +217,7 @@
     else{el(ids.state).textContent=rows.length.toLocaleString()+" selected unique parcels · all-day view · same station/status selections";}
     renderStatusControls(details);
     updateSelects(rows);
-    var shown=selectedRows(rows),townStats=buildTownStats(shown);
+    var shown=selectedRows(rows),townStats=buildTownStats(shown,sets);
     var badocCount=0,piniliCount=0,bulky=0,highValue=0,stations=new Set();
     shown.forEach(function(x){
       var townKey=normText(x.town);
@@ -234,8 +237,8 @@
     renderStats(shown);
     var bGroups=typeof getTownLayout==="function"?getTownLayout("badoc"):sets.badocList.map(function(n){return [n]});
     var pGroups=typeof getTownLayout==="function"?getTownLayout("pinili"):sets.piniliList.map(function(n){return [n]});
-    renderTownGroups(ids.badocGrid,"badoc",bGroups,townStats);
-    renderTownGroups(ids.piniliGrid,"pinili",pGroups,townStats);
+    renderTownGroups(ids.badocGrid,"badoc",bGroups,townStats.badoc);
+    renderTownGroups(ids.piniliGrid,"pinili",pGroups,townStats.pinili);
     page=1;renderTable(shown);
   }
     function exportCsv(){var rows=selectedRows();if(!rows.length){alert("No all-day parcel records to export.");return;}var fields=["SPX Tracking Number","Order ID","Town","Current Station","Status","Destination Station","Zone ID"];var lines=[fields.map(csvCell).join(",")];rows.forEach(function(x){var r=x.row;lines.push([x.tn,orderOf(r),x.town,x.station,statusLabel(x.status),r["Destination Station"]??""].map(csvCell).join(","))});var blob=new Blob(["\ufeff"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="badoc-all-day-volume-"+new Date().toISOString().slice(0,10)+".csv";document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},1000);}
