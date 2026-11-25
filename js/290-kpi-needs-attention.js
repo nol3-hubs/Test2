@@ -3,7 +3,9 @@
   window.__badocKpiNeedsAttentionSync=true;
 
   function syncNeedsAttention(){
-    var source=document.querySelector("#kpiCategories > .kpi-month-section");
+    var container=document.getElementById("kpiCategories");
+    var source=container&&container.querySelector(":scope > .kpi-month-section");
+    var error=container&&container.querySelector(".kpi-data-error");
     var list=document.getElementById("dashboardKpiAttentionList");
     var count=document.getElementById("dashboardKpiAttentionCount");
     if(!list||!count)return;
@@ -18,7 +20,11 @@
     if(!cards.length){
       var empty=document.createElement("div");
       empty.className="dashboard-kpi-attention-empty";
-      empty.textContent=source?"No red KPI items.":"Waiting for KPI data…";
+      empty.textContent=source
+        ?"No red KPI items."
+        :error
+          ?"KPI data unavailable. Open KPI to retry."
+          :"Loading KPI data…";
       list.appendChild(empty);
       return;
     }
