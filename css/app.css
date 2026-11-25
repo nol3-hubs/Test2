@@ -3289,3 +3289,28 @@ html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn .theme-switch-t
     grid-template-columns:repeat(2,minmax(0,1fr))!important;
   }
 }
+
+
+/* ===== dashboard-delivering-cfr1-fit-v2 ===== */
+/* Keep the long DELIVERING label and CFR1 percentage fully inside their tiles. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.delivering>span{
+  font-size:clamp(7px,8cqi,8px)!important;
+  letter-spacing:0!important;
+  line-height:1.1!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1>strong{
+  width:100%!important;
+  max-width:100%!important;
+  font-size:clamp(13px,18cqi,17px)!important;
+  letter-spacing:-.55px!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1{
+  padding-left:5px!important;
+  padding-right:5px!important;
+}
