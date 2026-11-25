@@ -87,6 +87,7 @@
           button.textContent="⧉ Assignment Task";
           setStatus(button,message||"SPX Assignment Task export failed.","error");
         }
+        window.dispatchEvent(new CustomEvent("badoc:assignment-task-error",{detail:{message:String(message||"SPX Assignment Task export failed.")}}));
       }
 
       let batchSearchReportButton=null;
@@ -229,7 +230,7 @@
               fileName:String(data.fileName||"assignment_task.csv"),
               savedAt:Date.now()
             };
-            window.dispatchEvent(new CustomEvent("badoc:assignment-task-updated"));
+            window.dispatchEvent(new CustomEvent("badoc:assignment-task-updated",{detail:{date:window.__badocAssignmentTaskMeta.selectedDate,rowCount:rows.length}}));
             assignmentTaskExportPending=false;
             const button=assignmentTaskReportButton;
             assignmentTaskReportButton=null;
@@ -518,6 +519,21 @@
           }
         }
       });
+      window.__badocRequestAssignmentTaskExport = function(options = {}) {
+        const date = String(options.date || assignmentTaskReportDate());
+        const rows = optionalRows("__badocAssignmentTaskRows");
+        const meta = window.__badocAssignmentTaskMeta || {};
+        if (rows.length && meta.selectedDate === date && options.force !== true) {
+          window.dispatchEvent(new CustomEvent("badoc:assignment-task-updated",{detail:{date,rowCount:rows.length,reused:true}}));
+          return {ok:true,reused:true,rowCount:rows.length,date};
+        }
+        if (assignmentTaskExportPending) return {ok:true,pending:true,date};
+        const button = root.querySelector('[data-report-copy="assignment-task"]');
+        if (!button) return {ok:false,message:"The existing SPX Assignment Task export control is missing from Reports."};
+        // Invoke the same authenticated SPX export flow already used by Reports.
+        button.click();
+        return {ok:true,requested:true,date};
+      };
       root.addEventListener("keydown",event=>{
         const current=event.target.closest("[data-report-tab]");
         if(!current)return;
