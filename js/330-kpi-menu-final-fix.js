@@ -24,7 +24,10 @@
     window.scrollTo(0,0);
 
     if(typeof window.loadLiveKPI==="function"){
-      try{ window.loadLiveKPI(); }catch(err){}
+      try{
+        var hasKpiRows=!!document.querySelector("#kpiCategories > .kpi-month-section");
+        window.loadLiveKPI(!hasKpiRows);
+      }catch(err){}
     }
   }
 
