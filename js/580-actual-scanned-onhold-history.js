@@ -11,6 +11,8 @@
 
   const DB_NAME = "BadocHubActualScannedHistoryV1";
   const STORE_NAME = "onhold";
+  const TASK_STORE_NAME = "assignmentTasks";
+  const TASK_STORE_VERSION = 2;
   const HISTORY_KEY = "badoc_hold_history_v2"; // existing legacy TN-only history
   const AT_MAP_STORAGE_KEY = "badoc_actual_scanned_at_rider_map_v1";
   const TASK_MAP_STORAGE_KEY = "badoc_actual_scanned_assignment_tasks_v1";
@@ -32,6 +34,10 @@
   let dbPromise = null;
   let historyReady = false;
   let historyByKey = new Map();
+  let assignmentTaskRows = [];
+  let assignmentTaskDate = "";
+  let assignmentTaskWriteChain = Promise.resolve();
+  let assignmentTaskRequestDate = "";
   let writeChain = Promise.resolve();
   let renderQueued = false;
   let lastRenderManilaDayKey = "";
@@ -124,10 +130,13 @@
     if (dbPromise) return dbPromise;
     dbPromise = new Promise((resolve, reject) => {
       if (!window.indexedDB) return reject(new Error("IndexedDB is unavailable"));
-      const request = indexedDB.open(DB_NAME, 1);
+      const request = indexedDB.open(DB_NAME, TASK_STORE_VERSION);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains(STORE_NAME)) {
           request.result.createObjectStore(STORE_NAME, { keyPath: "key" });
+        }
+        if (!request.result.objectStoreNames.contains(TASK_STORE_NAME)) {
+          request.result.createObjectStore(TASK_STORE_NAME, { keyPath: "dateKey" });
         }
       };
       request.onsuccess = () => {
@@ -151,9 +160,9 @@
   function dateKeyFromRaw(rawValue, fallback = "") {
     const raw = String(rawValue ?? "").trim();
     if (!raw) return fallback;
-    let match = raw.match(/^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})/);
+    let match = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
     if (match) return match[1] + "-" + String(Number(match[2])).padStart(2, "0") + "-" + String(Number(match[3])).padStart(2, "0");
-    match = raw.match(/^(\\d{1,2})[/-](\\d{1,2})[/-](\\d{2,4})/);
+    match = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
     if (match) {
       let year = Number(match[3]); if (year < 100) year += 2000;
       return String(year) + "-" + String(Number(match[1])).padStart(2, "0") + "-" + String(Number(match[2])).padStart(2, "0");
@@ -164,40 +173,17 @@
   function rowActivityDate(row, fallback) {
     return dateKeyFromRaw(field(row, ["Assigned Time", "Assignment Time", "AT Date", "Task Date", "Assignment Date", "Date", "Activity Date", "DATE"]), fallback);
   }
-  function readStoredRows(storageKey) {
-    try {
-      const rows = JSON.parse(localStorage.getItem(storageKey) || "[]");
-      return Array.isArray(rows) ? rows.filter(row => row && typeof row === "object") : [];
-    } catch (_) { return []; }
-  }
-  function saveStoredRows(storageKey, rows) {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(rows));
-      return true;
-    } catch (error) {
-      console.warn("BADOC Actual Scanned AT/task map could not be saved:", error);
-      return false;
-    }
-  }
-  function importDateDefault() {
-    const input = document.getElementById("actualScanImportDate");
-    return input?.value || todayManilaKey();
-  }
-  function atMapRows() {
-    return readStoredRows(AT_MAP_STORAGE_KEY);
-  }
-  function taskMapRows() {
-    const stored = readStoredRows(TASK_MAP_STORAGE_KEY);
+  function assignmentTaskRowsForDate(dateKey) {
     const live = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : [];
     const liveDate = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
-    const liveMapped = live.map(row => ({
-      dateKey: rowActivityDate(row, liveDate || todayManilaKey()),
+    const source = liveDate === dateKey ? live : (assignmentTaskDate === dateKey ? assignmentTaskRows : []);
+    return source.map(row => ({
+      dateKey: rowActivityDate(row, liveDate || assignmentTaskDate || dateKey),
       trackingNumber: field(row, TASK_TN_ALIASES),
       atNumber: field(row, AT_NUMBER_ALIASES),
       riderId: field(row, TASK_RIDER_ID_ALIASES),
       riderName: field(row, TASK_RIDER_NAME_ALIASES)
-    })).filter(row => row.trackingNumber);
-    return stored.concat(liveMapped);
+    })).filter(row => row.trackingNumber && row.dateKey === dateKey);
   }
   function uniqueIdentity(rows) {
     const identities = new Map();
@@ -212,19 +198,21 @@
   function findAtMapRider(atNumber, dateKey) {
     const atKey = key(atNumber);
     if (!atKey || !dateKey) return null;
-    const matches = atMapRows().filter(row => row.dateKey === dateKey && key(row.atNumber) === atKey);
-    return uniqueIdentity(matches);
+    return uniqueIdentity(assignmentTaskRowsForDate(dateKey).filter(row => key(row.atNumber) === atKey));
   }
   function findTaskMatch(tn, dateKey) {
     const tnKey = key(tn);
     if (!tnKey || !dateKey) return null;
-    const matches = taskMapRows().filter(row => row.dateKey === dateKey && key(row.trackingNumber) === tnKey);
-    if (!matches.length) return null;
-    const direct = uniqueIdentity(matches);
-    const atNumbers = [...new Set(matches.map(row => key(row.atNumber)).filter(Boolean))];
-    if (direct) return { ...direct, atNumber: matches.find(row => row.atNumber)?.atNumber || "", source: "Assignment Task export" };
+    const rows = assignmentTaskRowsForDate(dateKey).filter(row => key(row.trackingNumber) === tnKey);
+    if (!rows.length) return null;
+    const direct = uniqueIdentity(rows);
+    const atNumbers = [...new Set(rows.map(row => key(row.atNumber)).filter(Boolean))];
+    if (direct) return { ...direct, source: "Automatic Assignment Task export" };
     if (atNumbers.length === 1) {
-      return { atNumber: matches.find(row => row.atNumber)?.atNumber || "", source: "Assignment Task AT match" };
+      const atNumber = rows.find(row => row.atNumber)?.atNumber || "";
+      const mapped = findAtMapRider(atNumber, dateKey);
+      if (mapped) return { ...mapped, atNumber, source: "Automatic AT Number match" };
+      return { atNumber, source: "Assignment Task AT only" };
     }
     return null;
   }
@@ -260,17 +248,17 @@
         riderKey: task.riderId ? "ID:" + key(task.riderId) : "NAME:" + key(task.riderName),
         vehicle: riderVehicle(task.riderId, task.riderName, event?.vehicle || ""),
         atNumber: task.atNumber || event?.atNumber || field(row, AT_NUMBER_ALIASES),
-        source: "Assignment Task export"
+        source: task.source || "Automatic Assignment Task export"
       };
     }
     const atNumber = task?.atNumber || event?.atNumber || field(row, AT_NUMBER_ALIASES);
-    const mapped = findAtMapRider(atNumber, dateKey);
+    const mapped = atNumber ? findAtMapRider(atNumber, dateKey) : null;
     if (mapped) {
       return {
         riderId: mapped.riderId || "", riderName: mapped.riderName || (mapped.riderId ? "Driver " + mapped.riderId : ""),
         riderKey: mapped.riderId ? "ID:" + key(mapped.riderId) : "NAME:" + key(mapped.riderName),
         vehicle: riderVehicle(mapped.riderId, mapped.riderName, event?.vehicle || ""),
-        atNumber, source: "AT Number map"
+        atNumber, source: "Automatic AT Number match"
       };
     }
     return {
@@ -278,70 +266,77 @@
       vehicle: event?.vehicle || "", atNumber, source: "Unattributed OnHold"
     };
   }
-  function setAtImportStatus(message, isError = false) {
-    const element = document.getElementById("actualScanAtImportStatus");
+  function setAssignmentTaskStatus(message, isError = false) {
+    const element = document.getElementById("actualScannedSourceStatus");
     if (!element) return;
-    element.textContent = message;
-    element.style.color = isError ? "var(--danger, #ef4444)" : "";
+    const current = String(element.textContent || "");
+    const parcelPrefix = current.match(/^\d[\d,]* eligible Parcel Count records/);
+    element.textContent = (parcelPrefix ? parcelPrefix[0] + " · " : "") + message;
+    if (isError) element.title = message;
   }
-  function refreshAtImportStatus() {
-    const maps = atMapRows();
-    const tasks = taskMapRows();
+  async function persistAssignmentTaskRows(rows, dateKey) {
+    if (!Array.isArray(rows) || !rows.length || !dateKey) return 0;
+    const db = await openDb();
+    const tx = db.transaction(TASK_STORE_NAME, "readwrite");
+    tx.objectStore(TASK_STORE_NAME).put({ dateKey, rows, savedAt: Date.now(), rowCount: rows.length });
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error("Assignment Task data could not be saved."));
+      tx.onabort = () => reject(tx.error || new Error("Assignment Task storage was aborted."));
+    });
+    assignmentTaskRows = rows;
+    assignmentTaskDate = dateKey;
+    return rows.length;
+  }
+  async function loadAssignmentTaskRows() {
+    const db = await openDb();
+    const dateKey = todayManilaKey();
+    const record = await new Promise((resolve, reject) => {
+      const request = db.transaction(TASK_STORE_NAME, "readonly").objectStore(TASK_STORE_NAME).get(dateKey);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error("Could not load today's Assignment Task data."));
+    });
+    if (record && Array.isArray(record.rows)) {
+      assignmentTaskRows = record.rows;
+      assignmentTaskDate = dateKey;
+      return record.rows.length;
+    }
+    assignmentTaskRows = [];
+    assignmentTaskDate = "";
+    return 0;
+  }
+  async function acceptAssignmentTaskExport() {
+    const rows = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : [];
+    const dateKey = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
+    if (!rows.length || dateKey !== todayManilaKey()) {
+      setAssignmentTaskStatus("Today's SPX Assignment Task data is not available yet.", true);
+      return 0;
+    }
+    const count = await persistAssignmentTaskRows(rows, dateKey);
+    const taskMatches = assignmentTaskRowsForDate(dateKey).length;
+    setAssignmentTaskStatus("SPX Assignment Task synced automatically · " + taskMatches.toLocaleString() + " parcel mapping row(s)");
+    try { window.__badocRenderActualScannedByRiders?.(); } catch (_) {}
+    return count;
+  }
+  function requestAssignmentTaskExport() {
     const today = todayManilaKey();
-    const atCount = maps.filter(row => row.dateKey === today).length;
-    const taskCount = tasks.filter(row => row.dateKey === today).length;
-    setAtImportStatus("Today: " + atCount.toLocaleString() + " AT rider map row(s) · " + taskCount.toLocaleString() + " assignment-task parcel row(s)");
-  }
-  async function readCsvFile(file) {
-    const text = await file.text();
-    if (typeof parseCsvText !== "function") throw new Error("CSV parser is not available. Reload the dashboard and try again.");
-    const rows = parseCsvText(text);
-    if (!Array.isArray(rows) || !rows.length) throw new Error("The selected CSV is empty or could not be parsed.");
-    return rows;
-  }
-  async function importAtRiderMap(file) {
-    const fallbackDate = importDateDefault();
-    const sourceRows = await readCsvFile(file);
-    const parsed = sourceRows.map(row => ({
-      dateKey: rowActivityDate(row, fallbackDate),
-      atNumber: field(row, AT_NUMBER_ALIASES),
-      riderId: field(row, TASK_RIDER_ID_ALIASES),
-      riderName: field(row, TASK_RIDER_NAME_ALIASES)
-    })).filter(row => row.dateKey && key(row.atNumber) && (row.riderId || row.riderName));
-    if (!parsed.length) throw new Error("No usable rows found. Required columns: DATE, AT Number, and RIDER ID or RIDER NAME.");
-    const merged = atMapRows();
-    parsed.forEach(row => {
-      const signature = row.dateKey + "|" + key(row.atNumber) + "|" + (row.riderId ? key(row.riderId) : key(row.riderName));
-      if (!merged.some(old => old.dateKey + "|" + key(old.atNumber) + "|" + (old.riderId ? key(old.riderId) : key(old.riderName)) === signature)) merged.push(row);
-    });
-    if (!saveStoredRows(AT_MAP_STORAGE_KEY, merged.slice(-3000))) throw new Error("AT rider map could not be saved in this browser.");
-    return parsed.length;
-  }
-  async function importAssignmentTaskCsv(file) {
-    const fallbackDate = importDateDefault();
-    const sourceRows = await readCsvFile(file);
-    const parsed = sourceRows.map(row => ({
-      dateKey: rowActivityDate(row, fallbackDate),
-      trackingNumber: field(row, TASK_TN_ALIASES),
-      atNumber: field(row, AT_NUMBER_ALIASES),
-      riderId: field(row, TASK_RIDER_ID_ALIASES),
-      riderName: field(row, TASK_RIDER_NAME_ALIASES)
-    })).filter(row => row.dateKey && key(row.trackingNumber) && (key(row.atNumber) || row.riderId || row.riderName));
-    if (!parsed.length) throw new Error("No usable rows found. Required: SPX Tracking Number plus AT Number or Rider ID/Rider Name.");
-    const merged = readStoredRows(TASK_MAP_STORAGE_KEY);
-    parsed.forEach(row => {
-      const signature = row.dateKey + "|" + key(row.trackingNumber) + "|" + key(row.atNumber) + "|" + (row.riderId ? key(row.riderId) : key(row.riderName));
-      if (!merged.some(old => old.dateKey + "|" + key(old.trackingNumber) + "|" + key(old.atNumber) + "|" + (old.riderId ? key(old.riderId) : key(old.riderName)) === signature)) merged.push(row);
-    });
-    if (!saveStoredRows(TASK_MAP_STORAGE_KEY, merged.slice(-12000))) throw new Error("Assignment Task parcel map could not be saved in this browser.");
-    return parsed.length;
-  }
-  function saveLegacyKeys() {
-    const keys = loadLegacyKeys();
-    historyByKey.forEach(record => { if (record.tn) keys.add(key(record.tn)); });
-    try { localStorage.setItem(HISTORY_KEY, JSON.stringify([...keys])); } catch (_) {}
-  }
-  function makeHistoryRecord(row) {
+    const liveDate = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
+    const liveRows = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : [];
+    if ((liveRows.length && liveDate === today) || (assignmentTaskRows.length && assignmentTaskDate === today)) {
+      if (liveRows.length && liveDate === today) acceptAssignmentTaskExport().catch(error => setAssignmentTaskStatus(error?.message || String(error), true));
+      else setAssignmentTaskStatus("SPX Assignment Task data loaded · " + assignmentTaskRows.length.toLocaleString() + " rows");
+      return;
+    }
+    if (assignmentTaskRequestDate === today) return;
+    assignmentTaskRequestDate = today;
+    setAssignmentTaskStatus("Requesting today's Assignment Task data from SPX automatically…");
+    if (typeof window.__badocRequestAssignmentTaskExport === "function") {
+      const result = window.__badocRequestAssignmentTaskExport({ date: today });
+      if (result?.ok === false) setAssignmentTaskStatus(result.message || "Automatic Assignment Task export could not start.", true);
+    } else {
+      setAssignmentTaskStatus("Automatic Assignment Task export bridge is not available in this app/extension build.", true);
+    }
+  }  function makeHistoryRecord(row) {
     const tn = trackingNumber(row);
     const tnKey = key(tn);
     if (!tnKey) return null;
@@ -444,6 +439,7 @@
       records.forEach(record => {
         if (record?.key && record?.tn) historyByKey.set(record.key, record);
       });
+      await loadAssignmentTaskRows();
     } catch (error) {
       console.warn("BADOC Actual Scanned OnHold history could not be loaded:", error);
     } finally {
@@ -819,32 +815,10 @@
   }, true);
   window.addEventListener("badoc:parcel-data-updated", captureCurrentState);
   window.addEventListener("badoc:assignment-task-updated", function () {
-    refreshAtImportStatus();
-    window.__badocRenderActualScannedByRiders?.();
+    acceptAssignmentTaskExport().catch(error => setAssignmentTaskStatus(error?.message || String(error), true));
   });
-  document.addEventListener("click", event => {
-    if (event.target?.closest?.("#actualScanAtMapImport")) document.getElementById("actualScanAtMapFile")?.click();
-    if (event.target?.closest?.("#actualScanTaskImport")) document.getElementById("actualScanTaskFile")?.click();
-  });
-  document.addEventListener("change", async event => {
-    const input = event.target;
-    if (!input || !["actualScanAtMapFile", "actualScanTaskFile"].includes(input.id)) return;
-    const file = input.files?.[0];
-    if (!file) return;
-    try {
-      setAtImportStatus("Reading " + file.name + "…");
-      const count = input.id === "actualScanAtMapFile"
-        ? await importAtRiderMap(file)
-        : await importAssignmentTaskCsv(file);
-      refreshAtImportStatus();
-      setAtImportStatus("Imported " + count.toLocaleString() + " row(s) from " + file.name + ". AT/task matches will be used only when event identity is missing.");
-      window.__badocRenderActualScannedByRiders?.();
-    } catch (error) {
-      setAtImportStatus(error?.message || String(error), true);
-    } finally {
-      input.value = "";
-    }
-  });
+  // Assignment Task data is requested automatically from SPX; no manual CSV import UI.
+  window.addEventListener("BADOC_ASSIGNED_ONHOLD_TODAY_COMPLETE", requestAssignmentTaskExport);
 
   baseRender = window.__badocRenderActualScannedByRiders || null;
   baseGetData = window.__badocGetActualScannedByRidersData || null;
@@ -857,9 +831,9 @@
   if (baseRender) window.__badocRenderActualScannedByRiders = patchedRender;
 
   // Load history first, then capture the currently available uploads/exports.
-  const importDate = document.getElementById("actualScanImportDate");
-  if (importDate && !importDate.value) importDate.value = todayManilaKey();
-  refreshAtImportStatus();
-  loadHistory().then(() => captureCurrentState());
+  loadHistory().then(() => {
+    captureCurrentState();
+    requestAssignmentTaskExport();
+  });
   Promise.resolve(window.__badocOnholdExportsReady).then(() => captureCurrentState()).catch(() => {});
 })();
