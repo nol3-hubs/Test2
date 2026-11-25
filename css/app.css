@@ -3731,3 +3731,27 @@ html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn .theme-switch-t
     grid-row:auto!important;
   }
 }
+
+
+/* ===== dashboard-all-parcel-cards-centered-v9 ===== */
+/* Center the value and label inside every Parcel Overview tile. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card>strong,
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card>span,
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card>small{
+  width:100%!important;
+  max-width:100%!important;
+  text-align:center!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.delivering>span{
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  word-break:normal!important;
+  letter-spacing:0!important;
+}
