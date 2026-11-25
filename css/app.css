@@ -3314,3 +3314,40 @@ html[data-theme="light"] .side > .sidebar-footer #themeToggleBtn .theme-switch-t
   padding-left:5px!important;
   padding-right:5px!important;
 }
+
+
+/* ===== dashboard-delivering-cfr1-fit-v3 ===== */
+/* Wrap the long status label instead of clipping it at the card edge. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.delivering>span{
+  width:100%!important;
+  max-width:100%!important;
+  font-size:7px!important;
+  letter-spacing:0!important;
+  line-height:1.05!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+  word-break:normal!important;
+  text-overflow:clip!important;
+}
+/* Keep the complete percentage, including %, inside the narrow CFR1 tile. */
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1>strong{
+  display:block!important;
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+  padding:0!important;
+  font-size:12px!important;
+  letter-spacing:-.65px!important;
+  line-height:1.05!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+  text-align:center!important;
+  font-variant-numeric:tabular-nums!important;
+}
+#homeDashboard .dashboard-overview .parcel-overview-group .dashboard-status-card.cfr1{
+  padding-left:4px!important;
+  padding-right:4px!important;
+  overflow:hidden!important;
+}
