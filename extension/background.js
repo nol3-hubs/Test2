@@ -1952,6 +1952,14 @@ async function clickBatchSearchDownloadControl(tabId) {
       const textOf = el => String(el?.innerText || el?.textContent ||
         el?.getAttribute?.("aria-label") || el?.getAttribute?.("title") || "")
         .replace(/\s+/g, " ").trim();
+      const accessibleText = el => [
+        textOf(el), el?.getAttribute?.("aria-label"), el?.getAttribute?.("title"),
+        el?.getAttribute?.("data-testid"), el?.getAttribute?.("data-test")
+      ].filter(Boolean).join(" ");
+      const disabled = el => !!el?.disabled ||
+        el?.getAttribute?.("aria-disabled") === "true" ||
+        el?.getAttribute?.("disabled") !== null ||
+        /(^|\s)(disabled|is-disabled)(\s|$)/i.test(String(el?.className || ""));
       const visible = el => {
         if (!el || el.isConnected === false) return false;
         const rect = el.getBoundingClientRect();
@@ -1984,159 +1992,201 @@ async function clickBatchSearchDownloadControl(tabId) {
         roots.forEach(walk);
         return out;
       };
-      const disabled = el => !!el?.disabled ||
-        el?.getAttribute?.("aria-disabled") === "true" ||
-        el?.getAttribute?.("disabled") !== null ||
-        /(^|\s)(disabled|is-disabled)(\s|$)/i.test(String(el?.className || ""));
-      const triggerKey = el => [
-        textOf(el), el?.getAttribute?.("aria-label"), el?.getAttribute?.("title"),
-        el?.getAttribute?.("data-testid"), el?.getAttribute?.("data-test")
-      ].map(norm).find(value => /^(?:export|exportmenu|exportdropdown|exportoptions)$/.test(value)) || "";
-      const targetOption = el => {
-        const value = norm(textOf(el));
-        return /^(?:export)?batchsearchresults?$/.test(value) ||
-          /^batchsearchresult(?:s)?export$/.test(value);
-      };
-      const menuOptions = () => allElements().filter(el =>
-        visible(el) && !disabled(el) && targetOption(el)
-      ).sort((a, b) => {
-        const aDepth = (() => { let n=0; for(let x=a;x&&x!==document.body;x=x.parentElement)n++; return n; })();
-        const bDepth = (() => { let n=0; for(let x=b;x&&x!==document.body;x=x.parentElement)n++; return n; })();
-        return bDepth-aDepth || textOf(a).length-textOf(b).length;
-      });
-      const isActionable = el => {
+      const elements = allElements();
+      const actionable = el => {
         if (!el) return false;
         const tag = String(el.tagName || "").toLowerCase();
         const role = String(el.getAttribute?.("role") || "");
         const cls = String(el.className || "");
         const style = (el.ownerDocument?.defaultView || window).getComputedStyle(el);
-        return tag === "button" || tag === "a" || role === "button" ||
-          role === "menuitem" || el.hasAttribute?.("tabindex") ||
-          el.hasAttribute?.("aria-haspopup") || typeof el.onclick === "function" ||
-          /button|dropdown|select|trigger|action|menu-item/i.test(cls) ||
+        return tag === "button" || tag === "a" ||
+          role === "button" || role === "menuitem" ||
+          el.hasAttribute?.("tabindex") || el.hasAttribute?.("aria-haspopup") ||
+          el.hasAttribute?.("aria-controls") || typeof el.onclick === "function" ||
+          /button|dropdown|caret|trigger|action|menu-item/i.test(cls) ||
           style.cursor === "pointer";
+      };
+      const inExportContext = el => {
+        for (let node = el, depth = 0; node && depth < 7; node = node.parentElement, depth++) {
+          const own = norm(accessibleText(node));
+          const cls = String(node.className || "");
+          if (own === "export" || own === "exportmenu" || own === "exportdropdown" ||
+              own.includes("exportbatchsearch") ||
+              (/export/.test(own) && /dropdown|button.?group|group/i.test(cls))) return true;
+        }
+        return false;
+      };
+      const isDropdownAffordance = el => {
+        const cls = String(el?.className || "");
+        const role = String(el?.getAttribute?.("role") || "");
+        return /caret|dropdown|drop-down|more-options/i.test(cls) ||
+          /menu|listbox/i.test(el?.getAttribute?.("aria-haspopup") || "") ||
+          el?.hasAttribute?.("aria-controls") ||
+          (el?.hasAttribute?.("aria-haspopup") && role !== "menuitem");
+      };
+      const menuItemMatches = el => {
+        const value = norm(textOf(el));
+        return /^(?:export)?batchsearchresults?$/.test(value) ||
+          /^batchsearchresult(?:s)?export$/.test(value);
+      };
+      const menuOptions = () => allElements().filter(el =>
+        visible(el) && !disabled(el) && menuItemMatches(el)
+      ).sort((a, b) => {
+        const depth = el => { let n=0; for(let x=el;x&&x!==document.body;x=x.parentElement)n++; return n; };
+        return depth(b)-depth(a) || textOf(a).length-textOf(b).length;
+      });
+      const menuDiagnostics = () => {
+        const out = [];
+        for (const el of allElements()) {
+          if (!visible(el)) continue;
+          const role = String(el.getAttribute?.("role") || "");
+          const cls = String(el.className || "");
+          if (!/menu|dropdown|popover|popper|overlay/i.test(role + " " + cls)) continue;
+          const value = textOf(el);
+          if (value) out.push(value.slice(0, 200));
+        }
+        return [...new Set(out)].slice(0, 20);
       };
       const clickTarget = el => {
         let best = el;
-        const original = norm(textOf(el));
+        const initial = norm(textOf(el));
         for (let node = el; node && node !== (el.ownerDocument || document).body; node = node.parentElement) {
           if (node.getAttribute?.("role") === "menuitem" || node.getAttribute?.("role") === "option") {
             best = node; break;
           }
-          const current = norm(textOf(node));
-          if (current && original && current !== original) break;
-          if (isActionable(node)) { best = node; break; }
+          const parentText = norm(textOf(node));
+          if (parentText && initial && parentText !== initial) break;
+          if (actionable(node)) { best = node; break; }
           best = node;
         }
         try { best.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
         best.click();
         return best;
       };
-      const triggerCandidates = () => {
-        const found = new Map();
-        for (const el of allElements()) {
-          if (!visible(el) || disabled(el)) continue;
-          const key = triggerKey(el);
-          if (!key) continue;
-          let best = el;
-          for (let node = el; node && node !== (el.ownerDocument || document).body; node = node.parentElement) {
-            if (triggerKey(node) && triggerKey(node) !== key) break;
-            if (isActionable(node)) { best = node; break; }
-            best = node;
+      const exportTextNodes = elements.filter(el => {
+        if (!visible(el) || disabled(el)) return false;
+        const own = norm(accessibleText(el));
+        return own === "export" || own === "exportmenu" || own === "exportdropdown";
+      });
+      const candidates = new Map();
+
+      // Prefer the actual dropdown arrow/caret belonging to the Export group.
+      // SPX often uses a split button: the text half is not the menu trigger.
+      for (const textNode of exportTextNodes) {
+        let wrapper = null;
+        for (let node = textNode; node && node !== document.body; node = node.parentElement) {
+          const cls = String(node.className || "");
+          if (/dropdown|button.?group|el-button-group|ant-btn-group/i.test(cls) ||
+              node.hasAttribute?.("aria-haspopup")) {
+            wrapper = node; break;
           }
-          if (!isActionable(best) || found.has(best)) continue;
-          const tag = String(best.tagName || "").toLowerCase();
-          const cls = String(best.className || "");
-          const rect = best.getBoundingClientRect();
-          let score = key === "export" ? 100 : 65;
-          if (tag === "button") score += 30;
-          if (best.hasAttribute("aria-haspopup")) score += 90;
-          if (best.getAttribute("aria-expanded") === "true") score += 35;
-          if (/dropdown|export|trigger/i.test(cls)) score += 30;
-          if (best.getAttribute("data-testid") || best.getAttribute("data-test")) score += 12;
-          if (rect.top < (best.ownerDocument?.defaultView || window).innerHeight * 0.65) score += 8;
-          found.set(best, {
-            element: best, label: textOf(best) || key, tag, score,
-            className: cls.slice(0, 100),
-            ariaHaspopup: best.getAttribute("aria-haspopup") || "",
-            ariaExpanded: best.getAttribute("aria-expanded") || ""
+          if (norm(textOf(node)).length > 90) break;
+        }
+        if (!wrapper) {
+          for (let node = textNode; node && node !== document.body; node = node.parentElement) {
+            if (node.querySelectorAll?.("button,[role='button'],[aria-haspopup],[aria-controls]")?.length) {
+              wrapper = node; break;
+            }
+          }
+        }
+        if (!wrapper) wrapper = textNode.parentElement || textNode;
+
+        const descendants = [wrapper, ...(wrapper.querySelectorAll ? [...wrapper.querySelectorAll(
+          "button,a,[role='button'],[tabindex],[aria-haspopup],[aria-controls],[class*='caret'],[class*='dropdown'],[class*='trigger']"
+        )] : [])];
+        for (const handle of descendants) {
+          if (!visible(handle) || disabled(handle) || !actionable(handle)) continue;
+          const caret = isDropdownAffordance(handle);
+          const directExport = norm(accessibleText(handle)) === "export";
+          if (!caret && !directExport && handle !== wrapper) continue;
+          const cls = String(handle.className || "");
+          const tag = String(handle.tagName || "").toLowerCase();
+          let score = caret ? 300 : 100;
+          if (handle.hasAttribute("aria-haspopup")) score += 65;
+          if (handle.hasAttribute("aria-controls")) score += 55;
+          if (tag === "button") score += 25;
+          if (/caret|dropdown/i.test(cls)) score += 50;
+          if (/primary/i.test(cls)) score -= 35;
+          const key = handle;
+          const prior = candidates.get(key);
+          const item = {
+            element: handle, label: textOf(handle) || accessibleText(handle) || "Export dropdown",
+            tag, score, className: cls.slice(0, 120),
+            ariaHaspopup: handle.getAttribute("aria-haspopup") || "",
+            ariaControls: handle.getAttribute("aria-controls") || "",
+            wrapper: String(wrapper.className || "").slice(0, 120)
+          };
+          if (!prior || item.score > prior.score) candidates.set(key, item);
+        }
+      }
+
+      // Fallback when SPX renders a single Export button rather than a split button.
+      if (!candidates.size) {
+        for (const el of exportTextNodes) {
+          let target = el;
+          for (let node = el; node && node !== document.body; node = node.parentElement) {
+            if (actionable(node)) { target = node; break; }
+          }
+          if (!visible(target) || disabled(target)) continue;
+          candidates.set(target, {
+            element: target, label: textOf(target) || "Export",
+            tag: String(target.tagName || "").toLowerCase(), score: 100,
+            className: String(target.className || "").slice(0, 120),
+            ariaHaspopup: target.getAttribute("aria-haspopup") || "",
+            ariaControls: target.getAttribute("aria-controls") || "",
+            wrapper: ""
           });
         }
-        return [...found.values()].sort((a, b) => b.score - a.score);
-      };
-      const waitForOption = async timeout => {
+      }
+
+      const triggerList = [...candidates.values()].sort((a,b)=>b.score-a.score);
+      const waitForMenu = async timeout => {
         const deadline = Date.now() + timeout;
         while (Date.now() < deadline) {
-          const found = menuOptions()[0];
-          if (found) return found;
+          const option = menuOptions()[0];
+          if (option) return option;
           await sleep(100);
         }
         return menuOptions()[0] || null;
       };
-      const hoverTrigger = el => {
-        const doc = el.ownerDocument || document;
-        const view = doc.defaultView || window;
-        const rect = el.getBoundingClientRect();
-        const init = {
-          bubbles: true, cancelable: true, composed: true, view,
-          clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
-          button: 0, buttons: 0
-        };
-        try {
-          if (view.PointerEvent) {
-            el.dispatchEvent(new view.PointerEvent("pointerover", { ...init, pointerType: "mouse", isPrimary: true }));
-            el.dispatchEvent(new view.PointerEvent("pointerenter", { ...init, bubbles: false, pointerType: "mouse", isPrimary: true }));
-          }
-          el.dispatchEvent(new view.MouseEvent("mouseover", init));
-          el.dispatchEvent(new view.MouseEvent("mouseenter", { ...init, bubbles: false }));
-        } catch (_) {}
-      };
-      const menuDiagnostics = () => {
-        const result = [];
-        for (const el of allElements()) {
-          if (!visible(el)) continue;
-          const role = String(el.getAttribute?.("role") || "");
-          const cls = String(el.className || "");
-          if (!/menu|dropdown|popover|popper|overlay|tooltip/i.test(role + " " + cls)) continue;
-          const value = textOf(el);
-          if (value) result.push(value.slice(0, 220));
-        }
-        return [...new Set(result)].slice(0, 20);
-      };
-
+      const attempts = [];
       let chosen = menuOptions()[0] || null;
       let usedTrigger = "";
-      const diagnostics = [];
+
       if (!chosen) {
-        const triggers = triggerCandidates();
-        for (const item of triggers.slice(0, 8)) {
-          const trigger = item.element;
+        for (const item of triggerList.slice(0, 10)) {
+          const handle = item.element;
           usedTrigger = item.label;
-          diagnostics.push({
+          attempts.push({
             label: item.label, tag: item.tag, score: item.score,
-            className: item.className, ariaHaspopup: item.ariaHaspopup,
-            ariaExpanded: item.ariaExpanded
+            className: item.className, wrapper: item.wrapper,
+            ariaHaspopup: item.ariaHaspopup, ariaControls: item.ariaControls
           });
 
-          hoverTrigger(trigger);
-          chosen = await waitForOption(650);
+          try { handle.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
+          try { handle.focus?.({ preventScroll: true }); } catch (_) {}
+
+          // Activate the dropdown control directly. No physical mouse movement or
+          // manual hover is required; this also handles SPX split-button carets.
+          try { handle.click(); } catch (_) {}
+          chosen = await waitForMenu(item.ariaHaspopup || item.ariaControls ? 5500 : 3200);
           if (chosen) break;
 
-          try { trigger.focus?.({ preventScroll: true }); } catch (_) {}
-          try { trigger.click(); } catch (_) {}
-          chosen = await waitForOption(item.ariaHaspopup ? 5000 : 3000);
-          if (chosen) break;
-
-          if (item.ariaHaspopup || /dropdown|trigger/i.test(item.className)) {
-            try {
-              const view = trigger.ownerDocument?.defaultView || window;
-              trigger.dispatchEvent(new view.KeyboardEvent("keydown", {
-                key: "ArrowDown", code: "ArrowDown", bubbles: true, cancelable: true
+          // Try keyboard activation on the same dropdown handle before moving on.
+          try {
+            const view = handle.ownerDocument?.defaultView || window;
+            for (const [key, code] of [["Enter","Enter"],[" ","Space"],["ArrowDown","ArrowDown"]]) {
+              handle.dispatchEvent(new view.KeyboardEvent("keydown", {
+                key, code, bubbles: true, cancelable: true
               }));
-            } catch (_) {}
-            chosen = await waitForOption(1600);
-            if (chosen) break;
-          }
+              handle.dispatchEvent(new view.KeyboardEvent("keyup", {
+                key, code, bubbles: true, cancelable: true
+              }));
+              chosen = await waitForMenu(700);
+              if (chosen) break;
+            }
+          } catch (_) {}
+          if (chosen) break;
         }
       }
 
@@ -2146,10 +2196,10 @@ async function clickBatchSearchDownloadControl(tabId) {
         return {
           clicked: false, menuOpened: false, menuItem: "",
           trigger: usedTrigger,
-          reason: "SPX Export control was found, but its Batch Search export menu did not open after hover, click, and keyboard attempts.",
+          reason: "SPX Export dropdown could not be opened automatically by clicking its menu/caret control.",
           menuText: visibleText,
           menuCandidates: menuDiagnostics(),
-          triggerCandidates: diagnostics,
+          triggerCandidates: attempts,
           url: String(location.href || ""), title: String(document.title || "")
         };
       }
