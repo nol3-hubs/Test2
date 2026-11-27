@@ -5,8 +5,9 @@
   if(!root)return;
   const closeBtn=get("badocOpClose"),cancelBtn=get("badocOpCancel"),copyBtn=get("badocOpCopy");
   const copyFeedback=get("badocOpCopyFeedback");
-  let copyAction=null;
+  let copyAction=null,copyGeneration=0;
   function clearCopyAction(){
+    copyGeneration++;
     copyAction=null;
     if(copyBtn){copyBtn.hidden=true;copyBtn.disabled=false;copyBtn.textContent="Copy Results";}
     if(copyFeedback){copyFeedback.hidden=true;copyFeedback.textContent="";}
@@ -79,10 +80,14 @@
   copyBtn?.addEventListener("click",async()=>{
     if(typeof copyAction!=="function")return;
     const action=copyAction;
+    const generation=copyGeneration;
     copyBtn.disabled=true;
     copyBtn.textContent="Copying…";
     try{
       const copied=await action();
+      // A new loading operation may have started while clipboard permission
+      // was pending. Do not let an old copy completion overwrite its dialog.
+      if(generation!==copyGeneration)return;
       if(copied===false){
         copyBtn.textContent="Retry Copy";
         copyBtn.disabled=false;
@@ -93,6 +98,7 @@
         if(copyFeedback){copyFeedback.textContent="✓ Results copied to your clipboard.";copyFeedback.hidden=false;copyFeedback.dataset.state="success";}
       }
     }catch(error){
+      if(generation!==copyGeneration)return;
       console.error("Badoc report copy failed:",error);
       copyBtn.textContent="Retry Copy";
       copyBtn.disabled=false;
