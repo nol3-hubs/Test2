@@ -198,6 +198,7 @@
               sourceTaskId:String(data.sourceTaskId||""),
               inputCount:Number(data.inputCount||0),
               chunkCount:Number(data.chunkCount||1),
+              resultPageCount:Number(data.resultPageCount||0),
               rowCount:Number(data.rowCount||rows.length),
               matchedCount:Number(data.matchedCount||0),
               notFoundCount:Number(data.notFoundCount||0),
@@ -227,7 +228,7 @@
               button.textContent="⧉ Batch Search Result ("+rows.length.toLocaleString()+")";
               setStatus(button,summary,meta.failedCount?"warn":"success");
             }
-            const batchDetails=[["Input TNs",meta.inputCount.toLocaleString()],["Rows returned",rows.length.toLocaleString()],["Found",meta.matchedCount.toLocaleString()],["Not found",meta.notFoundCount.toLocaleString()],["Failed",meta.failedCount.toLocaleString()],["Failed batches",meta.failedBatchCount.toLocaleString()],["Search batches",meta.chunkCount.toLocaleString()]];
+            const batchDetails=[["Input TNs",meta.inputCount.toLocaleString()],["Rows returned",rows.length.toLocaleString()],["Found",meta.matchedCount.toLocaleString()],["Not found",meta.notFoundCount.toLocaleString()],["Failed",meta.failedCount.toLocaleString()],["Failed batches",meta.failedBatchCount.toLocaleString()],["Search batches",meta.chunkCount.toLocaleString()],["Result pages read",meta.resultPageCount.toLocaleString()]];
             if(meta.failedCount)batchDetails.push(["Failure reason",failureReason.slice(0,500)]);
             window.__badocOperationModalFinish?.(
               meta.failedCount?"Batch Search Result Completed with Warnings":"Batch Search Result Loaded",
