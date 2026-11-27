@@ -2214,7 +2214,8 @@ async function runBatchSearchExportJob(job) {
   let tabId = null;
   const allResults = new Map();
   const failedByTn = new Map();
-  let resultPageCount = 0;
+  const downloadedFileNames = [];
+  let downloadedFileRows = 0;
   const rawTns = Array.isArray(job.trackingNumbers) ? job.trackingNumbers : [];
   const tns = [...new Map(rawTns.map(value => {
     const original = String(value ?? "").trim();
@@ -2247,8 +2248,9 @@ async function runBatchSearchExportJob(job) {
       sendProgress("SPX Batch Search " + (i + 1) + "/" + batches.length + " · submitting " + batch.length.toLocaleString() + " tracking number(s)…");
       try {
         const response = await executeSpxBatchSearch(tabId, batch);
-        if (!response || !Array.isArray(response.results)) throw new Error("SPX Batch Search returned an invalid result payload.");
-        resultPageCount += Math.max(1, Number(response.pageCount || 1));
+        if (!response || !Array.isArray(response.results)) throw new Error("SPX downloaded Batch Search file returned an invalid result payload.");
+        if (response.fileName) downloadedFileNames.push(String(response.fileName));
+        downloadedFileRows += Math.max(0, Number(response.fileRowCount || 0));
         for (const item of response.results) {
           const key = normalizeBatchSearchTn(item?.matchedTN || item?.tn || "");
           if (!key || !batchKeys.has(key)) continue;
@@ -2262,7 +2264,7 @@ async function runBatchSearchExportJob(job) {
           });
         }
         const foundInBatch = batch.filter(value => allResults.has(normalizeBatchSearchTn(value))).length;
-        sendProgress("Batch " + (i + 1) + "/" + batches.length + " complete · " + foundInBatch.toLocaleString() + "/" + batch.length.toLocaleString() + " matched · " + Number(response.pageCount || 1).toLocaleString() + " result page(s) read.");
+        sendProgress("Batch " + (i + 1) + "/" + batches.length + " complete · read " + Number(response.fileRowCount || 0).toLocaleString() + " row(s) from " + String(response.fileName || "SPX download") + " · " + foundInBatch.toLocaleString() + "/" + batch.length.toLocaleString() + " matched.");
       } catch (error) {
         const message = String(error?.message || error);
         batch.forEach(value => failedByTn.set(normalizeBatchSearchTn(value), message));
@@ -2297,7 +2299,8 @@ async function runBatchSearchExportJob(job) {
       fileName: "batch_search_result.csv",
       inputCount: tns.length,
       chunkCount: batches.length,
-      resultPageCount,
+      downloadedFileName: downloadedFileNames.join(" | "),
+      downloadedFileRows,
       rowCount: outputRows.length,
       matchedCount,
       notFoundCount,
