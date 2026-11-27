@@ -1658,7 +1658,8 @@ async function installBatchSearchFileCapture(tabId) {
         current.links.length=0;
         current.files.length=0;
         current.errors.length=0;
-        current.events?.splice?.(0);
+        current.events ||= [];
+        current.events.splice(0);
         return { installed: true, reused: true, reset: true };
       }
       const state = { installed: true, installedAt: Date.now(), blobs: new Map(), links: [], files: [], errors: [], events: [] };
@@ -1782,12 +1783,14 @@ async function installBatchSearchFileCapture(tabId) {
               const url = String(this.responseURL || this.__badocBatchUrl || "");
               const type = String(this.getResponseHeader("content-type") || "");
               const disposition = String(this.getResponseHeader("content-disposition") || "");
-              if (!fileLike(url, type, disposition)) {
+              const binaryResponse=this.responseType==="blob"||this.responseType==="arraybuffer";
+              if (!fileLike(url, type, disposition) && !binaryResponse) {
                 if (/(export|download|batch.?search|search.?result)/i.test(url)) {
                   state.events.push({
                     url, method:this.__badocBatchMethod || "GET",
                     status:Number(this.status || 0), contentType:type,
-                    disposition, at:Date.now()
+                    disposition, responseType:this.responseType||"",
+                    at:Date.now()
                   });
                 }
                 return;
@@ -1832,7 +1835,8 @@ async function readBatchSearchCapturedFile(tabId) {
       const link = state.links.slice().sort((a,b) => b.at - a.at)[0];
       if (!link) return {
         ready: false, linkCount: 0, fileCount: state.files.length,
-        errors: state.errors.slice(-4)
+        errors: state.errors.slice(-4),
+        events: state.events?.slice(-12) || []
       };
 
       try {
@@ -1867,7 +1871,8 @@ async function readBatchSearchCapturedFile(tabId) {
         return {
           ready: false, linkCount: state.links.length, fileCount: state.files.length,
           directUrl: link.url, directFileName: link.fileName,
-          errors: [...state.errors.slice(-3), String(error?.message || error)]
+          errors: [...state.errors.slice(-3), String(error?.message || error)],
+          events: state.events?.slice(-12) || []
         };
       }
     }
@@ -2287,8 +2292,15 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
   }
   if(!capture?.ready||!capture.file?.base64){
     const detail=(capture?.errors||[]).join(" | ")||"No CSV/Excel download link or file response was captured.";
-    const controls=exportAction?.controls?.join(" | ")||"No visible Export/Download button was found.";
-    throw new Error("SPX Batch Search completed, but its downloaded result file could not be read. "+detail+" "+controls);
+    const controls=(exportAction?.menuOptions||exportAction?.controls||[]).join(" | ")||
+      exportAction?.note||"No visible Export/Download menu option was found.";
+    const events=(capture?.events||[]).map(item=>
+      String(item.method||"GET")+" "+String(item.status||"")+" "+String(item.url||"").slice(0,180)+" ["+String(item.contentType||"")+"]"
+    ).join(" ; ");
+    throw new Error("SPX Batch Search completed, but its downloaded result file could not be read. "+detail+
+      " Export control: "+String(exportAction?.trigger||exportAction?.reason||"not identified")+
+      ". Export menu: "+controls+
+      (events?". SPX export requests: "+events:""));
   }
 
   sendBatchSearchFileProgress("Downloaded "+String(capture.file.fileName||"SPX result file")+" · reading the actual file contents…");
