@@ -2263,27 +2263,38 @@ async function discoverNewBatchSearchExportTask(submittedAtSec, job) {
   const excluded=/feeder_assignment_task|assignment_task|spx_driver|inbound_to_from_spx|pickup_task_export/i;
   while(Date.now()<deadline) {
     if(job?.cancelled)throw new Error("Batch Search export task lookup cancelled.");
+    const requests=sources.flatMap(source=>[
+      {source,omitStartTime:false},
+      // SPX sometimes delays applying start_time to the portal task list.
+      // Also inspect the unfiltered first page, but still require a fresh ctime.
+      {source,omitStartTime:true}
+    ]);
     const settled=await Promise.allSettled(
-      sources.map(source=>listTasks(Math.max(0,submittedAtSec-90),source,1,false,0))
+      requests.map(item=>listTasks(Math.max(0,submittedAtSec-90),item.source,1,item.omitStartTime,0))
     );
     const candidates=[];
     const errors=[];
+    const seen=new Set();
     for(let i=0;i<settled.length;i++) {
       const result=settled[i];
+      const source=requests[i].source;
       if(result.status!=="fulfilled") {
-        errors.push((sources[i]||"default")+": "+(result.reason?.message||String(result.reason)));
+        errors.push((source||"default")+(requests[i].omitStartTime?" unfiltered":" recent")+": "+(result.reason?.message||String(result.reason)));
         continue;
       }
       for(const task of result.value||[]) {
         const taskId=getExportTaskId(task);
         if(!taskId)continue;
         const createdAt=batchSearchTaskCreatedAt(task);
-        // The endpoint is already bounded by start_time. Require a recent
-        // creation timestamp as a second guard against reusing an older task.
+        // Require a creation timestamp close to the actual Export-menu click;
+        // this prevents accidentally downloading an older task in Latest Task.
         if(!createdAt||createdAt<submittedAtSec-90||createdAt>Math.floor(Date.now()/1000)+60)continue;
         const taskName=String(task?.export_name||task?.task_name||task?.name||"");
         if(excluded.test(taskName))continue;
-        candidates.push({task,source:sources[i],taskId,createdAt});
+        const uniqueKey=source+":"+taskId;
+        if(seen.has(uniqueKey))continue;
+        seen.add(uniqueKey);
+        candidates.push({task,source,taskId,createdAt});
       }
     }
     candidates.sort((a,b)=>b.createdAt-a.createdAt||b.taskId-a.taskId);
