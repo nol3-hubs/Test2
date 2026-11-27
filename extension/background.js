@@ -2080,18 +2080,9 @@ async function clickBatchSearchDownloadControl(tabId) {
         className:String(el.className||"").slice(0,120)
       }));
 
-      // If SPX keeps the menu item mounted but visually hidden until hover,
-      // HTMLElement.click() can still call the Vue/React menu handler directly.
-      const hiddenMenuItem = menuNodes().find(el => !disabled(el));
-      if (hiddenMenuItem) {
-        clickTarget(hiddenMenuItem);
-        await sleep(900);
-        return {
-          clicked:true,menuOpened:true,menuItem:textOf(hiddenMenuItem),
-          trigger:"hidden SPX menu item",method:"direct-hidden-menu-item",
-          clickedAt:Date.now(),url:String(location.href||"")
-        };
-      }
+      // Hidden menu nodes are only used as a locator. Do not click them while
+      // their dropdown is closed; open the Export parent first, then click the
+      // visible menu item so SPX receives the normal component interaction.
 
       const candidates=new Map();
       for (const textNode of exportTextNodes) {
