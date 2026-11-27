@@ -2799,13 +2799,6 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       "store_name","storeName","pickup_shop_name","pickup_seller_name","order_seller_name"
     ],/^(seller|shop|merchant|store)(display|nickname)?name$|^pickup(shop|seller)name$|^ordersellername$/i);
   }
-  function fmFallbackSellerNamesMatch(order,task){
-    // Only the time/point fallback needs a seller identity guard. A real task
-    // number plus the same Pickup Point ID remains the strongest match.
-    const orderName=fmNorm(fmSellerName(order));
-    const taskName=fmNorm(fmPickupPointName(task)||fmSellerName(task));
-    return !orderName||!taskName||orderName===taskName;
-  }
   function fmUniquePickupNames(rows,readName=fmPickupPointName){
     const names=new Map();
     for(const row of rows||[]){
@@ -3084,7 +3077,6 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
       // Pickup No Order is normalized to OnHold and Disabled to Cancelled.
       const matchedTask=fmLatestTask(group);
       const taskStatus=matchedTask?fmTaskStatusRaw(matchedTask):"";
-      if(group.matchIssue==="seller-mismatch")return "Seller Mismatch";
       if(group.matchIssue==="ambiguous")return "Ambiguous Task Match";
       return taskStatus?fmTaskStatusLabel(taskStatus):"No Task Match";
     }
@@ -3352,9 +3344,11 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           const taskTimeMs=fmDateTimeMs(fmValue(task,["Create Time","Task Create Time","Created Time","create_time","ctime"],/^createtime$|^taskcreatetime$|^ctime$/i));
           return Number.isFinite(taskTimeMs)&&Math.abs(taskTimeMs-assignedTimeMs)<=2000;
         });
-        candidates=timeCandidates.filter(task=>fmFallbackSellerNamesMatch(order,task));
-        if(!candidates.length&&timeCandidates.length)matchIssue="seller-mismatch";
-        else if(candidates.length>1)matchIssue="ambiguous";
+        // Pickup Point ID is the authoritative link between these exports.
+        // Seller Name and Pickup Point Name are different source fields and
+        // must not veto an otherwise unique ID + timestamp match.
+        candidates=timeCandidates;
+        if(candidates.length>1)matchIssue="ambiguous";
       }
 
       // Ambiguous matches are not safe: do not borrow a rider or task status.
@@ -3459,9 +3453,8 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     const visibleGroups=filtered.map(item=>item.group);
     firstMileVisibleRows=visibleGroups;
 
-    const sellerMismatchCount=eligibleOrderGroups.filter(group=>group.matchIssue==="seller-mismatch").length;
     const ambiguousMatchCount=eligibleOrderGroups.filter(group=>group.matchIssue==="ambiguous").length;
-    if(meta)meta.textContent="Showing "+filtered.length.toLocaleString()+" of "+firstMileCombinedRows.length.toLocaleString()+" rows: "+eligibleOrderGroups.length.toLocaleString()+" orders with ETA today and "+taskOnlyRows.length.toLocaleString()+" standalone tasks created today (Philippine time). Matched tasks stay on their order row; unmatched tasks appear separately regardless of status. "+sellerMismatchCount.toLocaleString()+" seller mismatch(es) and "+ambiguousMatchCount.toLocaleString()+" ambiguous match(es) were kept separate. Hidden "+excludedCancelledWithoutDisabled.toLocaleString()+" cancelled orders without a matched Disabled task.";
+    if(meta)meta.textContent="Showing "+filtered.length.toLocaleString()+" of "+firstMileCombinedRows.length.toLocaleString()+" rows: "+eligibleOrderGroups.length.toLocaleString()+" orders with ETA today and "+taskOnlyRows.length.toLocaleString()+" standalone tasks created today (Philippine time). Pickup Point ID and matching timestamps link the exports; ambiguous task matches remain separate. "+ambiguousMatchCount.toLocaleString()+" ambiguous match(es) were kept separate. Hidden "+excludedCancelledWithoutDisabled.toLocaleString()+" cancelled orders without a matched Disabled task.";
 
     const copyBtn=$("copyFirstMileForSheet");
     const sheetRowCount=filtered.length;
@@ -3505,8 +3498,8 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
           const value=c[1](g);
           if(c[0]==="Status"){
             const key=fmNorm(value);
-            const tone=({assigned:"assigned",accepted:"assigned",pickedup:"done",pickupdone:"done",onhold:"onhold",pickupnoorder:"onhold",inbounded:"inbounded",cancelled:"cancelled",canceled:"cancelled",disabled:"cancelled",cancelledafterassigned:"cancelled",cancelledtaskdisabled:"cancelled",sellermismatch:"onhold",ambiguoustaskmatch:"onhold"})[key]||"other";
-            const detail=g.matchIssue==="seller-mismatch"?"A task at the same pickup point and time has a different seller name. No task status or driver was copied.":g.matchIssue==="ambiguous"?"More than one task matched the pickup point and time. No task status or driver was copied.":"";
+            const tone=({assigned:"assigned",accepted:"assigned",pickedup:"done",pickupdone:"done",onhold:"onhold",pickupnoorder:"onhold",inbounded:"inbounded",cancelled:"cancelled",canceled:"cancelled",disabled:"cancelled",cancelledafterassigned:"cancelled",cancelledtaskdisabled:"cancelled",ambiguoustaskmatch:"onhold"})[key]||"other";
+            const detail=g.matchIssue==="ambiguous"?"More than one task matched this Pickup Point ID and assignment time. No task status or driver was copied.":"";
             return '<td title="'+fmEsc(detail||value)+'"><span class="fm-task-pill fm-task-'+tone+'">'+fmEsc(value)+'</span></td>';
           }
           if(c[0]==="Order Number")return '<td>'+fmOrderLinksHtml(g)+'</td>';
