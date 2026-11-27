@@ -1651,7 +1651,15 @@ async function installBatchSearchFileCapture(tabId) {
     world: "MAIN",
     args: [BATCH_SEARCH_FILE_CAPTURE_KEY],
     func: key => {
-      if (window[key]?.installed) return { installed: true, reused: true };
+      if (window[key]?.installed) {
+        const current=window[key];
+        current.installedAt=Date.now();
+        current.blobs?.clear?.();
+        current.links.length=0;
+        current.files.length=0;
+        current.errors.length=0;
+        return { installed: true, reused: true, reset: true };
+      }
       const state = { installed: true, installedAt: Date.now(), blobs: new Map(), links: [], files: [], errors: [] };
       Object.defineProperty(window, key, { configurable: true, value: state });
 
@@ -1927,11 +1935,10 @@ async function parseDownloadedBatchSearchFile(file, requestedTns) {
   rows = rows.filter(row => Array.isArray(row) && row.some(value => String(value ?? "").trim()));
   if (rows.length < 2) throw new Error("SPX downloaded file contains no result rows.");
 
-  const headerRowIndex = rows.findIndex(row => row.some(cell =>
-    /^(?:spxtrackingnumber|trackingnumber|trackingno|trackingnum|sls tracking number|slstrackingnumber|spxtn|slstn|ordernumber|orderid|status|orderstatus|parcelstatus)$/i.test(
-      String(cell || "").trim().replace(/[^a-z0-9]/gi,"")
-    )
-  ));
+  const headerRowIndex = rows.findIndex(row => row.some(cell => {
+    const header=String(cell||"").trim().replace(/[^a-z0-9]/gi,"").toLowerCase();
+    return /trackingnumber|trackingno|trackingnum|spxtn|slstn|awb|ordernumber|orderid|^status$|orderstatus|parcelstatus/.test(header);
+  }));
   if (headerRowIndex < 0) {
     throw new Error("SPX downloaded file has no recognizable tracking-number/status header. File: " + String(file.fileName || "unknown"));
   }
@@ -1957,8 +1964,9 @@ async function parseDownloadedBatchSearchFile(file, requestedTns) {
     const keys = [...new Set(candidateValues.map(clean).filter(value => value && wanted.has(value)))];
     if (!keys.length) continue;
 
-    const resultText = resultIndex >= 0 ? String(values[resultIndex] || "").trim().toLowerCase() : "";
-    const explicitlyNotFound = /not[\s_-]*found|no[\s_-]*(?:match|record|result)|unmatched|no data/.test(resultText);
+    const resultText = (resultIndex >= 0 ? String(values[resultIndex] || "") : "") + " " +
+      (statusIndex >= 0 ? String(values[statusIndex] || "") : "");
+    const explicitlyNotFound = /not[\s_-]*found|no[\s_-]*(?:match|record|result)|unmatched|no data/i.test(resultText);
     if (explicitlyNotFound) continue;
 
     const identifiers = values.filter(value => /^(?:PH[A-Z0-9]{8,}|[A-Z0-9]{10,})$/i.test(value));
