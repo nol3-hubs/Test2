@@ -1840,64 +1840,154 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
           // text is blank or uses a simple label such as Delivered/OnHold.
           }).filter(r => r.matchedTN);
           const signature = () => [...document.querySelectorAll("table tbody tr")]
-            .map(tr => String(tr.innerText || "").replace(/\s+/g, " ").trim()).join("\n");
+            .map(tr => String(tr.innerText || "").replace(/\\s+/g, " ").trim()).join("\\n");
+          const paginationRoots = () => [...document.querySelectorAll(
+            ".el-pagination,.ant-pagination,[class*=\'pagination\'],nav[aria-label*=\'pagination\' i]"
+          )].filter(visible);
+          const paginationSnapshot = () => paginationRoots().map(root => {
+            const text = String(root.innerText || root.textContent || "").replace(/\\s+/g, " ").trim();
+            const active = [...root.querySelectorAll("[aria-current=true],.active,.is-active")]
+              .filter(visible).map(el => String(el.innerText || el.textContent || "").trim()).join(",");
+            return text + "|active:" + active;
+          }).join("||");
+          const searchLoading = () => [...document.querySelectorAll(
+            ".el-loading-mask,.el-loading-spinner,.ant-spin-spinning,.ssc-loading,[aria-busy=true],[data-loading=true]"
+          )].some(visible);
           const before = signature();
+          const beforePager = paginationSnapshot();
           const started = Date.now();
           stage = "submit Batch Search and wait for results";
           reportStage("Submitting " + wanted.size.toLocaleString() + " tracking number(s) to SPX…");
           submitButton.click();
-          let lastSig = before, stableSince = Date.now(), latestRows = [], lastResultNotice = 0;
-          const deadline = Date.now() + 45000;
+          let lastSig = before, lastPager = beforePager, stableSince = Date.now();
+          let lastResultNotice = 0, sawBusy = false, freshStateObserved = false;
+          const deadline = Date.now() + 90000;
           while (Date.now() < deadline) {
             await sleep(350);
             const sig = signature();
-            if (sig !== lastSig) { lastSig = sig; stableSince = Date.now(); }
-            latestRows = getPage();
+            const pager = paginationSnapshot();
+            const busy = searchLoading();
+            if (busy) sawBusy = true;
+            if (sig !== lastSig || pager !== lastPager) {
+              lastSig = sig;
+              lastPager = pager;
+              stableSince = Date.now();
+              freshStateObserved = true;
+            }
+            if (sawBusy && !busy) freshStateObserved = true;
             const elapsed = Date.now() - started;
             if (elapsed - lastResultNotice >= 5000) {
-              reportStage("Waiting for SPX results… " + Math.floor(elapsed / 1000) + "s elapsed.");
+              reportStage("Waiting for SPX to finish the search… " + Math.floor(elapsed / 1000) + "s elapsed.");
               lastResultNotice = elapsed;
             }
-            const hadFreshResults = latestRows.length > 0 || (sig !== before && elapsed > 1800);
-            if (elapsed >= 2200 && hadFreshResults && Date.now() - stableSince >= 1200) break;
+            // Old rows already in the table are not evidence that this search
+            // has completed. Require a refreshed table/pager or a full loading cycle.
+            if (elapsed >= 4000 && freshStateObserved && !busy && Date.now() - stableSince >= 2200) break;
           }
-          if (Date.now() >= deadline) throw new Error("Timed out after 45 seconds waiting for the result table to refresh after Submit.");
+          if (Date.now() >= deadline) {
+            throw new Error("SPX did not produce a refreshed, stable result table within 90 seconds. The previous table was not accepted, so TNs will not be marked Not Found.");
+          }
+          if (!freshStateObserved) {
+            throw new Error("SPX did not show a refreshed result table or completed loading cycle. Search stopped to avoid false Not Found results.");
+          }
 
-          stage = "read current results page";
+          stage = "read all result pages";
           const output = new Map();
+          const seenPages = new Set();
+          const pageSignature = () => signature() + "\\n--PAGINATION--\\n" + paginationSnapshot();
           const addCurrentPage = () => {
             for (const item of getPage()) output.set(clean(item.matchedTN || item.tn), item);
           };
           addCurrentPage();
-          reportStage("SPX returned the first results page. Reading matching tracking numbers…");
-          for (let page = 0; page < 400; page++) {
-            const candidates = [
-              document.querySelector(".el-pagination button.btn-next"),
-              document.querySelector(".el-pagination .btn-next"),
-              document.querySelector(".ant-pagination-next"),
-              document.querySelector("button[aria-label='Next page']"),
-              document.querySelector("[aria-label='Next page']")
-            ].filter(Boolean);
-            const next = candidates.find(el => visible(el));
-            if (!next) break;
-            const disabled = next.disabled || next.getAttribute("aria-disabled") === "true" || /disabled/.test(String(next.className || "")) || next.closest("li")?.classList?.contains("disabled");
-            if (disabled) break;
-            stage = `paginate results page ${page + 2}`;
-            reportStage("Reading SPX results page " + (page + 2) + "… " + output.size.toLocaleString() + " matching TN(s) collected so far.");
-            const beforePage = signature();
-            next.click();
-            let changed = false;
-            for (let wait = 0; wait < 40; wait++) {
-              await sleep(250);
-              if (signature() !== beforePage) { changed = true; break; }
-              if (wait === 19) reportStage("Waiting for SPX results page " + (page + 2) + " to load…");
+          seenPages.add(pageSignature());
+          reportStage("SPX results refreshed. Reading every available result page…");
+
+          const findNextPageControl = () => {
+            const selectors = [
+              ".el-pagination button.btn-next",
+              ".el-pagination .btn-next",
+              ".ant-pagination-next",
+              "button[aria-label=\'Next page\']",
+              "[aria-label=\'Next page\']",
+              "button[aria-label*=\'next\' i]",
+              "button[title*=\'next\' i]",
+              "[class*=\'pagination\'] [class*=\'next\']",
+              "[class*=\'pagination\'] button",
+              "[class*=\'pagination\'] a",
+              "[class*=\'pagination\'] [role=\'button\']",
+              "[class*=\'pagination\'] [tabindex]"
+            ];
+            const candidates = selectors.flatMap(selector => {
+              try { return [...document.querySelectorAll(selector)]; } catch { return []; }
+            }).filter((el,index,array) => visible(el) && array.indexOf(el) === index);
+            return candidates.find(el => {
+              const label = labelVariants(el).join(" ");
+              const cls = String(el.className || "").toLowerCase();
+              return cls.includes("btn-next") || cls.includes("pagination-next") ||
+                label.includes("next") || label.replace(/[^a-z]/g,"") === "nextpage";
+            }) || null;
+          };
+          const isDisabled = el => !!el.disabled ||
+            el.getAttribute("aria-disabled") === "true" ||
+            /(^|\\s)(disabled|is-disabled)(\\s|$)/i.test(String(el.className || "")) ||
+            !!el.closest("li")?.classList?.contains("disabled");
+          const hasPaginationBeyondCurrent = () => {
+            const text = paginationRoots().map(root => String(root.innerText || root.textContent || "")).join(" ");
+            const range = text.match(/(\\d[\\d,]*)\\s*(?:-|–|to)\\s*(\\d[\\d,]*)\\s*(?:of|\\/)\\s*(\\d[\\d,]*)/i);
+            if (!range) return false;
+            const end = Number(range[2].replace(/,/g,""));
+            const total = Number(range[3].replace(/,/g,""));
+            return Number.isFinite(end) && Number.isFinite(total) && end < total;
+          };
+
+          let page = 0;
+          for (; page < 400; page++) {
+            const next = findNextPageControl();
+            if (!next) {
+              if (hasPaginationBeyondCurrent()) {
+                throw new Error("SPX indicates additional result pages, but its Next Page control could not be located. Pagination: " + paginationSnapshot().slice(0,500));
+              }
+              break;
             }
-            if (!changed) break;
+            if (isDisabled(next)) break;
+            stage = `paginate results page ${page + 2}`;
+            reportStage("Reading SPX results page " + (page + 2) + "… " + output.size.toLocaleString() + " matching TN(s) collected.");
+            const beforePage = pageSignature();
+            next.click();
+            let changed = false, lastPageState = beforePage, pageStableSince = Date.now(), pageNotice = 0;
+            const pageDeadline = Date.now() + 20000;
+            while (Date.now() < pageDeadline) {
+              await sleep(300);
+              const current = pageSignature();
+              const busy = searchLoading();
+              if (current !== lastPageState) {
+                lastPageState = current;
+                pageStableSince = Date.now();
+                if (current !== beforePage) changed = true;
+              }
+              const elapsed = Date.now() - (pageDeadline - 20000);
+              if (elapsed - pageNotice >= 5000) {
+                reportStage("Waiting for SPX result page " + (page + 2) + "…");
+                pageNotice = elapsed;
+              }
+              if (changed && !busy && Date.now() - pageStableSince >= 1800) break;
+            }
+            if (!changed) {
+              throw new Error("SPX Next Page was clicked, but the result table did not change within 20 seconds. Stopping rather than marking uncollected TNs as Not Found. Pagination: " + paginationSnapshot().slice(0,500));
+            }
+            const currentPage = pageSignature();
+            if (seenPages.has(currentPage)) throw new Error("SPX pagination repeated a result page. Stopping to prevent incomplete results.");
+            seenPages.add(currentPage);
             addCurrentPage();
           }
-          reportStage("SPX search results read: " + output.size.toLocaleString() + " matching TN(s) captured.");
-          return { results: [...output.values()], requestedCount: tns.length, capturedAt: new Date().toISOString(), diagnostics: diagnostics() };
-        } catch (error) {
+          if (page >= 400) {
+            const lastNext = findNextPageControl();
+            if (lastNext && !isDisabled(lastNext)) {
+              throw new Error("SPX has more than 400 result pages. Search stopped to avoid incomplete Not Found results.");
+            }
+          }
+          reportStage("SPX search results read: " + output.size.toLocaleString() + " matching TN(s) captured across " + (page + 1).toLocaleString() + " page(s).");
+          return { results: [...output.values()], requestedCount: tns.length, pageCount: page + 1, capturedAt: new Date().toISOString(), diagnostics: diagnostics() };        } catch (error) {
           return {
             __spxBatchSearchError: true,
             stage,
