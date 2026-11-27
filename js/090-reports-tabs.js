@@ -430,10 +430,10 @@
                 setStatus(button,"The Badoc Hub extension check is unavailable on this page. Refresh Badoc Hub and retry.","error");
                 return;
               }
-              setStatus(button,"Checking Badoc Hub Extension v1.5.23 and preparing the direct SPX export…","info");
+              setStatus(button,"Checking Badoc Hub Extension v1.5.34 and preparing the direct SPX export…","info");
               const bridgeReady=await ensureBridge();
               if(!bridgeReady){
-                setStatus(button,"Badoc Hub Extension v1.5.23 or later is required. Install or reload the extension, then refresh Badoc Hub and retry.","error");
+                setStatus(button,"Badoc Hub Extension v1.5.34 or later is required. Install or reload the extension, then refresh Badoc Hub and retry.","error");
                 return;
               }
               assignmentTaskExportPending=true;
@@ -443,7 +443,7 @@
               if(typeof postBadocSpxMessage!=="function"){
                 finishAssignmentTaskReportError("SPX bridge is not available on this dashboard page.");
               }else{
-                armAssignmentTaskReportWatchdog(15000,"The installed SPX extension did not forward the Assignment Task export command. This Test2 extension bundle currently lacks that command handler; the automatic rider mapping cannot complete until the extension bridge supports Assignment Task export.");
+                armAssignmentTaskReportWatchdog(15000,"The Assignment Task request was not acknowledged by the extension within 15 seconds. Reload Badoc Hub Extension v1.5.34, refresh Test2, and retry. If this repeats, inspect the extension service worker for errors.");
                 postBadocSpxMessage("BADOC_START_ASSIGNMENT_TASK_EXPORT",{selectedDate:today});
               }
             }
