@@ -1835,7 +1835,7 @@ async function clickBatchSearchDownloadControl(tabId) {
   const injected = await chrome.scripting.executeScript({
     target: { tabId },
     args: [],
-    func: () => {
+    func: async () => {
       const visible = el => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
       const label = el => [
         el?.innerText, el?.textContent, el?.getAttribute?.("aria-label"),
@@ -1860,6 +1860,20 @@ async function clickBatchSearchDownloadControl(tabId) {
       const details = String(target.innerText || target.textContent || target.getAttribute("aria-label") || target.title || "Download").trim().slice(0,120);
       try { target.scrollIntoView({ block: "center", inline: "nearest" }); } catch {}
       target.click();
+      await new Promise(resolve => setTimeout(resolve, 400));
+      const menuItems=[...document.querySelectorAll(
+        "[role='menu'] [role='menuitem'],.el-dropdown-menu__item,.ant-dropdown-menu-item,.ant-select-dropdown [role='option'],[class*='dropdown-menu'] [role='menuitem'],[class*='dropdown-menu'] li"
+      )].filter(visible);
+      const fileMenuItem=menuItems.find(el=>{
+        const text=label(el);
+        return /download|export|csv|excel|spreadsheet/.test(text) &&
+          !/template|sample|instruction|import|upload/.test(text);
+      });
+      if(fileMenuItem){
+        try{fileMenuItem.scrollIntoView({block:"center",inline:"nearest"});}catch{}
+        fileMenuItem.click();
+        return {clicked:true,label:details,menuItem:String(fileMenuItem.innerText||fileMenuItem.textContent||"").trim().slice(0,100),candidateCount:candidates.length};
+      }
       return { clicked: true, label: details, candidateCount: candidates.length };
     }
   });
