@@ -1673,9 +1673,14 @@ async function installBatchSearchFileCapture(tabId) {
         const u = String(url || "");
         const t = String(type || "").toLowerCase();
         const d = String(disposition || "").toLowerCase();
+        const filename = /filename\*?=(?:utf-8''|")?[^;"\r\n]+\.(?:csv|xlsx?|xlsm)(?:[";]|$)/i.test(d);
+        const urlHasFileExtension = /\.(?:csv|xlsx?|xlsm)(?:[?#]|$)/i.test(u);
+        // JSON/HTML API metadata must never be stored as a spreadsheet merely
+        // because SPX labels an endpoint "export" or returns a content-disposition.
+        if (/(?:application|text)\/(?:json|html)/i.test(t) && !filename && !urlHasFileExtension) return false;
         return /attachment|filename\s*=/.test(d) ||
           /(text\/csv|spreadsheetml|ms-excel|application\/csv)/.test(t) ||
-          /\.(?:csv|xlsx?|xlsm)(?:[?#]|$)/i.test(u) ||
+          urlHasFileExtension ||
           (/application\/octet-stream/.test(t) && /(export|download|batch|search)/i.test(u));
       };
       const filenameFrom = (url, disposition, fallback) => {
@@ -1807,8 +1812,13 @@ async function installBatchSearchFileCapture(tabId) {
                 try{responsePayload=JSON.stringify(this.response)||"";}catch{}
               }
               const taskResponseLike=/"(?:task_id|taskId|export_task_id|exportTaskId)"\s*:\s*"?\d+/i.test(responsePayload);
-              const csvHeaderLike=/tracking|awb|order(?:\s|_)?(?:id|sn|number)|parcel|shipment|status/i.test(textPayload.slice(0,2000))&&
-                /[,\t;]/.test((textPayload.split(/\r?\n/,1)[0]||""));
+              const trimmedTextPayload=textPayload.replace(/^\uFEFF/,"").trimStart();
+              const firstTextLine=trimmedTextPayload.split(/\r?\n/,1)[0]||"";
+              const structuredPayload=/^(?:\{|\[|<!doctype|<html)/i.test(trimmedTextPayload)||
+                /(?:application|text)\/(?:json|html)/i.test(type);
+              const csvHeaderLike=!structuredPayload&&
+                /tracking|awb|order(?:\s|_)?(?:id|sn|number)|parcel|shipment|status/i.test(firstTextLine.slice(0,2000))&&
+                /[,\t;]/.test(firstTextLine);
               const exportRequest=/(export|download|batch.?search|search.?result)/i.test(url);
               if (!fileLike(url, type, disposition) && !(binaryResponse && exportRequest) && !csvHeaderLike) {
                 if (exportRequest||taskResponseLike) {
@@ -2238,8 +2248,14 @@ function findBatchSearchExportTaskResponse(events) {
     if(!payload)continue;
     let json=null;
     try{json=JSON.parse(payload);}catch{continue;}
+    // Search/list responses contain a data.list array with pagination metadata.
+    // They are not export-task receipts, even when a route name contains "export".
+    const isPagedOrderList=Array.isArray(json?.data?.list)&&
+      (Object.prototype.hasOwnProperty.call(json.data,"page_no")||
+       Object.prototype.hasOwnProperty.call(json.data,"total"));
+    if(isPagedOrderList)continue;
     const explicitTaskId=/"(?:task_id|taskId|export_task_id|exportTaskId)"\s*:/i.test(payload);
-    const exportEndpoint=/(?:export|download|task)/i.test(String(event?.url||""));
+    const exportEndpoint=/(?:export_task|exporttask|signed_download_url|get_signed_download_url)/i.test(String(event?.url||""));
     if(!explicitTaskId&&!exportEndpoint)continue;
     const taskId=getExportTaskId(json);
     if(taskId>0){
