@@ -1880,50 +1880,97 @@ async function clickBatchSearchDownloadControl(tabId) {
     target: { tabId },
     args: [],
     func: async () => {
-      const visible = el => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
-      const label = el => [
-        el?.innerText, el?.textContent, el?.getAttribute?.("aria-label"),
-        el?.getAttribute?.("title"), el?.getAttribute?.("data-testid")
-      ].filter(Boolean).join(" ").normalize("NFKC").toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g,"").replace(/[^a-z0-9]+/g,"");
-      const selector = "button,[role='button'],a,[tabindex],.el-button,.ant-btn,.ssc-button,[class*='button']";
-      const controls = [...document.querySelectorAll(selector)].filter(visible);
-      const candidates = controls.map(el => ({ el, text: label(el) }))
-        .filter(item => /download|export|csv|excel|spreadsheet/.test(item.text))
-        .filter(item => !/template|sample|instruction|import|upload/.test(item.text))
-        .filter(item => !item.el.disabled && item.el.getAttribute("aria-disabled") !== "true");
-      candidates.sort((a,b) => {
-        const rank = value => /download.*(result|search|csv)|export.*(result|search|csv)/.test(value) ? 0 :
-          /download|export/.test(value) ? 1 : 2;
-        return rank(a.text) - rank(b.text);
-      });
-      if (!candidates.length) return {
-        clicked: false,
-        controls: controls.map(el => String(el.innerText || el.textContent || el.getAttribute("aria-label") || el.title || "").trim()).filter(Boolean).slice(0,45)
-      };
-      const target = candidates[0].el;
-      const details = String(target.innerText || target.textContent || target.getAttribute("aria-label") || target.title || "Download").trim().slice(0,120);
-      try { target.scrollIntoView({ block: "center", inline: "nearest" }); } catch {}
-      target.click();
-      await new Promise(resolve => setTimeout(resolve, 400));
-      const menuItems=[...document.querySelectorAll(
-        "[role='menu'] [role='menuitem'],.el-dropdown-menu__item,.ant-dropdown-menu-item,.ant-select-dropdown [role='option'],[class*='dropdown-menu'] [role='menuitem'],[class*='dropdown-menu'] li"
+      const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+      const visible=el=>!!el&&!!(el.offsetWidth||el.offsetHeight||el.getClientRects().length);
+      const label=el=>[
+        el?.innerText,el?.textContent,el?.getAttribute?.("aria-label"),
+        el?.getAttribute?.("title"),el?.getAttribute?.("data-testid")
+      ].filter(Boolean).join(" ").normalize("NFKC").toLowerCase()
+        .replace(/[\u200B-\u200D\uFEFF]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+      const disabled=el=>!!el.disabled||el.getAttribute("aria-disabled")==="true"||
+        el.getAttribute("disabled")!==null||/(^|\s)(disabled|is-disabled)(\s|$)/i.test(String(el.className||""));
+      const controls=[...document.querySelectorAll(
+        "button,[role='button'],a,[tabindex],.el-button,.ant-btn,.ssc-button,[class*='button']"
       )].filter(visible);
-      const fileMenuItem=menuItems.find(el=>{
-        const text=label(el);
-        return /download|export|csv|excel|spreadsheet/.test(text) &&
-          !/template|sample|instruction|import|upload/.test(text);
-      });
-      if(fileMenuItem){
-        try{fileMenuItem.scrollIntoView({block:"center",inline:"nearest"});}catch{}
-        fileMenuItem.click();
-        return {clicked:true,label:details,menuItem:String(fileMenuItem.innerText||fileMenuItem.textContent||"").trim().slice(0,100),candidateCount:candidates.length};
+      const trigger=controls
+        .filter(el=>!disabled(el)&&/^(?:export|export results?|download|download results?)$/.test(label(el)))
+        .sort((a,b)=>{
+          const rank=el=>/export/.test(label(el))?0:1;
+          return rank(a)-rank(b);
+        })[0] || controls.find(el=>!disabled(el)&&/\bexport\b/.test(label(el))&&!/(import|template|sample)/.test(label(el)));
+      if(!trigger){
+        return {
+          clicked:false,
+          controls:controls.map(el=>String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").trim())
+            .filter(Boolean).slice(0,60),
+          reason:"No visible SPX Export or Download control was found."
+        };
       }
-      return { clicked: true, label: details, candidateCount: candidates.length };
+      const triggerLabel=String(trigger.innerText||trigger.textContent||trigger.getAttribute("aria-label")||trigger.title||"Export").trim().slice(0,120);
+      try{trigger.scrollIntoView({block:"center",inline:"nearest"});}catch{}
+      trigger.click();
+
+      const menuContainers=()=>[...document.querySelectorAll(
+        "[role='menu'],[role='listbox'],.el-dropdown-menu,.el-popper,.ant-dropdown,.ant-dropdown-menu,"+
+        "[class*='dropdown-menu'],[class*='dropdown__menu'],[class*='export-menu'],[class*='menu-popup']"
+      )].filter(visible);
+      const menuOptions=()=>{
+        const found=new Set();
+        for(const root of menuContainers()){
+          for(const el of root.querySelectorAll(
+            "[role='menuitem'],[role='option'],button,a,li,.el-dropdown-menu__item,.ant-dropdown-menu-item,[tabindex]"
+          )){
+            if(!visible(el))continue;
+            const text=String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").replace(/\s+/g," ").trim();
+            if(text&&text.length<180)found.add(el);
+          }
+        }
+        // Also handle SPX menus rendered as a top-level portal without menu roles.
+        for(const el of document.querySelectorAll("li,[role='menuitem'],[role='option'],.el-dropdown-menu__item,.ant-dropdown-menu-item")){
+          if(visible(el)){
+            const text=String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").replace(/\s+/g," ").trim();
+            if(text&&text.length<180)found.add(el);
+          }
+        }
+        return [...found].map(el=>({el,text:String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").replace(/\s+/g," ").trim(),normalized:label(el)}));
+      };
+      let options=[];
+      const menuDeadline=Date.now()+5000;
+      while(Date.now()<menuDeadline){
+        options=menuOptions();
+        if(options.length)break;
+        await sleep(150);
+      }
+      const usable=options.filter(item=>!/(template|sample|instruction|import|upload|column setting|setting)/i.test(item.text)&&!disabled(item.el));
+      const exportOptions=usable.filter(item=>/export|download|csv|excel|spreadsheet|all results|current results|search result/i.test(item.normalized));
+      const rank=item=>{
+        const t=item.normalized;
+        if(/export all|download all|all results|search result|batch search/.test(t))return 0;
+        if(/csv|excel|spreadsheet/.test(t))return 1;
+        if(/export|download/.test(t))return 2;
+        return 3;
+      };
+      exportOptions.sort((a,b)=>rank(a)-rank(b));
+      if(exportOptions.length){
+        const chosen=exportOptions[0];
+        try{chosen.el.scrollIntoView({block:"center",inline:"nearest"});}catch{}
+        chosen.el.click();
+        return {
+          clicked:true,trigger:triggerLabel,
+          menuItem:chosen.text.slice(0,120),
+          menuOptions:usable.map(item=>item.text).slice(0,25)
+        };
+      }
+      return {
+        clicked:true,trigger:triggerLabel,menuOpened:options.length>0,
+        menuItem:"",
+        menuOptions:usable.map(item=>item.text).slice(0,35),
+        note:options.length?"Export dropdown opened, but no recognizable download/export menu item was found.":"Export control was clicked, but no dropdown menu items appeared."
+      };
     }
   });
-  return injected?.[0]?.result || { clicked: false, controls: [] };
+  return injected?.[0]?.result || {clicked:false,controls:[],reason:"SPX did not return an Export control result."};
 }
-
 function parseBatchSearchDelimitedRows(source) {
   const input = String(source || "").replace(/^\uFEFF/, "");
   const firstLine = input.split(/\r?\n/, 1)[0] || "";
