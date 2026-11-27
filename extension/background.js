@@ -1933,7 +1933,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
             !!el.closest("li")?.classList?.contains("disabled");
           const hasPaginationBeyondCurrent = () => {
             const text = paginationRoots().map(root => String(root.innerText || root.textContent || "")).join(" ");
-            const range = text.match(/(\\d[\\d,]*)\\s*(?:-|–|to)\\s*(\\d[\\d,]*)\\s*(?:of|\\/)\\s*(\\d[\\d,]*)/i);
+            const range = text.match(/(\d[\d,]*)\s*(?:-|–|to)\s*(\d[\d,]*)\s*(?:of|\/)\s*(\d[\d,]*)/i);
             if (!range) return false;
             const end = Number(range[2].replace(/,/g,""));
             const total = Number(range[3].replace(/,/g,""));
