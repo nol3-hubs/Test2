@@ -2358,7 +2358,7 @@ function isBatchSearchOrderListMetadata(file) {
     const bytes=new Uint8Array(binary.length);
     for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
     const text=new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/,"").trim();
-    if(!text||!/^\\{/.test(text))return false;
+    if(!text||!/^\{/.test(text))return false;
     const json=JSON.parse(text);
     const data=json?.data;
     return Number(json?.retcode)===0 &&
