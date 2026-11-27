@@ -708,6 +708,10 @@ async function waitForAssignedTodayExportTask(taskId, startSec, job, label) {
     if(message){
       if(job.kind==="assignment-task"){
         sendToPort(job.ownerPort,"BADOC_SPX_ASSIGNMENT_TASK_PROGRESS",{taskId,selectedDate:job.selectedDate,message});
+      }else if(job.kind==="batch-search-result"){
+        sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
+          kind:"batch-search-result",message,selectedDate:job.selectedDate||""
+        });
       }else{
         progress(message,{phase:"pod-assigned-task",kind:job.kind,taskId,source:label});
         notifyPodCheckerAssignedProgress(message);
@@ -1851,7 +1855,10 @@ async function readBatchSearchCapturedFile(tabId) {
       const state = window[key];
       if (!state?.installed) return { ready: false, reason: "Download capture is not installed." };
       const latest = state.files.slice().sort((a,b) => b.capturedAt - a.capturedAt)[0];
-      if (latest?.base64) return { ready: true, file: latest, linkCount: state.links.length };
+      if (latest?.base64) return {
+        ready: true, file: latest, linkCount: state.links.length,
+        events: state.events?.slice(-20) || []
+      };
 
       const link = state.links.slice().sort((a,b) => b.at - a.at)[0];
       if (!link) return {
@@ -2242,6 +2249,29 @@ async function resolveBatchSearchExportPayload(file, tabId, job) {
   );
 }
 
+
+function findBatchSearchExportTaskResponse(events) {
+  const list=Array.isArray(events)?events.slice().sort((a,b)=>Number(b?.at||0)-Number(a?.at||0)):[];
+  for(const event of list){
+    const payload=String(event?.payload||"").trim();
+    if(!payload)continue;
+    let json=null;
+    try{json=JSON.parse(payload);}catch{continue;}
+    const taskId=getExportTaskId(json);
+    if(taskId>0){
+      return {
+        taskId,
+        json,
+        payload,
+        url:String(event?.url||""),
+        status:Number(event?.status||0),
+        source:String(event?.source||"api-response")
+      };
+    }
+  }
+  return null;
+}
+
 async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
   await installBatchSearchFileCapture(tabId);
   let injectionResults;
@@ -2394,6 +2424,8 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       try{
         last=await readBatchSearchCapturedFile(tabId);
         if(last?.ready&&last.file?.base64)return last;
+        const exportTask=findBatchSearchExportTaskResponse(last?.events);
+        if(exportTask)return {...last,exportTaskResponse:exportTask};
       }catch(error){last={ready:false,errors:[String(error?.message||error)]};}
       await sleep(650);
     }
@@ -2432,8 +2464,22 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       source:"authenticated-file-download"
     }};
   }
+  if(!capture?.ready&&capture?.exportTaskResponse?.payload){
+    const payload=String(capture.exportTaskResponse.payload);
+    capture={
+      ready:true,
+      file:{
+        fileName:"spx_batch_search_export_response.json",
+        contentType:"application/json",
+        size:new TextEncoder().encode(payload).length,
+        base64:batchSearchBase64FromText(payload),
+        capturedAt:Date.now(),
+        source:"SPX export-task API response"
+      }
+    };
+  }
   if(!capture?.ready||!capture.file?.base64){
-    const detail=(capture?.errors||[]).join(" | ")||"No CSV/Excel download link or file response was captured.";
+    const detail=(capture?.errors||[]).join(" | ")||"No CSV/Excel download or export-task response was captured.";
     const controls=(exportAction?.menuOptions||exportAction?.controls||[]).join(" | ")||
       exportAction?.note||"No visible Export/Download menu option was found.";
     const events=(capture?.events||[]).map(item=>
@@ -2744,9 +2790,14 @@ async function waitForAssignmentTaskMediaId(taskId, completedInfo, job, label = 
     const now = Date.now();
     if (now - lastProgressAt >= 8000) {
       const elapsed = Math.floor((now - startedAt) / 1000);
-      sendToPort(job?.ownerPort, "BADOC_SPX_ASSIGNMENT_TASK_PROGRESS", {
-        message: "SPX marked Assignment Task " + taskId + " as Succeeded. Waiting for its file media_id to appear in the full task record… (" + elapsed + "s)"
-      });
+      const message = "SPX marked " + label + " task " + taskId + " as Succeeded. Waiting for its file media_id to appear in the full task record… (" + elapsed + "s)";
+      if(job?.kind==="batch-search-result"){
+        sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
+          kind:"batch-search-result",message,selectedDate:job.selectedDate||""
+        });
+      }else{
+        sendToPort(job?.ownerPort, "BADOC_SPX_ASSIGNMENT_TASK_PROGRESS", { message });
+      }
       lastProgressAt = now;
     }
     const remaining = deadline - Date.now();
