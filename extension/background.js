@@ -1653,6 +1653,16 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
         const visible = el => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
         const clean = value => String(value || "").trim().toUpperCase().replace(/\s+/g, "");
         let stage = "initialize";
+        // Stream progress from the SPX tab back to the Test2 dashboard while
+        // the injected search routine is waiting on SPA rendering/results.
+        const reportStage = message => {
+          try {
+            if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {
+              const pending = chrome.runtime.sendMessage({ type: "BADOC_BATCH_SEARCH_STAGE", message: String(message || "") });
+              if (pending && typeof pending.catch === "function") pending.catch(() => {});
+            }
+          } catch {}
+        };
         const normalizeTextForDiagnostics = value => String(value || "").normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
         const diagnostics = () => ({
           url: String(location.href || ""),
@@ -1720,6 +1730,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
         const findTextarea = () => [...document.querySelectorAll("textarea")]
             .find(el => /SPX Tracking Number/i.test(el.placeholder || "") && visible(el));
           stage = "find or open Batch Search dialog";
+          reportStage("SPX Order Tracking loaded. Looking for the Batch Search control…");
           let textarea = findTextarea();
           if (!textarea) {
             const buttonDeadline = Date.now() + 15000;
@@ -1739,9 +1750,16 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
               return candidates.find(el => !el.disabled && el.getAttribute("aria-disabled") !== "true" &&
                 labelVariants(el).some(label => label.includes("batch") && label.includes("search"))) || null;
             };
+            let lastButtonNotice = 0;
             while (Date.now() < buttonDeadline && !batchButton) {
               batchButton = findDirectBatchSearchControl() || findBatchByVisibleLabel() || findActionControl("batchsearch");
-              if (!batchButton) await sleep(250);
+              if (!batchButton) {
+                if (Date.now() - lastButtonNotice >= 3000) {
+                  reportStage("Waiting for SPX to render the Batch Search control…");
+                  lastButtonNotice = Date.now();
+                }
+                await sleep(250);
+              }
             }
             if (!batchButton) {
               const observed = [...document.querySelectorAll(buttonSelectors)]
@@ -1758,6 +1776,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
                 "; title=" + String(document.title || "") + "; direct controls=" + JSON.stringify(directControls) +
                 "; visible controls=" + JSON.stringify(observed));
             }
+            reportStage("Batch Search control found. Opening its tracking-number input…");
             try { batchButton.scrollIntoView({ block: "center", inline: "nearest" }); } catch {}
             batchButton.click();
             const textareaDeadline = Date.now() + 15000;
@@ -1767,6 +1786,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
             }
           }
           if (!textarea) throw new Error("The Batch Search tracking-number textarea did not open in the temporary SPX tab.");
+          reportStage("Batch Search input is ready. Loading " + wanted.size.toLocaleString() + " tracking number(s)…");
 
           stage = "populate Batch Search textarea";
           const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
@@ -1785,6 +1805,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
           }
           if (!submitButton) submitButton = findActionControl("submit");
           if (!submitButton) throw new Error("Could not locate the visible Submit button for Batch Search.");
+          reportStage("Tracking numbers are loaded. Preparing the SPX search…");
 
           const getPage = () => [...document.querySelectorAll("table tbody tr")].flatMap(tr => {
             const cells = [...tr.querySelectorAll("td")];
@@ -1814,22 +1835,31 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
             const slsTN = identifiers[1] || "";
             const thirdTN = identifiers[2] || "";
             return matches.map(matchedTN => ({ tn: matchedTN, matchedTN, spxTN, slsTN, thirdTN, status }));
-          }).filter(r => r.matchedTN && r.status && r.status !== "-" && r.status.toUpperCase() !== "VIEW" && r.status.toUpperCase() !== "POUCH");
+          // A tracking-number match is valid even when SPX changes the status
+          // label/column. Do not discard the entire row just because status
+          // text is blank or uses a simple label such as Delivered/OnHold.
+          }).filter(r => r.matchedTN);
           const signature = () => [...document.querySelectorAll("table tbody tr")]
             .map(tr => String(tr.innerText || "").replace(/\s+/g, " ").trim()).join("\n");
           const before = signature();
           const started = Date.now();
           stage = "submit Batch Search and wait for results";
+          reportStage("Submitting " + wanted.size.toLocaleString() + " tracking number(s) to SPX…");
           submitButton.click();
-          let lastSig = before, stableSince = Date.now(), latestRows = [];
+          let lastSig = before, stableSince = Date.now(), latestRows = [], lastResultNotice = 0;
           const deadline = Date.now() + 45000;
           while (Date.now() < deadline) {
             await sleep(350);
             const sig = signature();
             if (sig !== lastSig) { lastSig = sig; stableSince = Date.now(); }
             latestRows = getPage();
-            const hadFreshResults = latestRows.length > 0 || (sig !== before && Date.now() - started > 1800);
-            if (Date.now() - started >= 2200 && hadFreshResults && Date.now() - stableSince >= 1200) break;
+            const elapsed = Date.now() - started;
+            if (elapsed - lastResultNotice >= 5000) {
+              reportStage("Waiting for SPX results… " + Math.floor(elapsed / 1000) + "s elapsed.");
+              lastResultNotice = elapsed;
+            }
+            const hadFreshResults = latestRows.length > 0 || (sig !== before && elapsed > 1800);
+            if (elapsed >= 2200 && hadFreshResults && Date.now() - stableSince >= 1200) break;
           }
           if (Date.now() >= deadline) throw new Error("Timed out after 45 seconds waiting for the result table to refresh after Submit.");
 
@@ -1839,6 +1869,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
             for (const item of getPage()) output.set(clean(item.matchedTN || item.tn), item);
           };
           addCurrentPage();
+          reportStage("SPX returned the first results page. Reading matching tracking numbers…");
           for (let page = 0; page < 400; page++) {
             const candidates = [
               document.querySelector(".el-pagination button.btn-next"),
@@ -1852,16 +1883,19 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
             const disabled = next.disabled || next.getAttribute("aria-disabled") === "true" || /disabled/.test(String(next.className || "")) || next.closest("li")?.classList?.contains("disabled");
             if (disabled) break;
             stage = `paginate results page ${page + 2}`;
+            reportStage("Reading SPX results page " + (page + 2) + "… " + output.size.toLocaleString() + " matching TN(s) collected so far.");
             const beforePage = signature();
             next.click();
             let changed = false;
             for (let wait = 0; wait < 40; wait++) {
               await sleep(250);
               if (signature() !== beforePage) { changed = true; break; }
+              if (wait === 19) reportStage("Waiting for SPX results page " + (page + 2) + " to load…");
             }
             if (!changed) break;
             addCurrentPage();
           }
+          reportStage("SPX search results read: " + output.size.toLocaleString() + " matching TN(s) captured.");
           return { results: [...output.values()], requestedCount: tns.length, capturedAt: new Date().toISOString(), diagnostics: diagnostics() };
         } catch (error) {
           return {
@@ -3326,6 +3360,20 @@ chrome.runtime.onConnect.addListener(port => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "BADOC_BATCH_SEARCH_STAGE") {
+    const tabId = Number(sender?.tab?.id) || 0;
+    const job = [...activeJobs.values()].find(item =>
+      item.kind === "batch-search-result" && Number(item.spxTabId) === tabId
+    );
+    if (job) {
+      sendToPort(job.ownerPort, "BADOC_SPX_BATCH_SEARCH_PROGRESS", {
+        kind: "batch-search-result",
+        message: String(message.message || "Running SPX Batch Search…"),
+        selectedDate: job.selectedDate || ""
+      });
+    }
+    return false;
+  }
   if (message?.type === "BADOC_OPEN_EXTENSIONS") {
     chrome.tabs.create({ url: "chrome://extensions/" })
       .then(() => sendResponse({ ok: true }))
