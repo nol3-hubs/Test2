@@ -1879,17 +1879,17 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
 const SPX_BATCH_SEARCH_SIZE = 3000;
 
 function normalizeBatchSearchTn(value) {
-  return String(value ?? "").normalize("NFKC").trim().replace(/\\s+/g, "").toUpperCase();
+  return String(value ?? "").normalize("NFKC").trim().replace(/\s+/g, "").toUpperCase();
 }
 
 function batchSearchCsv(rows) {
   const headers = ["Input Tracking Number","Matched Tracking Number","SPX TN","SLS TN","Third TN","Status","Search Result","Error"];
   const cell = value => {
     const text = String(value ?? "");
-    return /[",\\r\\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
   };
   return [headers, ...rows.map(row => headers.map(header => row[header] ?? ""))]
-    .map(row => row.map(cell).join(",")).join("\\r\\n");
+    .map(row => row.map(cell).join(",")).join("\r\n");
 }
 
 async function runBatchSearchExportJob(job) {
@@ -2796,7 +2796,7 @@ chrome.runtime.onConnect.addListener(port => {
     if (type === "BADOC_START_BATCH_SEARCH_EXPORT") {
       const trackingNumbers = [...new Set((Array.isArray(message?.trackingNumbers) ? message.trackingNumbers : [])
         .map(value => String(value ?? "").trim())
-        .filter(value => normalizeBatchSearchTn(value) && /^[A-Za-z0-9_-]{6,60}$/.test(value.replace(/\\s+/g, ""))))];
+        .filter(value => normalizeBatchSearchTn(value) && /^[A-Za-z0-9_-]{6,60}$/.test(normalizeBatchSearchTn(value))))];
       if (!trackingNumbers.length) {
         sendToPort(port, "BADOC_SPX_BATCH_SEARCH_ERROR", {
           kind: "batch-search-result",
