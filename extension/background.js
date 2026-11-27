@@ -1760,6 +1760,18 @@ async function installBatchSearchFileCapture(tabId) {
                   url, contentType: type, disposition,
                   fileName: filenameFrom(url, disposition, ""), source: "file-response"
                 }));
+              } else if (/(export|download|batch.?search|search.?result)/i.test(url) &&
+                /json|text\/plain/i.test(type)) {
+                const clone=response.clone();
+                void clone.text().then(payload=>{
+                  if(payload && payload.length<=100000){
+                    state.events.push({
+                      url,method:String(args[1]?.method||"GET"),
+                      status:Number(response.status||0),contentType:type,
+                      disposition,payload,at:Date.now(),source:"fetch-api-response"
+                    });
+                  }
+                });
               }
             } catch (error) { state.errors.push("Could not inspect SPX file response: " + String(error?.message || error)); }
             return response;
@@ -1789,11 +1801,17 @@ async function installBatchSearchFileCapture(tabId) {
                 /[,\t;]/.test((textPayload.split(/\r?\n/,1)[0]||""));
               if (!fileLike(url, type, disposition) && !binaryResponse && !csvHeaderLike) {
                 if (/(export|download|batch.?search|search.?result)/i.test(url)) {
+                  let payload="";
+                  try {
+                    if(this.response && typeof this.response==="object")payload=JSON.stringify(this.response);
+                    else if(typeof this.responseText==="string")payload=this.responseText;
+                  } catch {}
                   state.events.push({
                     url, method:this.__badocBatchMethod || "GET",
                     status:Number(this.status || 0), contentType:type,
                     disposition, responseType:this.responseType||"",
-                    at:Date.now()
+                    payload:payload.length<=100000?payload:payload.slice(0,100000),
+                    at:Date.now(),source:"xhr-api-response"
                   });
                 }
                 return;
@@ -1839,7 +1857,7 @@ async function readBatchSearchCapturedFile(tabId) {
       if (!link) return {
         ready: false, linkCount: 0, fileCount: state.files.length,
         errors: state.errors.slice(-4),
-        events: state.events?.slice(-12) || []
+        events: state.events?.slice(-20) || []
       };
 
       try {
@@ -1875,7 +1893,7 @@ async function readBatchSearchCapturedFile(tabId) {
           ready: false, linkCount: state.links.length, fileCount: state.files.length,
           directUrl: link.url, directFileName: link.fileName,
           errors: [...state.errors.slice(-3), String(error?.message || error)],
-          events: state.events?.slice(-12) || []
+          events: state.events?.slice(-20) || []
         };
       }
     }
