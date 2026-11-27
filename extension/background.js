@@ -1673,14 +1673,10 @@ async function installBatchSearchFileCapture(tabId) {
         const u = String(url || "");
         const t = String(type || "").toLowerCase();
         const d = String(disposition || "").toLowerCase();
-        const filename = /filename\*?=(?:utf-8''|")?[^;"\r\n]+\.(?:csv|xlsx?|xlsm)(?:[";]|$)/i.test(d);
-        const urlHasFileExtension = /\.(?:csv|xlsx?|xlsm)(?:[?#]|$)/i.test(u);
-        // JSON/HTML API metadata must never be stored as a spreadsheet merely
-        // because SPX labels an endpoint "export" or returns a content-disposition.
-        if (/(?:application|text)\/(?:json|html)/i.test(t) && !filename && !urlHasFileExtension) return false;
+        if (/(?:application|text)\/(?:json|html)/i.test(t)) return false;
         return /attachment|filename\s*=/.test(d) ||
           /(text\/csv|spreadsheetml|ms-excel|application\/csv)/.test(t) ||
-          urlHasFileExtension ||
+          /\.(?:csv|xlsx?|xlsm)(?:[?#]|$)/i.test(u) ||
           (/application\/octet-stream/.test(t) && /(export|download|batch|search)/i.test(u));
       };
       const filenameFrom = (url, disposition, fallback) => {
@@ -1704,6 +1700,24 @@ async function installBatchSearchFileCapture(tabId) {
           if (!(blob instanceof Blob)) return;
           if (blob.size > 40 * 1024 * 1024) {
             state.errors.push("SPX export file exceeded the 40 MB capture limit.");
+            return;
+          }
+          const inspectText = await blob.slice(0, Math.min(blob.size, 100000)).text();
+          const trimmed = inspectText.replace(/^\uFEFF/, "").trimStart();
+          const structured = /^(?:\{|\[|<!doctype|<html)/i.test(trimmed) ||
+            /(?:application|text)\/(?:json|html)/i.test(String(meta.contentType || blob.type || ""));
+          if (structured) {
+            state.events.push({
+              url: String(meta.url || ""),
+              method: String(meta.method || "GET"),
+              status: Number(meta.status || 0),
+              contentType: String(meta.contentType || blob.type || ""),
+              disposition: String(meta.disposition || ""),
+              payload: inspectText.slice(0, 100000),
+              at: Date.now(),
+              source: String(meta.source || "file-response-metadata")
+            });
+            state.errors.push("Ignored an SPX JSON/HTML response that was not a downloaded result file.");
             return;
           }
           const buffer = await blob.arrayBuffer();
@@ -1767,7 +1781,9 @@ async function installBatchSearchFileCapture(tabId) {
                 const clone = response.clone();
                 void clone.blob().then(blob => storeBlob(blob, {
                   url, contentType: type, disposition,
-                  fileName: filenameFrom(url, disposition, ""), source: "file-response"
+                  fileName: filenameFrom(url, disposition, ""),
+                  method:String(args[1]?.method || "GET"), status:Number(response.status || 0),
+                  source: "file-response"
                 }));
               } else if (/json|text\/plain/i.test(type)) {
                 const clone=response.clone();
@@ -1840,7 +1856,9 @@ async function installBatchSearchFileCapture(tabId) {
               else if (typeof this.responseText === "string") blob = new Blob([this.responseText], {type:type || "text/csv"});
               if (blob) void storeBlob(blob, {
                 url, contentType:type, disposition,
-                fileName:filenameFrom(url, disposition, ""), source:"xhr-file-response"
+                fileName:filenameFrom(url, disposition, ""),
+                method:this.__badocBatchMethod || "GET", status:Number(this.status || 0),
+                source:"xhr-file-response"
               });
             } catch(error) {
               try { state.errors.push("Could not inspect SPX XHR download: "+String(error?.message||error)); } catch {}
@@ -2331,6 +2349,37 @@ function findBatchSearchExportTaskResponse(events) {
   return null;
 }
 
+function isBatchSearchOrderListMetadata(file) {
+  const base64=String(file?.base64 || "");
+  if(!base64)return false;
+  try {
+    const binary=atob(base64);
+    if(binary.length>=2&&binary.charCodeAt(0)===0x50&&binary.charCodeAt(1)===0x4b)return false;
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    const text=new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/,"").trim();
+    if(!text||!/^\\{/.test(text))return false;
+    const json=JSON.parse(text);
+    const data=json?.data;
+    return Number(json?.retcode)===0 &&
+      Array.isArray(data?.list) &&
+      (Object.prototype.hasOwnProperty.call(data,"page_no") ||
+       Object.prototype.hasOwnProperty.call(data,"total")) &&
+      !String(data?.download_url||data?.url||json?.download_url||json?.url||"").trim();
+  }catch(_){return false;}
+}
+
+function discardBatchSearchOrderListCapture(capture) {
+  if(!capture?.ready||!capture?.file?.base64||!isBatchSearchOrderListMetadata(capture.file))return capture;
+  const taskResponse=capture.exportTaskResponse||findBatchSearchExportTaskResponse(capture.events);
+  const error="Ignored SPX's paginated Order Tracking list JSON (page_no/count/total/list); it is not the Batch Search export file.";
+  return {
+    ...capture,ready:false,file:null,
+    errors:[...(capture.errors||[]),error],
+    ...(taskResponse?{exportTaskResponse:taskResponse}:{})
+  };
+}
+
 function batchSearchTaskCreatedAt(task) {
   for (const key of ["ctime","create_time","createTime","created_at","createdAt","task_create_time","start_time","submit_time"]) {
     const raw=Number(task?.[key]||0);
@@ -2627,10 +2676,10 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
   };
 
   sendBatchSearchFileProgress("SPX Batch Search completed. Selecting Export → Export Batch-Search Results…");
-  let capture=await pollFile(2500);
+  let capture=discardBatchSearchOrderListCapture(await pollFile(2500));
   let exportAction=null;
   let exportSubmittedAtSec=0;
-  if(!capture?.ready&&!capture?.exportTaskResponse){
+  if(!capture?.ready){
     exportAction=await clickBatchSearchDownloadControl(tabId);
     if(!exportAction?.clicked||!exportAction?.menuItem){
       throw new Error(
@@ -2644,7 +2693,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
     sendBatchSearchFileProgress(
       "Selected SPX Export → "+exportAction.menuItem+". Waiting for the new Latest Task export to finish…"
     );
-    capture=await pollFile(10000);
+    capture=discardBatchSearchOrderListCapture(await pollFile(10000));
   }
   if(!capture?.ready&&capture?.directUrl&&!/^blob:/i.test(capture.directUrl)){
     const response=await extensionFetchBuffer(capture.directUrl,{
@@ -2665,6 +2714,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       capturedAt:Date.now(),
       source:"authenticated-file-download"
     }};
+    capture=discardBatchSearchOrderListCapture(capture);
   }
   if(!capture?.ready&&capture?.exportTaskResponse?.payload){
     const payload=String(capture.exportTaskResponse.payload);
@@ -2680,6 +2730,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       }
     };
   }
+  capture=discardBatchSearchOrderListCapture(capture);
   let resolvedFile=null;
   if(!capture?.ready&&!capture?.exportTaskResponse&&exportSubmittedAtSec){
     sendBatchSearchFileProgress("No direct file response was exposed. Checking SPX Latest Task and retrieving the newly created export…");
