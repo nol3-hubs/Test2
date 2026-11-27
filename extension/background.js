@@ -1803,8 +1803,9 @@ async function installBatchSearchFileCapture(tabId) {
               const textPayload=typeof this.responseText==="string"?this.responseText:"";
               const csvHeaderLike=/tracking|awb|order(?:\s|_)?(?:id|sn|number)|parcel|shipment|status/i.test(textPayload.slice(0,2000))&&
                 /[,\t;]/.test((textPayload.split(/\r?\n/,1)[0]||""));
-              if (!fileLike(url, type, disposition) && !binaryResponse && !csvHeaderLike) {
-                if (/(export|download|batch.?search|search.?result)/i.test(url)) {
+              const exportRequest=/(export|download|batch.?search|search.?result)/i.test(url);
+              if (!fileLike(url, type, disposition) && !(binaryResponse && exportRequest) && !csvHeaderLike) {
+                if (exportRequest) {
                   let payload="";
                   try {
                     if(this.response && typeof this.response==="object")payload=JSON.stringify(this.response);
