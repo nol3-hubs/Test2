@@ -1942,156 +1942,232 @@ async function readBatchSearchCapturedFile(tabId) {
 async function clickBatchSearchDownloadControl(tabId) {
   const injected = await chrome.scripting.executeScript({
     target: { tabId },
+    world: "MAIN",
     args: [],
     func: async () => {
-      const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-      const visible=el=>{
-        if(!el||!document.documentElement.contains(el))return false;
-        const rect=el.getBoundingClientRect();
-        if(!(rect.width>0&&rect.height>0))return false;
-        for(let node=el;node&&node!==document.documentElement;node=node.parentElement){
-          const style=getComputedStyle(node);
-          if(style.display==="none"||style.visibility==="hidden"||Number(style.opacity)===0)return false;
+      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const norm = value => String(value || "").normalize("NFKC")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
+      const textOf = el => String(el?.innerText || el?.textContent ||
+        el?.getAttribute?.("aria-label") || el?.getAttribute?.("title") || "")
+        .replace(/\s+/g, " ").trim();
+      const visible = el => {
+        if (!el || el.isConnected === false) return false;
+        const rect = el.getBoundingClientRect();
+        if (!(rect.width > 0 && rect.height > 0)) return false;
+        const doc = el.ownerDocument || document;
+        const view = doc.defaultView || window;
+        for (let node = el; node && node !== doc.documentElement; node = node.parentElement) {
+          const style = view.getComputedStyle(node);
+          if (style.display === "none" || style.visibility === "hidden" ||
+              Number(style.opacity) === 0 || node.hidden ||
+              node.getAttribute?.("aria-hidden") === "true") return false;
         }
         return true;
       };
-      const norm=value=>String(value||"").normalize("NFKC")
-        .replace(/[\u200B-\u200D\uFEFF]/g,"")
-        .toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
-      const textOf=el=>String(el?.innerText||el?.textContent||
-        el?.getAttribute?.("aria-label")||el?.title||"").replace(/\s+/g," ").trim();
-      const disabled=el=>!!el?.disabled||el?.getAttribute?.("aria-disabled")==="true"||
-        el?.getAttribute?.("disabled")!==null||
-        /(^|\s)(disabled|is-disabled)(\s|$)/i.test(String(el?.className||""));
-      const targetOption=el=>{
-        const t=norm(textOf(el));
-        return /^exportbatchsearchresults?$/.test(t)||
-          /^batchsearchresults?$/.test(t)||
-          /batchsearch.*results?/.test(t);
-      };
-      const depth=el=>{
-        let n=0;
-        for(let node=el;node&&node!==document.body;node=node.parentElement)n++;
-        return n;
-      };
-      const isActionable=el=>{
-        if(!el)return false;
-        const tag=String(el.tagName||"").toLowerCase();
-        const style=getComputedStyle(el);
-        return tag==="button"||tag==="a"||el.getAttribute("role")==="button"||
-          el.getAttribute("role")==="menuitem"||el.hasAttribute("tabindex")||
-          el.hasAttribute("aria-haspopup")||typeof el.onclick==="function"||
-          /button|dropdown|select|trigger|action/i.test(String(el.className||""))||
-          style.cursor==="pointer";
-      };
-      const clickTarget=el=>{
-        let best=el;
-        for(let node=el;node&&node!==document.body;node=node.parentElement){
-          if(norm(textOf(node))!==norm(textOf(el)))break;
-          if(isActionable(node)){best=node;break;}
-          best=node;
+      const allElements = () => {
+        const roots = [document];
+        for (const frame of document.querySelectorAll("iframe")) {
+          try { if (frame.contentDocument) roots.push(frame.contentDocument); } catch (_) {}
         }
-        try{best.scrollIntoView({block:"center",inline:"nearest"});}catch{}
-        // Native click bubbles, allowing Vue/React handlers on a wrapping div
-        // or span to receive it even when the SPX control is not a <button>.
+        const out = [], seen = new Set();
+        const walk = root => {
+          if (!root?.querySelectorAll) return;
+          for (const el of root.querySelectorAll("*")) {
+            if (seen.has(el)) continue;
+            seen.add(el);
+            out.push(el);
+            if (el.shadowRoot) walk(el.shadowRoot);
+          }
+        };
+        roots.forEach(walk);
+        return out;
+      };
+      const disabled = el => !!el?.disabled ||
+        el?.getAttribute?.("aria-disabled") === "true" ||
+        el?.getAttribute?.("disabled") !== null ||
+        /(^|\s)(disabled|is-disabled)(\s|$)/i.test(String(el?.className || ""));
+      const triggerKey = el => [
+        textOf(el), el?.getAttribute?.("aria-label"), el?.getAttribute?.("title"),
+        el?.getAttribute?.("data-testid"), el?.getAttribute?.("data-test")
+      ].map(norm).find(value => /^(?:export|exportmenu|exportdropdown|exportoptions)$/.test(value)) || "";
+      const targetOption = el => {
+        const value = norm(textOf(el));
+        return /^(?:export)?batchsearchresults?$/.test(value) ||
+          /^batchsearchresult(?:s)?export$/.test(value);
+      };
+      const menuOptions = () => allElements().filter(el =>
+        visible(el) && !disabled(el) && targetOption(el)
+      ).sort((a, b) => {
+        const aDepth = (() => { let n=0; for(let x=a;x&&x!==document.body;x=x.parentElement)n++; return n; })();
+        const bDepth = (() => { let n=0; for(let x=b;x&&x!==document.body;x=x.parentElement)n++; return n; })();
+        return bDepth-aDepth || textOf(a).length-textOf(b).length;
+      });
+      const isActionable = el => {
+        if (!el) return false;
+        const tag = String(el.tagName || "").toLowerCase();
+        const role = String(el.getAttribute?.("role") || "");
+        const cls = String(el.className || "");
+        const style = (el.ownerDocument?.defaultView || window).getComputedStyle(el);
+        return tag === "button" || tag === "a" || role === "button" ||
+          role === "menuitem" || el.hasAttribute?.("tabindex") ||
+          el.hasAttribute?.("aria-haspopup") || typeof el.onclick === "function" ||
+          /button|dropdown|select|trigger|action|menu-item/i.test(cls) ||
+          style.cursor === "pointer";
+      };
+      const clickTarget = el => {
+        let best = el;
+        const original = norm(textOf(el));
+        for (let node = el; node && node !== (el.ownerDocument || document).body; node = node.parentElement) {
+          if (node.getAttribute?.("role") === "menuitem" || node.getAttribute?.("role") === "option") {
+            best = node; break;
+          }
+          const current = norm(textOf(node));
+          if (current && original && current !== original) break;
+          if (isActionable(node)) { best = node; break; }
+          best = node;
+        }
+        try { best.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
         best.click();
         return best;
       };
-      const findExactExportNodes=()=>{
-        const all=[...document.querySelectorAll("body *")].filter(visible);
-        return all.filter(el=>!disabled(el)&&
-          (norm(textOf(el))==="export"||
-           norm(el.getAttribute("aria-label"))==="export"||
-           norm(el.getAttribute("title"))==="export"));
-      };
-      const findBestExportTrigger=()=>{
-        const nodes=findExactExportNodes();
-        const scored=nodes.map(el=>{
-          let best=el,score=0;
-          for(let node=el;node&&node!==document.body;node=node.parentElement){
-            if(norm(textOf(node))!== "export")break;
-            if(isActionable(node)){
-              best=node;
-              const tag=String(node.tagName||"").toLowerCase();
-              score=Math.max(score,tag==="button"?100:tag==="a"?90:
-                node.getAttribute("role")==="button"?85:
-                node.hasAttribute("aria-haspopup")?80:
-                /dropdown|button|trigger/i.test(String(node.className||""))?70:
-                getComputedStyle(node).cursor==="pointer"?60:40);
-              break;
-            }
-            best=node;
+      const triggerCandidates = () => {
+        const found = new Map();
+        for (const el of allElements()) {
+          if (!visible(el) || disabled(el)) continue;
+          const key = triggerKey(el);
+          if (!key) continue;
+          let best = el;
+          for (let node = el; node && node !== (el.ownerDocument || document).body; node = node.parentElement) {
+            if (triggerKey(node) && triggerKey(node) !== key) break;
+            if (isActionable(node)) { best = node; break; }
+            best = node;
           }
-          const tag=String(best.tagName||"").toLowerCase();
-          if(tag==="button")score+=25;
-          if(best.hasAttribute("aria-haspopup"))score+=20;
-          if(/dropdown|export/i.test(String(best.className||"")))score+=10;
-          return {el,best,score,depth:depth(el),label:textOf(el),tag:String(el.tagName||"")};
-        });
-        scored.sort((a,b)=>b.score-a.score||b.depth-a.depth);
-        return scored;
-      };
-      const menuOptions=()=>{
-        const found=new Set();
-        const exactPattern=/^(?:exportbatchsearchresults?|batchsearchresults?)$/;
-        for(const el of document.querySelectorAll("body *")){
-          if(!visible(el)||disabled(el))continue;
-          if(exactPattern.test(norm(textOf(el))))found.add(el);
+          if (!isActionable(best) || found.has(best)) continue;
+          const tag = String(best.tagName || "").toLowerCase();
+          const cls = String(best.className || "");
+          const rect = best.getBoundingClientRect();
+          let score = key === "export" ? 100 : 65;
+          if (tag === "button") score += 30;
+          if (best.hasAttribute("aria-haspopup")) score += 90;
+          if (best.getAttribute("aria-expanded") === "true") score += 35;
+          if (/dropdown|export|trigger/i.test(cls)) score += 30;
+          if (best.getAttribute("data-testid") || best.getAttribute("data-test")) score += 12;
+          if (rect.top < (best.ownerDocument?.defaultView || window).innerHeight * 0.65) score += 8;
+          found.set(best, {
+            element: best, label: textOf(best) || key, tag, score,
+            className: cls.slice(0, 100),
+            ariaHaspopup: best.getAttribute("aria-haspopup") || "",
+            ariaExpanded: best.getAttribute("aria-expanded") || ""
+          });
         }
-        return [...found].sort((a,b)=>depth(b)-depth(a)||textOf(a).length-textOf(b).length);
+        return [...found.values()].sort((a, b) => b.score - a.score);
       };
-      const existing=menuOptions();
-      let chosen=existing[0]||null;
-      let triggerLabel="";
-      let triggerDiagnostics=[];
-      if(!chosen){
-        const triggers=findBestExportTrigger();
-        triggerDiagnostics=triggers.slice(0,20).map(x=>({
-          label:x.label,tag:x.tag,score:x.score,depth:x.depth,
-          className:String(x.best?.className||"").slice(0,100)
-        }));
-        const trigger=triggers[0]?.best||null;
-        if(!trigger){
-          const fallbackLabels=[...document.querySelectorAll(
-            "button,[role='button'],a,[tabindex],.el-button,.ant-btn,.ssc-button,[class*='button']"
-          )].filter(visible).map(textOf).filter(Boolean).slice(0,50);
-          return {
-            clicked:false,menuOpened:false,menuItem:"",
-            reason:"No visible element containing the exact SPX Export label was found.",
-            url:String(location.href||""),title:String(document.title||""),
-            exportCandidates:triggerDiagnostics,visibleControls:fallbackLabels
-          };
+      const waitForOption = async timeout => {
+        const deadline = Date.now() + timeout;
+        while (Date.now() < deadline) {
+          const found = menuOptions()[0];
+          if (found) return found;
+          await sleep(100);
         }
-        triggerLabel=textOf(trigger).slice(0,120)||"Export";
-        clickTarget(trigger);
-        const deadline=Date.now()+8000;
-        while(Date.now()<deadline){
-          chosen=menuOptions()[0]||null;
-          if(chosen)break;
-          await sleep(150);
+        return menuOptions()[0] || null;
+      };
+      const hoverTrigger = el => {
+        const doc = el.ownerDocument || document;
+        const view = doc.defaultView || window;
+        const rect = el.getBoundingClientRect();
+        const init = {
+          bubbles: true, cancelable: true, composed: true, view,
+          clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2,
+          button: 0, buttons: 0
+        };
+        try {
+          if (view.PointerEvent) {
+            el.dispatchEvent(new view.PointerEvent("pointerover", { ...init, pointerType: "mouse", isPrimary: true }));
+            el.dispatchEvent(new view.PointerEvent("pointerenter", { ...init, bubbles: false, pointerType: "mouse", isPrimary: true }));
+          }
+          el.dispatchEvent(new view.MouseEvent("mouseover", init));
+          el.dispatchEvent(new view.MouseEvent("mouseenter", { ...init, bubbles: false }));
+        } catch (_) {}
+      };
+      const menuDiagnostics = () => {
+        const result = [];
+        for (const el of allElements()) {
+          if (!visible(el)) continue;
+          const role = String(el.getAttribute?.("role") || "");
+          const cls = String(el.className || "");
+          if (!/menu|dropdown|popover|popper|overlay|tooltip/i.test(role + " " + cls)) continue;
+          const value = textOf(el);
+          if (value) result.push(value.slice(0, 220));
+        }
+        return [...new Set(result)].slice(0, 20);
+      };
+
+      let chosen = menuOptions()[0] || null;
+      let usedTrigger = "";
+      const diagnostics = [];
+      if (!chosen) {
+        const triggers = triggerCandidates();
+        for (const item of triggers.slice(0, 8)) {
+          const trigger = item.element;
+          usedTrigger = item.label;
+          diagnostics.push({
+            label: item.label, tag: item.tag, score: item.score,
+            className: item.className, ariaHaspopup: item.ariaHaspopup,
+            ariaExpanded: item.ariaExpanded
+          });
+
+          hoverTrigger(trigger);
+          chosen = await waitForOption(650);
+          if (chosen) break;
+
+          try { trigger.focus?.({ preventScroll: true }); } catch (_) {}
+          try { trigger.click(); } catch (_) {}
+          chosen = await waitForOption(item.ariaHaspopup ? 5000 : 3000);
+          if (chosen) break;
+
+          if (item.ariaHaspopup || /dropdown|trigger/i.test(item.className)) {
+            try {
+              const view = trigger.ownerDocument?.defaultView || window;
+              trigger.dispatchEvent(new view.KeyboardEvent("keydown", {
+                key: "ArrowDown", code: "ArrowDown", bubbles: true, cancelable: true
+              }));
+            } catch (_) {}
+            chosen = await waitForOption(1600);
+            if (chosen) break;
+          }
         }
       }
-      if(!chosen){
-        const visibleText=String(document.body?.innerText||"").replace(/\s+/g," ").slice(-2200);
+
+      if (!chosen) {
+        const visibleText = String(document.body?.innerText || "")
+          .replace(/\s+/g, " ").slice(-2200);
         return {
-          clicked:false,menuOpened:true,menuItem:"",
-          trigger:triggerLabel,
-          reason:"Clicked the SPX Export control, but the Export Batch-Search Results menu item did not appear.",
-          menuText:visibleText,exportCandidates:triggerDiagnostics
+          clicked: false, menuOpened: false, menuItem: "",
+          trigger: usedTrigger,
+          reason: "SPX Export control was found, but its Batch Search export menu did not open after hover, click, and keyboard attempts.",
+          menuText: visibleText,
+          menuCandidates: menuDiagnostics(),
+          triggerCandidates: diagnostics,
+          url: String(location.href || ""), title: String(document.title || "")
         };
       }
-      const selectedText=textOf(chosen).slice(0,180);
+
+      const selectedText = textOf(chosen).slice(0, 180);
       clickTarget(chosen);
       return {
-        clicked:true,menuOpened:true,trigger:triggerLabel||"Export",
-        menuItem:selectedText,clickedAt:Date.now(),
-        url:String(location.href||"")
+        clicked: true, menuOpened: true,
+        trigger: usedTrigger || "Export",
+        menuItem: selectedText,
+        clickedAt: Date.now(),
+        url: String(location.href || "")
       };
     }
   });
   return injected?.[0]?.result || {
-    clicked:false,menuOpened:false,menuItem:"",
-    reason:"SPX did not return an Export menu result."
+    clicked: false, menuOpened: false, menuItem: "",
+    reason: "SPX did not return an Export menu result."
   };
 }
 function parseBatchSearchDelimitedRows(source) {
@@ -2685,7 +2761,9 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       throw new Error(
         "SPX Batch Search finished, but Test2 could not select Export Batch-Search Results. "+
         String(exportAction?.reason||exportAction?.menuText||"The SPX export option was not found.")+
-        (exportAction?.menuText?" Menu: "+exportAction.menuText:"")
+        (exportAction?.menuText?" Menu: "+exportAction.menuText:"")+
+        (Array.isArray(exportAction?.menuCandidates)&&exportAction.menuCandidates.length?" Dropdowns: "+exportAction.menuCandidates.join(" | "):"")+
+        (Array.isArray(exportAction?.triggerCandidates)&&exportAction.triggerCandidates.length?" Export controls: "+exportAction.triggerCandidates.map(item=>item.label+" ["+item.tag+", "+item.className+"]").join(" | "):"")
       );
     }
     exportSubmittedAtSec=Math.max(0,Math.floor((Number(exportAction.clickedAt)||Date.now())/1000));
