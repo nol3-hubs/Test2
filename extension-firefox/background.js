@@ -18,7 +18,8 @@ const RIDER_EXPORT_BIZ_NAME = "driver";
 const POLL_MS = 3000;
 const LINEHAUL_POLL_MS = 2000;
 const MAX_WAIT_MS = 25 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 30000;\nconst PARCEL_ORDER_TRACKING_ROUTE = "#/orderTracking";
+const FETCH_TIMEOUT_MS = 30000;
+const PARCEL_ORDER_TRACKING_ROUTE = "#/orderTracking";
 const PARCEL_EXPORT_NAME = "export_forward_order";
 const PARCEL_EXPORT_BIZ_NAME = "fleet_order";
 // Received Checking-only exports (kept separate from the host app's existing Parcel Count sync).
