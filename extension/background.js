@@ -1917,7 +1917,16 @@ async function clickBatchSearchDownloadControl(tabId) {
     args: [],
     func: async () => {
       const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-      const visible=el=>!!el&&!!(el.offsetWidth||el.offsetHeight||el.getClientRects().length);
+      const visible=el=>{
+        if(!el||!document.documentElement.contains(el))return false;
+        const rect=el.getBoundingClientRect();
+        if(!(rect.width>0&&rect.height>0))return false;
+        for(let node=el;node&&node!==document.documentElement;node=node.parentElement){
+          const style=getComputedStyle(node);
+          if(style.display==="none"||style.visibility==="hidden"||Number(style.opacity)===0)return false;
+        }
+        return true;
+      };
       const norm=value=>String(value||"").normalize("NFKC")
         .replace(/[\\u200B-\\u200D\\uFEFF]/g,"")
         .toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
@@ -2365,7 +2374,16 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       args: [trackingNumbers],
       func: async tns => {
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-        const visible = el => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+        const visible = el => {
+          if(!el||!document.documentElement.contains(el))return false;
+          const rect=el.getBoundingClientRect();
+          if(!(rect.width>0&&rect.height>0))return false;
+          for(let node=el;node&&node!==document.documentElement;node=node.parentElement){
+            const style=getComputedStyle(node);
+            if(style.display==="none"||style.visibility==="hidden"||Number(style.opacity)===0)return false;
+          }
+          return true;
+        };
         const clean = value => String(value || "").trim().toUpperCase().replace(/\s+/g, "");
         let stage = "initialize";
         const reportStage = message => {
@@ -2477,7 +2495,11 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
             if(isBusy)sawBusy=true;
             if(rows!==lastRows){lastRows=rows;rowsStableSince=Date.now();}
             const elapsed=Date.now()-(deadline-90000);
-            const confirmedBatchSearch=successNoticeStable&&batchSearchInputClosed&&elapsed>=8000;
+            // A closed dialog is useful corroboration, but SPX can leave a
+            // hidden textarea mounted with layout dimensions. The stable
+            // success banner itself is authoritative after Submit and a short
+            // settling window, even when the framework keeps that node around.
+            const confirmedBatchSearch=successNoticeStable&&elapsed>=8000&&(!isBusy);
             if(elapsed-lastNotice>=5000){
               reportStage("Waiting for SPX to finish Batch Search and prepare its downloaded file… "+Math.floor(elapsed/1000)+"s elapsed.");
               lastNotice=elapsed;
@@ -2487,7 +2509,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
             const exportControlAppeared=controls.length>initialDownloadControls&&elapsed>=2500&&!isBusy;
             const explicitEmpty=/no (?:matching )?(?:data|records|results|orders)|no result found|0 (?:records|results)/i.test(String(document.body?.innerText||""));
             if(elapsed>=4000&&!isBusy&&(confirmedBatchSearch||resultTableChanged||loadingCompleted||exportControlAppeared||explicitEmpty)){
-              if(confirmedBatchSearch)reportStage(successNotice+" · Batch Search dialog closed; opening Export → Export Batch-Search Results…");
+              if(confirmedBatchSearch)reportStage(successNotice+" · Batch Search completed; opening Export → Export Batch-Search Results…");
               ready=true;break;
             }
           }
@@ -2583,7 +2605,14 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       }
     };
   }
-  if(!capture?.ready||!capture.file?.base64){
+  let resolvedFile=null;
+  if(!capture?.ready&&!capture?.exportTaskResponse&&exportSubmittedAtSec){
+    sendBatchSearchFileProgress("No direct file response was exposed. Checking SPX Latest Task and retrieving the newly created export…");
+    const foundTask=await discoverNewBatchSearchExportTask(exportSubmittedAtSec,job);
+    resolvedFile=await downloadDiscoveredBatchSearchTask(foundTask,exportSubmittedAtSec,job);
+  }else if(capture?.ready&&capture.file?.base64){
+    resolvedFile=await resolveBatchSearchExportPayload(capture.file,tabId,job);
+  }else{
     const detail=(capture?.errors||[]).join(" | ")||"No CSV/Excel download or export-task response was captured.";
     const controls=(exportAction?.menuOptions||exportAction?.controls||[]).join(" | ")||
       exportAction?.note||"No visible Export/Download menu option was found.";
@@ -2594,15 +2623,6 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       " Export control: "+String(exportAction?.trigger||exportAction?.reason||"not identified")+
       ". Export menu: "+controls+
       (events?". SPX export requests: "+events:""));
-  }
-
-  let resolvedFile=null;
-  if(!capture?.ready&&!capture?.exportTaskResponse&&exportSubmittedAtSec){
-    sendBatchSearchFileProgress("No direct file response was exposed. Checking SPX Latest Task and retrieving the newly created export…");
-    const foundTask=await discoverNewBatchSearchExportTask(exportSubmittedAtSec,job);
-    resolvedFile=await downloadDiscoveredBatchSearchTask(foundTask,exportSubmittedAtSec,job);
-  }else{
-    resolvedFile=await resolveBatchSearchExportPayload(capture.file,tabId,job);
   }
   sendBatchSearchFileProgress("Downloaded "+String(resolvedFile.fileName||"SPX result file")+" · reading the actual file contents…");
   return await parseDownloadedBatchSearchFile(resolvedFile,trackingNumbers);
