@@ -2449,7 +2449,6 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
           if(!submit)submit=findAction("submit");
           if(!submit)throw new Error("Could not locate the Submit button in Batch Search.");
 
-          const initialBodyText=String(document.body?.innerText||"").replace(/\s+/g," ");
           const initialRows=tableRowCount();
           const initialBusy=busy();
           const initialDownloadControls=downloadControls().length;
@@ -2467,10 +2466,15 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
             const controls=downloadControls();
             const currentBodyText=String(document.body?.innerText||"").replace(/\s+/g," ");
             const successMatch=currentBodyText.match(/all\s+[\d,]+\s+orders?\s+have been found/i);
-            const successNotice=successMatch&&!initialBodyText.includes(successMatch[0])?successMatch[0]:"";
+            // SPX can keep the same green success-banner text from the initial
+            // Order Tracking load. Treat it as confirmation only after Submit,
+            // once the Batch Search textarea has closed and the banner is stable.
+            const successNotice=successMatch?successMatch[0]:"";
             if(successNotice){if(!successNoticeSince)successNoticeSince=Date.now();}
             else successNoticeSince=0;
-            const successNoticeStable=!!successNotice&&Date.now()-successNoticeSince>=1200;
+            const successNoticeStable=!!successNotice&&Date.now()-successNoticeSince>=1800;
+            const batchSearchInputClosed=!visible(input);
+            const confirmedBatchSearch=successNoticeStable&&batchSearchInputClosed&&elapsed>=8000;
             if(isBusy)sawBusy=true;
             if(rows!==lastRows){lastRows=rows;rowsStableSince=Date.now();}
             const elapsed=Date.now()-(deadline-90000);
@@ -2482,8 +2486,8 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
             const loadingCompleted=sawBusy&&!isBusy&&elapsed>=2500;
             const exportControlAppeared=controls.length>initialDownloadControls&&elapsed>=2500&&!isBusy;
             const explicitEmpty=/no (?:matching )?(?:data|records|results|orders)|no result found|0 (?:records|results)/i.test(String(document.body?.innerText||""));
-            if(elapsed>=4000&&!isBusy&&(successNoticeStable||resultTableChanged||loadingCompleted||exportControlAppeared||explicitEmpty)){
-              if(successNoticeStable)reportStage(successNotice+" · opening Export → Export Batch-Search Results…");
+            if(elapsed>=4000&&!isBusy&&(confirmedBatchSearch||resultTableChanged||loadingCompleted||exportControlAppeared||explicitEmpty)){
+              if(confirmedBatchSearch)reportStage(successNotice+" · Batch Search dialog closed; opening Export → Export Batch-Search Results…");
               ready=true;break;
             }
           }
