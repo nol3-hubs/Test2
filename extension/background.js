@@ -2474,10 +2474,10 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
             else successNoticeSince=0;
             const successNoticeStable=!!successNotice&&Date.now()-successNoticeSince>=1800;
             const batchSearchInputClosed=!visible(input);
-            const confirmedBatchSearch=successNoticeStable&&batchSearchInputClosed&&elapsed>=8000;
             if(isBusy)sawBusy=true;
             if(rows!==lastRows){lastRows=rows;rowsStableSince=Date.now();}
             const elapsed=Date.now()-(deadline-90000);
+            const confirmedBatchSearch=successNoticeStable&&batchSearchInputClosed&&elapsed>=8000;
             if(elapsed-lastNotice>=5000){
               reportStage("Waiting for SPX to finish Batch Search and prepare its downloaded file… "+Math.floor(elapsed/1000)+"s elapsed.");
               lastNotice=elapsed;
