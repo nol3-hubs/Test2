@@ -4,10 +4,12 @@
   const root=get("badocOperationModal");
   if(!root)return;
   const closeBtn=get("badocOpClose"),cancelBtn=get("badocOpCancel"),copyBtn=get("badocOpCopy");
+  const copyFeedback=get("badocOpCopyFeedback");
   let copyAction=null;
   function clearCopyAction(){
     copyAction=null;
     if(copyBtn){copyBtn.hidden=true;copyBtn.disabled=false;copyBtn.textContent="Copy Results";}
+    if(copyFeedback){copyFeedback.hidden=true;copyFeedback.textContent="";}
   }
   function setVisible(show){root.hidden=!show;root.setAttribute("aria-hidden",String(!show));document.body.classList.toggle("badoc-op-open",show);}
   function clearDetails(){const node=get("badocOpDetails");if(node)node.replaceChildren();}
@@ -44,6 +46,7 @@
     copyBtn.textContent=String(label||"Copy Results");
     copyBtn.disabled=false;
     copyBtn.hidden=!copyAction;
+    if(copyFeedback){copyFeedback.hidden=true;copyFeedback.textContent="";}
   };
   window.__badocOperationModalConfirm=function(title,message,details=[],acceptLabel="Confirm"){
     clearCopyAction();
@@ -83,14 +86,17 @@
       if(copied===false){
         copyBtn.textContent="Retry Copy";
         copyBtn.disabled=false;
+        if(copyFeedback){copyFeedback.textContent="Copy failed. Check clipboard permissions and try again.";copyFeedback.hidden=false;copyFeedback.dataset.state="error";}
       }else{
         copyBtn.textContent="Copied";
         copyBtn.disabled=true;
+        if(copyFeedback){copyFeedback.textContent="✓ Results copied to your clipboard.";copyFeedback.hidden=false;copyFeedback.dataset.state="success";}
       }
     }catch(error){
       console.error("Badoc report copy failed:",error);
       copyBtn.textContent="Retry Copy";
       copyBtn.disabled=false;
+      if(copyFeedback){copyFeedback.textContent="Copy failed: "+String(error?.message||error);copyFeedback.hidden=false;copyFeedback.dataset.state="error";}
     }
   });
   cancelBtn.addEventListener("click",()=>resolveConfirm(false));
