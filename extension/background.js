@@ -1938,56 +1938,115 @@ async function clickBatchSearchDownloadControl(tabId) {
         return true;
       };
       const norm=value=>String(value||"").normalize("NFKC")
-        .replace(/[\\u200B-\\u200D\\uFEFF]/g,"")
+        .replace(/[\u200B-\u200D\uFEFF]/g,"")
         .toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
       const textOf=el=>String(el?.innerText||el?.textContent||
-        el?.getAttribute?.("aria-label")||el?.title||"").replace(/\\s+/g," ").trim();
-      const disabled=el=>!!el.disabled||el.getAttribute("aria-disabled")==="true"||
-        el.getAttribute("disabled")!==null||
-        /(^|\\s)(disabled|is-disabled)(\\s|$)/i.test(String(el.className||""));
+        el?.getAttribute?.("aria-label")||el?.title||"").replace(/\s+/g," ").trim();
+      const disabled=el=>!!el?.disabled||el?.getAttribute?.("aria-disabled")==="true"||
+        el?.getAttribute?.("disabled")!==null||
+        /(^|\s)(disabled|is-disabled)(\s|$)/i.test(String(el?.className||""));
       const targetOption=el=>{
         const t=norm(textOf(el));
         return /^exportbatchsearchresults?$/.test(t)||
           /^batchsearchresults?$/.test(t)||
           /batchsearch.*results?/.test(t);
       };
-      const menuOptions=()=>{
-        const candidates=[...document.querySelectorAll(
-          "[role='menuitem'],[role='option'],li,.el-dropdown-menu__item,.ant-dropdown-menu-item,"+
-          "[class*='dropdown-menu'] a,[class*='dropdown-menu'] button"
-        )].filter(visible);
-        // Some Shopee releases render menu entries as plain portal divs/spans.
-        // Match the exact menu label and click the smallest matching element.
-        for(const el of document.querySelectorAll("body *")){
-          if(!visible(el))continue;
-          const t=norm(textOf(el));
-          if(/^exportbatchsearchresults?$/.test(t)||/^batchsearchresults?$/.test(t))candidates.push(el);
+      const depth=el=>{
+        let n=0;
+        for(let node=el;node&&node!==document.body;node=node.parentElement)n++;
+        return n;
+      };
+      const isActionable=el=>{
+        if(!el)return false;
+        const tag=String(el.tagName||"").toLowerCase();
+        const style=getComputedStyle(el);
+        return tag==="button"||tag==="a"||el.getAttribute("role")==="button"||
+          el.getAttribute("role")==="menuitem"||el.hasAttribute("tabindex")||
+          el.hasAttribute("aria-haspopup")||typeof el.onclick==="function"||
+          /button|dropdown|select|trigger|action/i.test(String(el.className||""))||
+          style.cursor==="pointer";
+      };
+      const clickTarget=el=>{
+        let best=el;
+        for(let node=el;node&&node!==document.body;node=node.parentElement){
+          if(norm(textOf(node))!==norm(textOf(el)))break;
+          if(isActionable(node)){best=node;break;}
+          best=node;
         }
-        return [...new Set(candidates)]
-          .filter(el=>!disabled(el)&&targetOption(el))
-          .sort((a,b)=>textOf(a).length-textOf(b).length);
+        try{best.scrollIntoView({block:"center",inline:"nearest"});}catch{}
+        // Native click bubbles, allowing Vue/React handlers on a wrapping div
+        // or span to receive it even when the SPX control is not a <button>.
+        best.click();
+        return best;
+      };
+      const findExactExportNodes=()=>{
+        const all=[...document.querySelectorAll("body *")].filter(visible);
+        return all.filter(el=>!disabled(el)&&
+          (norm(textOf(el))==="export"||
+           norm(el.getAttribute("aria-label"))==="export"||
+           norm(el.getAttribute("title"))==="export"));
+      };
+      const findBestExportTrigger=()=>{
+        const nodes=findExactExportNodes();
+        const scored=nodes.map(el=>{
+          let best=el,score=0;
+          for(let node=el;node&&node!==document.body;node=node.parentElement){
+            if(norm(textOf(node))!== "export")break;
+            if(isActionable(node)){
+              best=node;
+              const tag=String(node.tagName||"").toLowerCase();
+              score=Math.max(score,tag==="button"?100:tag==="a"?90:
+                node.getAttribute("role")==="button"?85:
+                node.hasAttribute("aria-haspopup")?80:
+                /dropdown|button|trigger/i.test(String(node.className||""))?70:
+                getComputedStyle(node).cursor==="pointer"?60:40);
+              break;
+            }
+            best=node;
+          }
+          const tag=String(best.tagName||"").toLowerCase();
+          if(tag==="button")score+=25;
+          if(best.hasAttribute("aria-haspopup"))score+=20;
+          if(/dropdown|export/i.test(String(best.className||"")))score+=10;
+          return {el,best,score,depth:depth(el),label:textOf(el),tag:String(el.tagName||"")};
+        });
+        scored.sort((a,b)=>b.score-a.score||b.depth-a.depth);
+        return scored;
+      };
+      const menuOptions=()=>{
+        const found=new Set();
+        const exactPattern=/^(?:exportbatchsearchresults?|batchsearchresults?)$/;
+        for(const el of document.querySelectorAll("body *")){
+          if(!visible(el)||disabled(el))continue;
+          if(exactPattern.test(norm(textOf(el))))found.add(el);
+        }
+        return [...found].sort((a,b)=>depth(b)-depth(a)||textOf(a).length-textOf(b).length);
       };
       const existing=menuOptions();
       let chosen=existing[0]||null;
       let triggerLabel="";
+      let triggerDiagnostics=[];
       if(!chosen){
-        const controls=[...document.querySelectorAll(
-          "button,[role='button'],a,[tabindex],.el-button,.ant-btn,.ssc-button,[class*='button']"
-        )].filter(visible);
-        const trigger=controls.find(el=>!disabled(el)&&
-          /^(export|exportresults?|download|downloadresults?)$/.test(norm(textOf(el))))||
-          controls.find(el=>!disabled(el)&&/^export$/.test(norm(textOf(el))));
+        const triggers=findBestExportTrigger();
+        triggerDiagnostics=triggers.slice(0,20).map(x=>({
+          label:x.label,tag:x.tag,score:x.score,depth:x.depth,
+          className:String(x.best?.className||"").slice(0,100)
+        }));
+        const trigger=triggers[0]?.best||null;
         if(!trigger){
+          const fallbackLabels=[...document.querySelectorAll(
+            "button,[role='button'],a,[tabindex],.el-button,.ant-btn,.ssc-button,[class*='button']"
+          )].filter(visible).map(textOf).filter(Boolean).slice(0,50);
           return {
             clicked:false,menuOpened:false,menuItem:"",
-            reason:"Could not find the SPX Order Tracking Export dropdown.",
-            controls:controls.map(textOf).filter(Boolean).slice(0,40)
+            reason:"No visible element containing the exact SPX Export label was found.",
+            url:String(location.href||""),title:String(document.title||""),
+            exportCandidates:triggerDiagnostics,visibleControls:fallbackLabels
           };
         }
-        triggerLabel=textOf(trigger).slice(0,120);
-        try{trigger.scrollIntoView({block:"center",inline:"nearest"});}catch{}
-        trigger.click();
-        const deadline=Date.now()+7000;
+        triggerLabel=textOf(trigger).slice(0,120)||"Export";
+        clickTarget(trigger);
+        const deadline=Date.now()+8000;
         while(Date.now()<deadline){
           chosen=menuOptions()[0]||null;
           if(chosen)break;
@@ -1995,20 +2054,20 @@ async function clickBatchSearchDownloadControl(tabId) {
         }
       }
       if(!chosen){
-        const visibleText=String(document.body?.innerText||"").replace(/\\s+/g," ").slice(-1800);
+        const visibleText=String(document.body?.innerText||"").replace(/\s+/g," ").slice(-2200);
         return {
           clicked:false,menuOpened:true,menuItem:"",
           trigger:triggerLabel,
-          reason:"The SPX Export menu opened, but the exact Export Batch-Search Results option was not found.",
-          menuText:visibleText
+          reason:"Clicked the SPX Export control, but the Export Batch-Search Results menu item did not appear.",
+          menuText:visibleText,exportCandidates:triggerDiagnostics
         };
       }
       const selectedText=textOf(chosen).slice(0,180);
-      try{chosen.scrollIntoView({block:"center",inline:"nearest"});}catch{}
-      chosen.click();
+      clickTarget(chosen);
       return {
         clicked:true,menuOpened:true,trigger:triggerLabel||"Export",
-        menuItem:selectedText,clickedAt:Date.now()
+        menuItem:selectedText,clickedAt:Date.now(),
+        url:String(location.href||"")
       };
     }
   });
