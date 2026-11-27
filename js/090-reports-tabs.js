@@ -210,16 +210,29 @@
             const button=batchSearchReportButton;
             batchSearchReportButton=null;
             const meta=window.__badocBatchSearchResultMeta;
-            const summary="Completed "+meta.inputCount.toLocaleString()+" unique TN(s) · "+meta.matchedCount.toLocaleString()+" found · "+meta.notFoundCount.toLocaleString()+" not found"+(meta.failedCount?" · "+meta.failedCount.toLocaleString()+" failed":"")+". Click again to copy.";
+            const summary="Completed "+meta.inputCount.toLocaleString()+" unique TN(s) · "+meta.matchedCount.toLocaleString()+" found · "+meta.notFoundCount.toLocaleString()+" not found"+(meta.failedCount?" · "+meta.failedCount.toLocaleString()+" failed":"")+". Use Copy Results in this dialog or click the report button again.";
+            const failureReasons=[...new Set(rows.map(row=>String(row?.Error??row?.error??"").trim()).filter(Boolean))];
+            const failureReason=failureReasons[0]||"The SPX Batch Search request failed before usable results were returned.";
+            const failureDetail=meta.failedCount
+              ?("One or more SPX search batches failed. "+meta.failedCount.toLocaleString()+" TN(s) were marked Search Failed (not Not Found). "+failureReason).slice(0,900)
+              :"";
+            const copyTarget=button||root.querySelector('[data-report-copy="batch-search-result"]');
+            window.__badocOperationModalSetCopy?.("Copy Results",()=>copyText(
+              copyTarget,
+              rowsToTsv(rows),
+              "Copied "+rows.length.toLocaleString()+" Batch Search result row(s) to the clipboard."
+            ));
             if(button){
               button.disabled=false;
               button.textContent="⧉ Batch Search Result ("+rows.length.toLocaleString()+")";
               setStatus(button,summary,meta.failedCount?"warn":"success");
             }
+            const batchDetails=[["Input TNs",meta.inputCount.toLocaleString()],["Rows returned",rows.length.toLocaleString()],["Found",meta.matchedCount.toLocaleString()],["Not found",meta.notFoundCount.toLocaleString()],["Failed",meta.failedCount.toLocaleString()],["Failed batches",meta.failedBatchCount.toLocaleString()],["Search batches",meta.chunkCount.toLocaleString()]];
+            if(meta.failedCount)batchDetails.push(["Failure reason",failureReason.slice(0,500)]);
             window.__badocOperationModalFinish?.(
               meta.failedCount?"Batch Search Result Completed with Warnings":"Batch Search Result Loaded",
-              summary,
-              [["Input TNs",meta.inputCount.toLocaleString()],["Rows returned",rows.length.toLocaleString()],["Found",meta.matchedCount.toLocaleString()],["Not found",meta.notFoundCount.toLocaleString()],["Failed",meta.failedCount.toLocaleString()],["Search batches",meta.chunkCount.toLocaleString()]],
+              meta.failedCount?failureDetail:summary,
+              batchDetails,
               meta.failedCount?"info":"success"
             );
           }catch(error){finishBatchSearchReportError(error?.message||String(error));}
@@ -258,7 +271,13 @@
             assignmentTaskExportPending=false;
             const button=assignmentTaskReportButton;
             assignmentTaskReportButton=null;
-            const assignmentSummary="Loaded "+rows.length.toLocaleString()+" Assignment Task row(s) from SPX · "+window.__badocAssignmentTaskMeta.selectedDate+". Click again to copy.";
+            const assignmentSummary="Loaded "+rows.length.toLocaleString()+" Assignment Task row(s) from SPX · "+window.__badocAssignmentTaskMeta.selectedDate+". Use Copy Results in the dialog or click the report button again.";
+            const copyTarget=button||root.querySelector('[data-report-copy="assignment-task"]');
+            window.__badocOperationModalSetCopy?.("Copy Results",()=>copyText(
+              copyTarget,
+              rowsToTsv(rows),
+              "Copied "+rows.length.toLocaleString()+" Assignment Task row(s) from SPX · Created Date: "+window.__badocAssignmentTaskMeta.selectedDate+"."
+            ));
             if(button){
               button.disabled=false;
               button.textContent="⧉ Assignment Task ("+rows.length.toLocaleString()+")";
@@ -266,7 +285,7 @@
             }
             window.__badocOperationModalFinish?.(
               "Assignment Task Loaded",
-              "SPX Assignment Task is ready to copy.",
+              assignmentSummary,
               [["Rows loaded",rows.length.toLocaleString()],["Created Date",window.__badocAssignmentTaskMeta.selectedDate],["Source","SPX"]],
               "success"
             );
