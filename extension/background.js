@@ -1764,11 +1764,12 @@ async function installBatchSearchFileCapture(tabId) {
                   url, contentType: type, disposition,
                   fileName: filenameFrom(url, disposition, ""), source: "file-response"
                 }));
-              } else if (/(export|download|batch.?search|search.?result)/i.test(url) &&
-                /json|text\/plain/i.test(type)) {
+              } else if (/json|text\/plain/i.test(type)) {
                 const clone=response.clone();
                 void clone.text().then(payload=>{
-                  if(payload && payload.length<=100000){
+                  const hasTaskId=/"(?:task_id|taskId|export_task_id|exportTaskId)"\s*:\s*"?\d+/i.test(payload);
+                  const isExportResponse=/(export|download|batch.?search|search.?result)/i.test(url);
+                  if((hasTaskId||isExportResponse)&&payload&&payload.length<=100000){
                     state.events.push({
                       url,method:String(args[1]?.method||"GET"),
                       status:Number(response.status||0),contentType:type,
@@ -1801,16 +1802,17 @@ async function installBatchSearchFileCapture(tabId) {
               const disposition = String(this.getResponseHeader("content-disposition") || "");
               const binaryResponse=this.responseType==="blob"||this.responseType==="arraybuffer";
               const textPayload=typeof this.responseText==="string"?this.responseText:"";
+              let responsePayload=textPayload;
+              if(!responsePayload&&this.response&&typeof this.response==="object"){
+                try{responsePayload=JSON.stringify(this.response)||"";}catch{}
+              }
+              const taskResponseLike=/"(?:task_id|taskId|export_task_id|exportTaskId)"\s*:\s*"?\d+/i.test(responsePayload);
               const csvHeaderLike=/tracking|awb|order(?:\s|_)?(?:id|sn|number)|parcel|shipment|status/i.test(textPayload.slice(0,2000))&&
                 /[,\t;]/.test((textPayload.split(/\r?\n/,1)[0]||""));
               const exportRequest=/(export|download|batch.?search|search.?result)/i.test(url);
               if (!fileLike(url, type, disposition) && !(binaryResponse && exportRequest) && !csvHeaderLike) {
-                if (exportRequest) {
-                  let payload="";
-                  try {
-                    if(this.response && typeof this.response==="object")payload=JSON.stringify(this.response);
-                    else if(typeof this.responseText==="string")payload=this.responseText;
-                  } catch {}
+                if (exportRequest||taskResponseLike) {
+                  const payload=responsePayload;
                   state.events.push({
                     url, method:this.__badocBatchMethod || "GET",
                     status:Number(this.status || 0), contentType:type,
@@ -1978,17 +1980,20 @@ async function clickBatchSearchDownloadControl(tabId) {
       const usable=options.filter(item=>!/(template|sample|instruction|import|upload|column setting|setting)/i.test(item.text)&&!disabled(item.el));
       const rank=item=>{
         const t=item.normalized;
-        if(/export all|download all|all results|search result|batch search/.test(t))return 0;
-        if(/csv|excel|spreadsheet/.test(t))return 1;
-        if(/export|download/.test(t))return 2;
-        if(/^all(?: records| results| orders| pages)?$/.test(t))return 3;
+        if(/^export batch search results?$/.test(t)||/^batch search results?$/.test(t))return 0;
+        if(/batch search.*results?|search results?.*batch/.test(t))return 1;
+        if(/search results?/.test(t))return 2;
+        if(/export all|download all|all results/.test(t))return 3;
+        if(/csv|excel|spreadsheet/.test(t))return 4;
+        if(/export|download/.test(t))return 5;
+        if(/^all(?: records| results| orders| pages)?$/.test(t))return 6;
         return 9;
       };
       const chooseExportOption=(items,allowAll=false)=>{
         const candidates=items.filter(item=>
           !/(template|sample|instruction|import|upload|column setting|setting)/i.test(item.text)&&
           !disabled(item.el)&&
-          (/export|download|csv|excel|spreadsheet|all results|current results|search result/i.test(item.normalized)||
+          (/batch search.*results?|search results?.*batch|batch search|search results?/.test(item.normalized)||
             (allowAll&&/^all(?: records| results| orders| pages)?$/.test(item.normalized)))
         );
         candidates.sort((a,b)=>rank(a)-rank(b));
@@ -2258,6 +2263,9 @@ function findBatchSearchExportTaskResponse(events) {
     if(!payload)continue;
     let json=null;
     try{json=JSON.parse(payload);}catch{continue;}
+    const explicitTaskId=/"(?:task_id|taskId|export_task_id|exportTaskId)"\s*:/i.test(payload);
+    const exportEndpoint=/(?:export|download|task)/i.test(String(event?.url||""));
+    if(!explicitTaskId&&!exportEndpoint)continue;
     const taskId=getExportTaskId(json);
     if(taskId>0){
       return {
@@ -2366,6 +2374,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
           if(!submit)submit=findAction("submit");
           if(!submit)throw new Error("Could not locate the Submit button in Batch Search.");
 
+          const initialBodyText=String(document.body?.innerText||"").replace(/\s+/g," ");
           const initialRows=tableRowCount();
           const initialBusy=busy();
           const initialDownloadControls=downloadControls().length;
@@ -2373,6 +2382,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
           reportStage("Submitting "+wanted.length.toLocaleString()+" tracking number(s) to SPX…");
           submit.click();
           let sawBusy=initialBusy,lastRows=initialRows,rowsStableSince=Date.now();
+          let successNoticeSince=0;
           let ready=false,lastNotice=0;
           const deadline=Date.now()+90000;
           while(Date.now()<deadline){
@@ -2380,6 +2390,12 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
             const isBusy=busy();
             const rows=tableRowCount();
             const controls=downloadControls();
+            const currentBodyText=String(document.body?.innerText||"").replace(/\s+/g," ");
+            const successMatch=currentBodyText.match(/all\s+[\d,]+\s+orders?\s+have been found/i);
+            const successNotice=successMatch&&!initialBodyText.includes(successMatch[0])?successMatch[0]:"";
+            if(successNotice){if(!successNoticeSince)successNoticeSince=Date.now();}
+            else successNoticeSince=0;
+            const successNoticeStable=!!successNotice&&Date.now()-successNoticeSince>=1200;
             if(isBusy)sawBusy=true;
             if(rows!==lastRows){lastRows=rows;rowsStableSince=Date.now();}
             const elapsed=Date.now()-(deadline-90000);
@@ -2391,7 +2407,8 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
             const loadingCompleted=sawBusy&&!isBusy&&elapsed>=2500;
             const exportControlAppeared=controls.length>initialDownloadControls&&elapsed>=2500&&!isBusy;
             const explicitEmpty=/no (?:matching )?(?:data|records|results|orders)|no result found|0 (?:records|results)/i.test(String(document.body?.innerText||""));
-            if(elapsed>=4000&&!isBusy&&(resultTableChanged||loadingCompleted||exportControlAppeared||explicitEmpty)){
+            if(elapsed>=4000&&!isBusy&&(successNoticeStable||resultTableChanged||loadingCompleted||exportControlAppeared||explicitEmpty)){
+              if(successNoticeStable)reportStage(successNotice+" · opening Export → Export Batch-Search Results…");
               ready=true;break;
             }
           }
