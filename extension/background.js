@@ -2581,7 +2581,11 @@ async function runBatchSearchExportJob(job) {
         sendProgress("Batch " + (i + 1) + "/" + batches.length + " complete · read " + Number(response.fileRowCount || 0).toLocaleString() + " row(s) from " + String(response.fileName || "SPX download") + " · " + foundInBatch.toLocaleString() + "/" + batch.length.toLocaleString() + " matched.");
       } catch (error) {
         const message = String(error?.message || error);
-        batch.forEach(value => failedByTn.set(normalizeBatchSearchTn(value), message));
+        // Mark this and every not-yet-run chunk as failed. Never label an
+        // unsubmitted TN as Not Found just because an earlier export failed.
+        for (const pendingBatch of batches.slice(i)) {
+          pendingBatch.forEach(value => failedByTn.set(normalizeBatchSearchTn(value), message));
+        }
         // Keep the SPX tab visible on export/download/parse failure so the
         // actual Export menu and task state can be inspected. Do not retry
         // further chunks against an uncertain SPX page state.
