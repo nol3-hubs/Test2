@@ -1932,7 +1932,8 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
           seenPages.add(pageSignature());
           reportStage("SPX results refreshed. Checking pagination and reading all result pages…");
 
-          const roots=findPagerRoots();
+          let roots=findPagerRoots();
+          const refreshPagerRoots=()=>{roots=findPagerRoots();return roots;};
           const isInPager=el=>roots.some(root=>root===el||root.contains(el));
           const isArrowGlyph=value=>/^(?:>|›|»|→|⟩|⟶)$/.test(String(value||"").trim());
           const isNextControl=el=>{
@@ -1949,6 +1950,9 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
             /(^|\s)(disabled|is-disabled|ant-pagination-disabled)(\s|$)/i.test(controlClass(el))||
             !!el.closest("li")?.classList?.contains("disabled");
           const getNextPageControl=()=>{
+            // SPX replaces the pagination DOM after every page transition.
+            // Refresh roots before resolving the next control or checking disabled state.
+            refreshPagerRoots();
             const controls=[...document.querySelectorAll(controlSelector)].filter(visible);
             const explicit=controls.filter(isNextControl);
             if(explicit.length){
