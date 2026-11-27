@@ -1923,7 +1923,7 @@ async function clickBatchSearchDownloadControl(tabId) {
         const found=new Set();
         for(const root of menuContainers()){
           for(const el of root.querySelectorAll(
-            "[role='menuitem'],[role='option'],button,a,li,.el-dropdown-menu__item,.ant-dropdown-menu-item,[tabindex]"
+            "[role='menuitem'],[role='option'],button,a,li,.el-dropdown-menu__item,.ant-dropdown-menu-item,[tabindex],[class*='item'],span,div"
           )){
             if(!visible(el))continue;
             const text=String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").replace(/\s+/g," ").trim();
@@ -1947,23 +1947,43 @@ async function clickBatchSearchDownloadControl(tabId) {
         await sleep(150);
       }
       const usable=options.filter(item=>!/(template|sample|instruction|import|upload|column setting|setting)/i.test(item.text)&&!disabled(item.el));
-      const exportOptions=usable.filter(item=>/export|download|csv|excel|spreadsheet|all results|current results|search result/i.test(item.normalized));
       const rank=item=>{
         const t=item.normalized;
         if(/export all|download all|all results|search result|batch search/.test(t))return 0;
         if(/csv|excel|spreadsheet/.test(t))return 1;
         if(/export|download/.test(t))return 2;
-        return 3;
+        if(/^all(?: records| results| orders| pages)?$/.test(t))return 3;
+        return 9;
       };
-      exportOptions.sort((a,b)=>rank(a)-rank(b));
-      if(exportOptions.length){
-        const chosen=exportOptions[0];
+      const chooseExportOption=(items,allowAll=false)=>{
+        const candidates=items.filter(item=>
+          !/(template|sample|instruction|import|upload|column setting|setting)/i.test(item.text)&&
+          !disabled(item.el)&&
+          (/export|download|csv|excel|spreadsheet|all results|current results|search result/i.test(item.normalized)||
+            (allowAll&&/^all(?: records| results| orders| pages)?$/.test(item.normalized)))
+        );
+        candidates.sort((a,b)=>rank(a)-rank(b));
+        return candidates[0]||null;
+      };
+      const hasCurrentChoice=usable.some(item=>/current page|current records|current results/i.test(item.normalized));
+      let chosen=chooseExportOption(usable,hasCurrentChoice);
+      if(chosen){
         try{chosen.el.scrollIntoView({block:"center",inline:"nearest"});}catch{}
         chosen.el.click();
+        let selectedText=chosen.text;
+        // Some SPX versions nest CSV/Excel choices under an Export submenu.
+        await sleep(450);
+        const nested=menuOptions().filter(item=>item.text!==chosen.text);
+        const nestedChosen=chooseExportOption(nested,false);
+        if(nestedChosen&&nestedChosen.normalized!==chosen.normalized){
+          try{nestedChosen.el.scrollIntoView({block:"center",inline:"nearest"});}catch{}
+          nestedChosen.el.click();
+          selectedText+=" → "+nestedChosen.text;
+        }
         return {
           clicked:true,trigger:triggerLabel,
-          menuItem:chosen.text.slice(0,120),
-          menuOptions:usable.map(item=>item.text).slice(0,25)
+          menuItem:selectedText.slice(0,180),
+          menuOptions:menuOptions().map(item=>item.text).slice(0,35)
         };
       }
       return {
