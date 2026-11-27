@@ -2382,9 +2382,10 @@ async function parseDownloadedBatchSearchFile(file, requestedTns) {
     const explicitlyNotFound=/not[\s_-]*found|no[\s_-]*(?:match|record|result)|unmatched|no data/i.test(resultText);
     const sourceFields={};
     headers.forEach((header,index)=>{sourceFields[header]=values[index]??"";});
-    // Preserve the row exactly as downloaded, but do not count an explicit
-    // SPX Not Found record as a successful tracking-number match.
-    const record={sourceFields,matchedKeys:explicitlyNotFound?[]:keys};
+    // Preserve the row and its tracking-number key even when the downloaded
+    // SPX result explicitly marks it Not Found. The final output is based on
+    // Assignment Task rows, not on the number of rows returned by SPX.
+    const record={sourceFields,matchedKeys:keys,explicitlyNotFound};
     sourceRows.push(record);
     if(explicitlyNotFound)continue;
     for(const key of keys) {
@@ -2980,142 +2981,156 @@ function batchSearchCsv(rows, headers) {
 }
 async function runBatchSearchExportJob(job) {
   let tabId=null;
-  const allResults=new Map();
   const failedByTn=new Map();
   const downloadedFileNames=[];
   const downloadedRecords=[];
   const sourceHeaders=[];
   let downloadedFileRows=0;
   const rawTns=Array.isArray(job.trackingNumbers)?job.trackingNumbers:[];
-  const tns=[...new Map(rawTns.map(value=>{
-    const original=String(value??"").trim();
-    return [normalizeBatchSearchTn(original),original];
-  }).filter(([key,value])=>key&&value)).values()];
-  const inputByKey=new Map(tns.map(value=>[normalizeBatchSearchTn(value),value]));
+  // Master list: preserve every Assignment Task TN row, including duplicates.
+  const inputRows=rawTns.map(value=>String(value??"").normalize("NFKC").trim().replace(/\s+/g,"")).filter(Boolean);
+  const inputByKey=new Map();
+  const uniqueSearchTns=new Map();
+  for(const inputTn of inputRows) {
+    const key=normalizeBatchSearchTn(inputTn);
+    if(!inputByKey.has(key))inputByKey.set(key,inputTn);
+    if(!/^[A-Z0-9_-]{6,60}$/.test(key)) {
+      if(!failedByTn.has(key))failedByTn.set(key,"Tracking number is not in a supported SPX format.");
+      continue;
+    }
+    if(!uniqueSearchTns.has(key))uniqueSearchTns.set(key,inputTn);
+  }
+  const tns=[...uniqueSearchTns.values()];
   const sendProgress=message=>sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
     kind:"batch-search-result",message,selectedDate:job.selectedDate||""
   });
 
   try {
-    if(!tns.length)throw new Error("No valid SPX Tracking Numbers were supplied from the Assignment Task export.");
-    if(tns.length>50000)throw new Error("Batch Search is limited to 50,000 unique tracking numbers per run.");
-    job.startedAt=Date.now();
-    sendProgress("Opening SPX Order Tracking for "+tns.length.toLocaleString()+" unique tracking number(s)…");
-    tabId=await createDedicatedSpxTab();
-    job.spxTabId=tabId;
-    await ensureParcelOrderTrackingRoute(tabId);
+    if(!inputRows.length)throw new Error("The Assignment Task SPX Tracking Number column contains no non-empty rows.");
+    if(tns.length>50000)throw new Error("Batch Search is limited to 50,000 unique tracking numbers per run. The Assignment Task rows have been retained; split the input into smaller runs.");
+    sendProgress(
+      "Loaded "+inputRows.length.toLocaleString()+" Assignment Task tracking-number row(s) · "+
+      tns.length.toLocaleString()+" unique valid SPX lookup(s)"+(failedByTn.size?" · "+failedByTn.size.toLocaleString()+" invalid row(s) will be retained as Search Failed":"")+"."
+    );
 
-    const batches=[];
-    for(let i=0;i<tns.length;i+=SPX_BATCH_SEARCH_SIZE)batches.push(tns.slice(i,i+SPX_BATCH_SEARCH_SIZE));
-    for(let i=0;i<batches.length;i++) {
-      if(job.cancelled)throw new Error("Batch Search was cancelled.");
-      const batch=batches[i];
-      const batchKeys=new Set(batch.map(normalizeBatchSearchTn));
-      sendProgress("SPX Batch Search "+(i+1)+"/"+batches.length+" · submitting "+batch.length.toLocaleString()+" tracking number(s)…");
-      try {
-        const response=await executeSpxBatchSearch(tabId,batch,job);
-        if(!response||!Array.isArray(response.results))throw new Error("SPX downloaded Batch Search file returned an invalid result payload.");
-        if(response.fileName)downloadedFileNames.push(String(response.fileName));
-        downloadedFileRows+=Math.max(0,Number(response.fileRowCount||0));
-        for(const header of (Array.isArray(response.sourceHeaders)?response.sourceHeaders:[])) {
-          if(!sourceHeaders.includes(String(header)))sourceHeaders.push(String(header));
+    if(tns.length) {
+      job.startedAt=Date.now();
+      sendProgress("Opening SPX Order Tracking for "+tns.length.toLocaleString()+" unique tracking number(s)…");
+      tabId=await createDedicatedSpxTab();
+      job.spxTabId=tabId;
+      await ensureParcelOrderTrackingRoute(tabId);
+
+      const batches=[];
+      for(let i=0;i<tns.length;i+=SPX_BATCH_SEARCH_SIZE)batches.push(tns.slice(i,i+SPX_BATCH_SEARCH_SIZE));
+      for(let i=0;i<batches.length;i++) {
+        if(job.cancelled)throw new Error("Batch Search was cancelled.");
+        const batch=batches[i];
+        const batchKeys=new Set(batch.map(normalizeBatchSearchTn));
+        sendProgress(
+          "SPX Batch Search "+(i+1)+"/"+batches.length+" · searching "+
+          batch.length.toLocaleString()+" unique TN(s) from the Assignment Task master list…"
+        );
+        try {
+          const response=await executeSpxBatchSearch(tabId,batch,job);
+          if(!response||!Array.isArray(response.results)||!Array.isArray(response.sourceRows)) {
+            throw new Error("SPX downloaded Batch Search file returned an invalid result payload.");
+          }
+          if(response.fileName)downloadedFileNames.push(String(response.fileName));
+          downloadedFileRows+=Math.max(0,Number(response.fileRowCount||0));
+          for(const header of (Array.isArray(response.sourceHeaders)?response.sourceHeaders:[])) {
+            if(!sourceHeaders.includes(String(header)))sourceHeaders.push(String(header));
+          }
+          for(const row of response.sourceRows) {
+            downloadedRecords.push({
+              sourceFields:row?.sourceFields&&typeof row.sourceFields==="object"?row.sourceFields:{},
+              matchedKeys:Array.isArray(row?.matchedKeys)
+                ?[...new Set(row.matchedKeys.map(normalizeBatchSearchTn).filter(key=>batchKeys.has(key)))]
+                :[],
+              explicitlyNotFound:row?.explicitlyNotFound===true
+            });
+          }
+          const foundInBatch=response.results.length;
+          sendProgress(
+            "Batch "+(i+1)+"/"+batches.length+" complete · read "+
+            Number(response.fileRowCount||0).toLocaleString()+" downloaded row(s) from "+
+            String(response.fileName||"SPX export")+" · "+foundInBatch.toLocaleString()+
+            " matched result key(s)."
+          );
+        } catch(error) {
+          const message=String(error?.message||error);
+          for(const pendingBatch of batches.slice(i)) {
+            for(const value of pendingBatch)failedByTn.set(normalizeBatchSearchTn(value),message);
+          }
+          job.keepSpxTabOpen=true;
+          console.error("SPX Batch Search chunk failed:",error);
+          sendProgress("Batch "+(i+1)+"/"+batches.length+" failed · "+message+" · SPX tab left open for inspection.");
+          break;
         }
-        for(const row of (Array.isArray(response.sourceRows)?response.sourceRows:[])) {
-          downloadedRecords.push({
-            sourceFields:row?.sourceFields&&typeof row.sourceFields==="object"?row.sourceFields:{},
-            matchedKeys:Array.isArray(row?.matchedKeys)?row.matchedKeys.map(normalizeBatchSearchTn).filter(key=>batchKeys.has(key)):[]
-          });
-        }
-        for(const item of response.results) {
-          const key=normalizeBatchSearchTn(item?.matchedTN||item?.tn||"");
-          if(!key||!batchKeys.has(key))continue;
-          allResults.set(key,{
-            tn:String(item.tn||item.matchedTN||"").trim(),
-            matchedTN:String(item.matchedTN||item.tn||"").trim(),
-            sourceFields:item.sourceFields&&typeof item.sourceFields==="object"?item.sourceFields:{},
-            status:String(item.status||"").trim()
-          });
-        }
-        const foundInBatch=batch.filter(value=>allResults.has(normalizeBatchSearchTn(value))).length;
-        sendProgress("Batch "+(i+1)+"/"+batches.length+" complete · read "+Number(response.fileRowCount||0).toLocaleString()+" row(s) from "+String(response.fileName||"SPX download")+" · "+foundInBatch.toLocaleString()+"/"+batch.length.toLocaleString()+" matched.");
-      } catch(error) {
-        const message=String(error?.message||error);
-        for(const pendingBatch of batches.slice(i))pendingBatch.forEach(value=>failedByTn.set(normalizeBatchSearchTn(value),message));
-        job.keepSpxTabOpen=true;
-        console.error("SPX Batch Search chunk failed:",error);
-        sendProgress("Batch "+(i+1)+"/"+batches.length+" failed · "+message+" · SPX tab left open for inspection.");
-        break;
+      }
+    } else {
+      sendProgress("No valid tracking numbers to submit to SPX. Keeping every non-empty Assignment Task row in the result as Search Failed.");
+    }
+
+    // Map each downloaded SPX record to every Assignment Task tracking number
+    // it identifies (matched, SPX, SLS, or 3PL). The input list controls output
+    // row count and order; SPX cannot add or remove master-list rows.
+    const recordByKey=new Map();
+    for(const record of downloadedRecords) {
+      for(const key of record.matchedKeys||[]) {
+        if(!recordByKey.has(key))recordByKey.set(key,record);
       }
     }
 
-    const foundKeys=new Set();
-    const outputRows=[];
-    const inputHeader=sourceHeaders.some(header=>normalizeBatchSearchTn(header)==="INPUTTRACKINGNUMBER")
-      ?"Requested Tracking Number":"Input Tracking Number";
+    const inputHeader="Assignment Task Tracking Number";
     const resultHeader=sourceHeaders.some(header=>normalizeBatchSearchTn(header)==="SEARCHRESULT")
       ?"Badoc Search Result":"Search Result";
     const errorHeader=sourceHeaders.some(header=>normalizeBatchSearchTn(header)==="ERROR")
       ?"Badoc Error":"Error";
-    const outputHeaders=[inputHeader,...sourceHeaders.filter(header=>normalizeBatchSearchTn(header)!==normalizeBatchSearchTn(inputHeader)),resultHeader,errorHeader];
+    const outputHeaders=[inputHeader,...sourceHeaders,resultHeader,errorHeader];
+    const outputRows=[];
+    let matchedCount=0,notFoundCount=0,failedCount=0;
 
-    // Keep every row and every column from every SPX download. Do not collapse
-    // the export to the old eight-column summary or drop rows that do not match.
-    for(const record of downloadedRecords) {
-      const keys=[...new Set(record.matchedKeys||[])];
-      if(!keys.length) {
-        const row={};
-        row[inputHeader]="";
-        for(const header of sourceHeaders)row[header]=String(record.sourceFields?.[header]??"");
-        row[resultHeader]="Downloaded Row";
-        row[errorHeader]="";
-        outputRows.push(row);
-        continue;
-      }
-      for(const key of keys) {
-        foundKeys.add(key);
-        const row={};
-        row[inputHeader]=inputByKey.get(key)||key;
-        for(const header of sourceHeaders)row[header]=String(record.sourceFields?.[header]??"");
-        row[resultHeader]="Found";
-        row[errorHeader]="";
-        outputRows.push(row);
-      }
-    }
-
-    for(const inputTn of tns) {
+    // Exactly one output row for each non-empty Assignment Task source row.
+    // Duplicate tracking numbers remain duplicated and in the same order.
+    for(const inputTn of inputRows) {
       const key=normalizeBatchSearchTn(inputTn);
-      if(foundKeys.has(key))continue;
-      const error=failedByTn.get(key)||"";
+      const record=recordByKey.get(key)||null;
       const row={};
       row[inputHeader]=inputTn;
-      for(const header of sourceHeaders)row[header]="";
-      row[resultHeader]=error?"Search Failed":"Not Found";
+      for(const header of sourceHeaders)row[header]=String(record?.sourceFields?.[header]??"");
+      const error=failedByTn.get(key)||"";
+      const explicitNotFound=record?.explicitlyNotFound===true;
+      let result="Not Found";
+      if(error) { result="Search Failed"; failedCount++; }
+      else if(record&&!explicitNotFound) { result="Found"; matchedCount++; }
+      else { notFoundCount++; }
+      row[resultHeader]=result;
       row[errorHeader]=error;
       outputRows.push(row);
     }
 
-    const matchedCount=tns.filter(value=>foundKeys.has(normalizeBatchSearchTn(value))).length;
-    const failedCount=tns.filter(value=>failedByTn.has(normalizeBatchSearchTn(value))&&!foundKeys.has(normalizeBatchSearchTn(value))).length;
-    const notFoundCount=tns.length-matchedCount-failedCount;
-
     if(!sourceHeaders.length) {
-      sourceHeaders.push("Matched Tracking Number","SPX TN","SLS TN","Third TN","Status");
-      outputHeaders.splice(1,0,...sourceHeaders);
+      sourceHeaders.push("SPX Tracking Number","SLS Tracking Number","3PL Tracking Number","Status");
+      const insertAt=1;
+      outputHeaders.splice(insertAt,0,...sourceHeaders);
     }
     sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_CSV",{
       selectedDate:String(job.selectedDate||""),
       sourceTaskId:String(job.sourceTaskId||""),
       csvText:batchSearchCsv(outputRows,outputHeaders),
       fileName:"batch_search_result.csv",
-      inputCount:tns.length,
-      chunkCount:batches.length,
+      inputCount:inputRows.length,
+      uniqueInputCount:tns.length,
+      duplicateInputCount:inputRows.length-new Set(inputRows.map(normalizeBatchSearchTn)).size,
+      invalidInputCount:[...new Set(inputRows.map(normalizeBatchSearchTn))].filter(key=>failedByTn.has(key)).length,
+      chunkCount:tns.length?Math.ceil(tns.length/SPX_BATCH_SEARCH_SIZE):0,
       downloadedFileName:downloadedFileNames.join(" | "),
       downloadedFileRows,
       rowCount:outputRows.length,
       matchedCount,
       notFoundCount,
       failedCount,
-      failedBatchCount:failedByTn.size?[...batches.keys()].filter(i=>batches[i].some(value=>failedByTn.has(normalizeBatchSearchTn(value)))).length:0
+      failedBatchCount:failedByTn.size?[...new Set([...failedByTn.keys()])].filter(key=>tns.some(value=>normalizeBatchSearchTn(value)===key)).length:0
     });
   } catch(error) {
     if(tabId)job.keepSpxTabOpen=true;
@@ -4335,9 +4350,9 @@ chrome.runtime.onConnect.addListener(port => {
     }
 
     if (type === "BADOC_START_BATCH_SEARCH_EXPORT") {
-      const trackingNumbers = [...new Set((Array.isArray(message?.trackingNumbers) ? message.trackingNumbers : [])
-        .map(value => String(value ?? "").trim())
-        .filter(value => normalizeBatchSearchTn(value) && /^[A-Za-z0-9_-]{6,60}$/.test(normalizeBatchSearchTn(value))))];
+      const trackingNumbers = (Array.isArray(message?.trackingNumbers) ? message.trackingNumbers : [])
+        .map(value => String(value ?? "").normalize("NFKC").trim().replace(/\s+/g, ""))
+        .filter(Boolean);
       if (!trackingNumbers.length) {
         sendToPort(port, "BADOC_SPX_BATCH_SEARCH_ERROR", {
           kind: "batch-search-result",

@@ -152,16 +152,20 @@
         if(!key){
           throw new Error("The Assignment Task CSV has no recognizable SPX Tracking Number column. Available columns: "+headers.join(", "));
         }
-        const unique=new Map();
+        // Assignment Task is the master input: retain every non-empty tracking
+        // number in source-row order, including duplicates and SPEPH-prefixed IDs.
+        // The extension deduplicates only the SPX lookup requests, not the output.
+        const numbers=[];
         let invalid=0;
         rows.forEach(row=>{
-          const value=String(row?.[key]??"").trim().replace(/\s+/g,"").toUpperCase();
+          const value=String(row?.[key]??"").normalize("NFKC").trim().replace(/\s+/g,"");
           if(!value)return;
-          if(!/^[A-Z0-9_-]{6,60}$/.test(value)){invalid++;return;}
-          if(!unique.has(value))unique.set(value,value);
+          numbers.push(value);
+          if(!/^[A-Z0-9_-]{6,60}$/i.test(value))invalid++;
         });
-        if(!unique.size)throw new Error("No usable SPX Tracking Numbers were found in the Assignment Task CSV column "+key+".");
-        return {numbers:[...unique.values()],column:key,invalid};
+        if(!numbers.length)throw new Error("No non-empty SPX Tracking Numbers were found in the Assignment Task column "+key+".");
+        const uniqueCount=new Set(numbers.map(value=>value.toUpperCase())).size;
+        return {numbers,column:key,invalid,rowCount:numbers.length,uniqueCount};
       }
 
       window.addEventListener("message",event=>{
@@ -245,7 +249,7 @@
               button.textContent="⧉ Batch Search Result ("+rows.length.toLocaleString()+")";
               setStatus(button,summary,meta.failedCount?"warn":"success");
             }
-            const batchDetails=[["Input TNs",meta.inputCount.toLocaleString()],["Downloaded file",meta.downloadedFileName||"SPX export"],["File rows read",meta.downloadedFileRows.toLocaleString()],["Rows returned",rows.length.toLocaleString()],["Found",meta.matchedCount.toLocaleString()],["Not found",meta.notFoundCount.toLocaleString()],["Failed",meta.failedCount.toLocaleString()],["Failed batches",meta.failedBatchCount.toLocaleString()],["SPX search batches",meta.chunkCount.toLocaleString()]];
+            const batchDetails=[["Assignment Task TN rows",meta.inputCount.toLocaleString()],["Downloaded file",meta.downloadedFileName||"SPX export"],["File rows read",meta.downloadedFileRows.toLocaleString()],["Rows returned",rows.length.toLocaleString()],["Found",meta.matchedCount.toLocaleString()],["Not found",meta.notFoundCount.toLocaleString()],["Failed",meta.failedCount.toLocaleString()],["Failed batches",meta.failedBatchCount.toLocaleString()],["SPX search batches",meta.chunkCount.toLocaleString()]];
             if(meta.failedCount)batchDetails.push(["Failure reason",failureReason.slice(0,500)]);
             window.__badocOperationModalFinish?.(
               meta.failedCount?"Batch Search Result Completed with Warnings":"Batch Search Result Loaded",
@@ -518,7 +522,7 @@
             const resultMeta=window.__badocBatchSearchResultMeta||{};
             const today=assignmentTaskReportDate();
             if(resultRows.length&&resultMeta.selectedDate===today){
-              await copyText(button,rowsToTsv(resultRows),"Copied "+resultRows.length.toLocaleString()+" Batch Search result row(s) to the clipboard.");
+              await copyText(button,batchSearchRowsToTsv(resultRows),"Copied "+resultRows.length.toLocaleString()+" Batch Search result row(s) to the clipboard. Tracking IDs are preserved as text.");
             }else if(batchSearchExportPending){
               setStatus(button,"SPX Batch Search is already running. Wait for the export result.","warn");
             }else{
@@ -544,10 +548,10 @@
               batchSearchReportButton=button;
               window.__badocOperationModalStart?.(
                 "Loading Batch Search Result",
-                "Submitting "+extracted.numbers.length.toLocaleString()+" unique SPX Tracking Number(s) to SPX Batch Search. Large lists will run in multiple batches…"
+                "Reading "+extracted.numbers.length.toLocaleString()+" Assignment Task row(s); searching "+extracted.uniqueCount.toLocaleString()+" unique SPX Tracking Number(s). Every source row will be included in the result…"
               );
               button.textContent="Searching SPX…";
-              setStatus(button,"Using "+extracted.numbers.length.toLocaleString()+" unique SPX Tracking Number(s) from Assignment Task column "+extracted.column+". SPX supports 3,000 per search; larger lists will run in chunks.","info");
+              setStatus(button,"Using all "+extracted.numbers.length.toLocaleString()+" non-empty Assignment Task tracking-number row(s) from column "+extracted.column+" ("+extracted.uniqueCount.toLocaleString()+" unique lookup(s)). Duplicate rows will remain in the output.","info");
               armBatchSearchReportWatchdog(15000,"The Batch Search command was not forwarded to the extension within 15 seconds. Reload the extension and refresh Badoc Hub.");
               if(typeof postBadocSpxMessage!=="function"){
                 finishBatchSearchReportError("SPX bridge is not available on this dashboard page.");
