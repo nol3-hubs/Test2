@@ -1983,446 +1983,215 @@ async function parseDownloadedBatchSearchFile(file, requestedTns) {
 }
 
 async function executeSpxBatchSearch(tabId, trackingNumbers) {
+  await installBatchSearchFileCapture(tabId);
   let injectionResults;
   try {
     injectionResults = await chrome.scripting.executeScript({
       target: { tabId },
       args: [trackingNumbers],
-      func: async (tns) => {
+      func: async tns => {
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
         const visible = el => !!el && !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
         const clean = value => String(value || "").trim().toUpperCase().replace(/\s+/g, "");
         let stage = "initialize";
-        // Stream progress from the SPX tab back to the Test2 dashboard while
-        // the injected search routine is waiting on SPA rendering/results.
         const reportStage = message => {
           try {
-            if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {
+            if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
               const pending = chrome.runtime.sendMessage({ type: "BADOC_BATCH_SEARCH_STAGE", message: String(message || "") });
-              if (pending && typeof pending.catch === "function") pending.catch(() => {});
+              if (pending?.catch) pending.catch(() => {});
             }
           } catch {}
         };
-        const normalizeTextForDiagnostics = value => String(value || "").normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+        const label = el => [
+          el?.innerText,el?.textContent,el?.getAttribute?.("aria-label"),
+          el?.getAttribute?.("title"),el?.getAttribute?.("data-testid")
+        ].filter(Boolean).join(" ").normalize("NFKC").toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g,"").replace(/[^a-z0-9]+/g,"");
+        const clickables = () => [...document.querySelectorAll(
+          "button,[role='button'],a,[tabindex],.el-button,.ant-btn,.ssc-button,[class*='button']"
+        )].filter(visible);
+        const downloadControls = () => clickables().filter(el => {
+          const text=label(el);
+          return /download|export|csv|excel|spreadsheet/.test(text) &&
+            !/template|sample|instruction|import|upload/.test(text) &&
+            !el.disabled && el.getAttribute("aria-disabled")!=="true";
+        });
+        const findAction = action => {
+          const controls=clickables();
+          return controls.find(el => label(el).includes(action) && !el.disabled && el.getAttribute("aria-disabled")!=="true") || null;
+        };
+        const findTextarea = () => [...document.querySelectorAll("textarea")].find(el =>
+          /SPX Tracking Number/i.test(el.placeholder || "") && visible(el)
+        );
+        const busy = () => [...document.querySelectorAll(
+          ".el-loading-mask,.el-loading-spinner,.ant-spin-spinning,.ssc-loading,[aria-busy=true],[data-loading=true]"
+        )].some(visible);
+        const tableRowCount = () => [...document.querySelectorAll("table tbody")].reduce((sum,tbody)=>sum+tbody.querySelectorAll("tr").length,0);
         const diagnostics = () => ({
-          url: String(location.href || ""),
-          title: String(document.title || ""),
-          readyState: document.readyState,
-          textareaCount: document.querySelectorAll("textarea").length,
-          visibleTextareas: [...document.querySelectorAll("textarea")].filter(visible).map(el => String(el.placeholder || "").slice(0, 160)),
-          visibleButtons: [...document.querySelectorAll("button,[role='button'],.ssc-button,[class*=\'ssc-button\']")].filter(visible).map(el => String(el.innerText || el.textContent || "").trim()).filter(Boolean).slice(0, 60),
-          batchSearchCandidates: [...document.querySelectorAll("button,[role='button'],a,[tabindex],.ssc-button,[class*=\'ssc-button\'],span,div")].filter(el => visible(el) && normalizeTextForDiagnostics(el.innerText || el.textContent).includes("batchsearch")).slice(0, 10).map(el => ({tag:el.tagName, text:String(el.innerText || el.textContent || "").trim().slice(0,100), className:String(el.className || "").slice(0,120), outerHTML:String(el.outerHTML || "").slice(0,250)})),
-          tables: [...document.querySelectorAll("table")].map((table, i) => ({
-            index: i,
-            headers: [...table.querySelectorAll("thead th")].map(th => String(th.innerText || "").trim()).filter(Boolean).slice(0, 70),
-            rows: table.querySelectorAll("tbody tr").length
-          })).slice(0, 10)
+          url:String(location.href||""),
+          title:String(document.title||""),
+          readyState:document.readyState,
+          visibleTextareas:[...document.querySelectorAll("textarea")].filter(visible).map(el=>String(el.placeholder||"").slice(0,120)),
+          visibleButtons:clickables().map(el=>String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").trim()).filter(Boolean).slice(0,60),
+          downloadControls:downloadControls().map(el=>({label:String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").trim(),className:String(el.className||"").slice(0,100)})).slice(0,20),
+          resultTableRows:tableRowCount()
         });
 
         try {
-          stage = "validate tracking numbers";
-          const wanted = new Set((tns || []).map(clean).filter(Boolean));
-          if (!wanted.size) return { results: [], message: "No TNs in batch.", diagnostics: diagnostics() };
-
-          const normalizeActionLabel = value => String(value || "")
-          .normalize("NFKC")
-          .replace(/[\u200B-\u200D\uFEFF]/g, "")
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "");
-        const labelVariants = el => [
-          el?.innerText,
-          el?.textContent,
-          el?.getAttribute?.("aria-label"),
-          el?.getAttribute?.("title")
-        ].map(normalizeActionLabel).filter(Boolean);
-        const exactAction = (el, action) => visible(el) && labelVariants(el).includes(action);
-        // Prefer exact labels, then use a substring fallback for SPX variants that
-        // append icons, hidden labels, or a count to the Batch Search button.
-        const containsAction = (el, action) => visible(el) && labelVariants(el).some(label => label.includes(action));
-        const isClickableCandidate = el => /^(BUTTON|A)$/.test(el.tagName) ||
-          el.getAttribute?.("role") === "button" || /(^|\s)(ssc-button|ssc-btn|el-button|ant-btn)(\s|$)/i.test(String(el.className || "")) ||
-          el.hasAttribute?.("tabindex");
-        const findActionControl = (action) => {
-          const selector = "button,[role='button'],a.el-button,.el-button,.ant-btn,[tabindex],.ssc-button,[class*=\'ssc-button\']";
-          const candidates = [...document.querySelectorAll(selector)].filter(visible);
-          const exact = candidates.filter(el => exactAction(el, action));
-          if (exact.length) {
-            exact.sort((a,b) => (isClickableCandidate(b) ? 1 : 0) - (isClickableCandidate(a) ? 1 : 0));
-            return exact[0];
+          stage="validate tracking numbers";
+          const wanted=[...new Set((tns||[]).map(clean).filter(Boolean))];
+          if(!wanted.length)throw new Error("No usable tracking numbers were supplied.");
+          stage="find or open Batch Search dialog";
+          reportStage("SPX Order Tracking loaded. Opening Batch Search…");
+          let input=findTextarea();
+          if(!input){
+            const deadline=Date.now()+20000;
+            let button=null;
+            while(Date.now()<deadline&&!button){
+              button=findAction("batchsearch");
+              if(!button)await sleep(250);
+            }
+            if(!button)throw new Error("Could not find the Batch Search control on SPX Order Tracking.");
+            try{button.scrollIntoView({block:"center",inline:"nearest"});}catch{}
+            button.click();
+            const inputDeadline=Date.now()+15000;
+            while(Date.now()<inputDeadline&&!input){await sleep(250);input=findTextarea();}
           }
-          const partial = candidates.filter(el => isClickableCandidate(el) && containsAction(el, action));
-          partial.sort((a,b) => {
-            const la = labelVariants(a).filter(v => v.includes(action)).map(v => v.length);
-            const lb = labelVariants(b).filter(v => v.includes(action)).map(v => v.length);
-            return (Math.min(...la, 9999)) - (Math.min(...lb, 9999));
-          });
-          if (partial.length) return partial[0];
-          const labelNodes = [...document.querySelectorAll("span,div,a")].filter(el =>
-            visible(el) && normalizeActionLabel(el.innerText || el.textContent) === action
-          );
-          for (const node of labelNodes) {
-            const target = node.closest("button,[role='button'],a.el-button,.el-button,.ant-btn,[tabindex],.ssc-button,[class*=\'ssc-button\']");
-            if (target && visible(target)) return target;
-            if (typeof node.click === "function") return node;
-          }
-          return null;
-        };
-        const findTextarea = () => [...document.querySelectorAll("textarea")]
-            .find(el => /SPX Tracking Number/i.test(el.placeholder || "") && visible(el));
-          stage = "find or open Batch Search dialog";
-          reportStage("SPX Order Tracking loaded. Looking for the Batch Search control…");
-          let textarea = findTextarea();
-          if (!textarea) {
-            const buttonDeadline = Date.now() + 15000;
-            let batchButton = null;
-            const buttonSelectors = "button,[role='button'],a.el-button,.el-button,.ant-btn,[tabindex],.ssc-button,[class*=\'ssc-button\']";
-            // SPX Order Tracking uses this dedicated class on its Batch Search control.
-            // Target it first; generic label matching is only a fallback.
-            const directSelector = "button.batch-search-button, .batch-search-button";
-            const findDirectBatchSearchControl = () => {
-              const direct = [...document.querySelectorAll(directSelector)];
-              // Never click a hidden placeholder. Only accept an actually visible,
-              // enabled control and reject aria-disabled controls.
-              return direct.find(el => visible(el) && !el.disabled && el.getAttribute("aria-disabled") !== "true") || null;
-            };
-            const findBatchByVisibleLabel = () => {
-              const candidates = [...document.querySelectorAll(buttonSelectors)].filter(visible);
-              return candidates.find(el => !el.disabled && el.getAttribute("aria-disabled") !== "true" &&
-                labelVariants(el).some(label => label.includes("batch") && label.includes("search"))) || null;
-            };
-            let lastButtonNotice = 0;
-            while (Date.now() < buttonDeadline && !batchButton) {
-              batchButton = findDirectBatchSearchControl() || findBatchByVisibleLabel() || findActionControl("batchsearch");
-              if (!batchButton) {
-                if (Date.now() - lastButtonNotice >= 3000) {
-                  reportStage("Waiting for SPX to render the Batch Search control…");
-                  lastButtonNotice = Date.now();
-                }
-                await sleep(250);
-              }
-            }
-            if (!batchButton) {
-              const observed = [...document.querySelectorAll(buttonSelectors)]
-                .filter(visible)
-                .map(el => ({ text: String(el.innerText || el.textContent || "").trim().slice(0, 100), normalized: labelVariants(el), tag: el.tagName, className: String(el.className || "").slice(0, 100), outerHTML: String(el.outerHTML || "").slice(0, 220) }))
-                .filter(x => x.text).slice(0, 35);
-              const directControls = [...document.querySelectorAll(directSelector)].map(el => ({
-                visible: visible(el), disabled: !!el.disabled, ariaDisabled: el.getAttribute("aria-disabled"),
-                text: String(el.innerText || el.textContent || "").trim().slice(0, 100),
-                className: String(el.className || "").slice(0, 160),
-                outerHTML: String(el.outerHTML || "").slice(0, 320)
-              })).slice(0, 8);
-              throw new Error("Could not find a visible, enabled Batch Search control. Page URL=" + String(location.href || "") +
-                "; title=" + String(document.title || "") + "; direct controls=" + JSON.stringify(directControls) +
-                "; visible controls=" + JSON.stringify(observed));
-            }
-            reportStage("Batch Search control found. Opening its tracking-number input…");
-            try { batchButton.scrollIntoView({ block: "center", inline: "nearest" }); } catch {}
-            batchButton.click();
-            const textareaDeadline = Date.now() + 15000;
-            while (Date.now() < textareaDeadline && !textarea) {
-              await sleep(250);
-              textarea = findTextarea();
-            }
-          }
-          if (!textarea) throw new Error("The Batch Search tracking-number textarea did not open in the temporary SPX tab.");
-          reportStage("Batch Search input is ready. Loading " + wanted.size.toLocaleString() + " tracking number(s)…");
+          if(!input)throw new Error("The Batch Search tracking-number input did not open.");
+          stage="populate Batch Search textarea";
+          const setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,"value")?.set;
+          if(setter)setter.call(input,wanted.join("\n"));else input.value=wanted.join("\n");
+          input.dispatchEvent(new Event("input",{bubbles:true}));
+          input.dispatchEvent(new Event("change",{bubbles:true}));
+          await sleep(300);
+          if(!String(input.value||"").trim())throw new Error("Tracking numbers did not remain in the Batch Search input.");
 
-          stage = "populate Batch Search textarea";
-          const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-          if (setter) setter.call(textarea, tns.join("\n")); else textarea.value = tns.join("\n");
-          textarea.dispatchEvent(new Event("input", { bubbles: true }));
-          textarea.dispatchEvent(new Event("change", { bubbles: true }));
-          await sleep(250);
-          if (!String(textarea.value || "").trim()) throw new Error("TN list did not remain in the Batch Search textarea after input events.");
-
-          stage = "locate Submit button";
-          let submitButton = null;
-          for (let ancestor = textarea.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
-            submitButton = [...ancestor.querySelectorAll("button,[role='button'],.ssc-button,[class*=\'ssc-button\']")]
-              .find(el => exactAction(el, "submit")) || null;
-            if (submitButton) break;
+          stage="locate Submit button";
+          let submit=null;
+          for(let ancestor=input.parentElement;ancestor&&ancestor!==document.body;ancestor=ancestor.parentElement){
+            submit=[...ancestor.querySelectorAll("button,[role='button'],.ssc-button,[class*='button']")]
+              .find(el=>visible(el)&&label(el)==="submit"&&!el.disabled) || null;
+            if(submit)break;
           }
-          if (!submitButton) submitButton = findActionControl("submit");
-          if (!submitButton) throw new Error("Could not locate the visible Submit button for Batch Search.");
-          reportStage("Tracking numbers are loaded. Preparing the SPX search…");
+          if(!submit)submit=findAction("submit");
+          if(!submit)throw new Error("Could not locate the Submit button in Batch Search.");
 
-          const getPage = () => [...document.querySelectorAll("table tbody tr")].flatMap(tr => {
-            const cells = [...tr.querySelectorAll("td")];
-            const cellText = cells.map(cell => String(cell.innerText || cell.textContent || "").replace(/\s+/g, " ").trim());
-            // Match requested TNs against every cell; SPX can reorder or prepend columns.
-            const table = tr.closest("table");
-            const headerRows = [...(table?.querySelectorAll("thead tr") || [])];
-            const headerCells = headerRows.length ? [...headerRows[headerRows.length - 1].querySelectorAll("th,td")] : [];
-            const headers = headerCells.map(th => String(th.innerText || th.textContent || "")
-              .normalize("NFKC").replace(/\s+/g, " ").trim().toUpperCase());
-            const statusIndex = headers.findIndex(h => /^(ORDER STATUS|PARCEL STATUS|PARCEL ORDER STATUS|ORDER\/PARCEL STATUS|STATUS)$/.test(h));
-            let status = statusIndex >= 0 && statusIndex < cellText.length ? cellText[statusIndex] : "";
-            const isPlausibleStatus = value => {
-              const v = String(value || "").trim();
-              if (!v || v === "-" || /^(VIEW|POUCH)$/i.test(v)) return false;
-              // SPX return-flow statuses are explicit status tokens. Never infer a status from Size Type.
-              return /^(Return_LMHub_[A-Za-z0-9_]+|[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)+)$/.test(v);
-            };
-            if (!isPlausibleStatus(status)) {
-              // Some SPX table layouts render a header row with an extra selection/settings cell.
-              // Resolve only by finding an actual status-shaped value in this row; never use Pouch.
-              status = cellText.find(isPlausibleStatus) || "";
-            }
-            const matches = [...new Set(cellText.map(clean).filter(v => v && wanted.has(v)))];
-            const identifiers = cellText.filter(v => /^(PH[A-Z0-9]{8,}|[A-Z0-9]{10,})$/i.test(v));
-            const spxTN = identifiers[0] || "";
-            const slsTN = identifiers[1] || "";
-            const thirdTN = identifiers[2] || "";
-            return matches.map(matchedTN => ({ tn: matchedTN, matchedTN, spxTN, slsTN, thirdTN, status }));
-          // A tracking-number match is valid even when SPX changes the status
-          // label/column. Do not discard the entire row just because status
-          // text is blank or uses a simple label such as Delivered/OnHold.
-          }).filter(r => r.matchedTN);
-          const signature = () => [...document.querySelectorAll("table tbody tr")]
-            .map(tr => String(tr.innerText || "").replace(/\\s+/g, " ").trim()).join("\\n");
-          const controlSelector = "button,a,[role='button'],[tabindex],li,[data-page]";
-          const controlText = el => String(
-            el?.innerText || el?.textContent || el?.getAttribute?.("aria-label") ||
-            el?.getAttribute?.("title") || ""
-          ).replace(/\s+/g," ").trim();
-          const controlClass = el => String(el?.className || "").toLowerCase();
-          const controlLabel = el => normalizeActionLabel([
-            el?.innerText,el?.textContent,el?.getAttribute?.("aria-label"),
-            el?.getAttribute?.("title"),el?.getAttribute?.("data-testid"),
-            el?.getAttribute?.("data-tooltip")
-          ].filter(Boolean).join(" "));
-          const numericControl = el => /^\d+$/.test(controlText(el));
-          const explicitPaginationRoots = () => [
-            ...document.querySelectorAll(
-              ".el-pagination,.ant-pagination,[class*='pagination'],[class*='pager'],[data-testid*='pagination'],nav[aria-label*='page' i]"
-            )
-          ].filter(visible);
-          const findPagerRoots = () => {
-            const roots = new Set(explicitPaginationRoots());
-            const controls = [...document.querySelectorAll(controlSelector)].filter(visible);
-            const hasNextSignal = el => {
-              const label = controlLabel(el);
-              const cls = controlClass(el);
-              const text = controlText(el);
-              const icon=el.querySelector?.("svg,[class*='right'],[class*='next'],[aria-label*='right' i]");
-              const iconSignal=icon&&/right|next|chevron|arrow/.test(controlClass(icon)+" "+controlLabel(icon));
-              return /next|forward|paginationnext|btnnext|pagenext|chevronright|arrowright|iconright/.test(label+" "+cls) ||
-                /^(?:>|›|»|→|⟩|⟶)$/.test(text) || !!iconSignal;
-            };
-            for (const control of controls) {
-              if (!hasNextSignal(control) && !/pagination|pager|page-item|page-link/.test(controlClass(control))) continue;
-              let parent = control.parentElement;
-              for (let depth=0; parent && parent!==document.body && depth<7; depth++,parent=parent.parentElement) {
-                if (!visible(parent)) continue;
-                const descendants=[...parent.querySelectorAll(controlSelector)].filter(visible);
-                if (descendants.length<2 || descendants.length>50) continue;
-                const numberCount=descendants.filter(numericControl).length;
-                const classes=controlClass(parent);
-                if (numberCount>=1 || /pagination|pager|page-nav/.test(classes)) roots.add(parent);
-              }
-            }
-            return [...roots].filter(root=>visible(root));
-          };
-          const pagerControls = root => [...root.querySelectorAll(controlSelector)].filter(visible);
-          const paginationSnapshot = () => findPagerRoots().map(root => {
-            const controls=pagerControls(root).map(el=>({
-              text:controlText(el).slice(0,24),
-              label:el.getAttribute("aria-label")||"",
-              title:el.getAttribute("title")||"",
-              cls:controlClass(el).slice(0,90),
-              disabled:!!el.disabled || el.getAttribute("aria-disabled")==="true"
-            })).slice(0,40);
-            return String(root.innerText||root.textContent||"").replace(/\s+/g," ").trim().slice(0,350)+
-              "|controls:"+JSON.stringify(controls);
-          }).join("||");
-          const searchLoading = () => [...document.querySelectorAll(
-            ".el-loading-mask,.el-loading-spinner,.ant-spin-spinning,.ssc-loading,[aria-busy=true],[data-loading=true]"
-          )].some(visible);
-          const before = signature();
-          const beforePager = paginationSnapshot();
-          const started = Date.now();
-          stage = "submit Batch Search and wait for results";
-          reportStage("Submitting " + wanted.size.toLocaleString() + " tracking number(s) to SPX…");
-          submitButton.click();
-          let lastSig=before,lastPager=beforePager,stableSince=Date.now();
-          let lastResultNotice=0,sawBusy=false,freshStateObserved=false;
+          const initialRows=tableRowCount();
+          const initialBusy=busy();
+          const initialDownloadControls=downloadControls().length;
+          stage="submit Batch Search and wait for SPX export";
+          reportStage("Submitting "+wanted.length.toLocaleString()+" tracking number(s) to SPX…");
+          submit.click();
+          let sawBusy=initialBusy,lastRows=initialRows,rowsStableSince=Date.now();
+          let ready=false,lastNotice=0;
           const deadline=Date.now()+90000;
           while(Date.now()<deadline){
             await sleep(350);
-            const sig=signature(),pager=paginationSnapshot(),busy=searchLoading();
-            if(busy)sawBusy=true;
-            if(sig!==lastSig||pager!==lastPager){
-              lastSig=sig;lastPager=pager;stableSince=Date.now();freshStateObserved=true;
+            const isBusy=busy();
+            const rows=tableRowCount();
+            const controls=downloadControls();
+            if(isBusy)sawBusy=true;
+            if(rows!==lastRows){lastRows=rows;rowsStableSince=Date.now();}
+            const elapsed=Date.now()-(deadline-90000);
+            if(elapsed-lastNotice>=5000){
+              reportStage("Waiting for SPX to finish Batch Search and prepare its downloaded file… "+Math.floor(elapsed/1000)+"s elapsed.");
+              lastNotice=elapsed;
             }
-            if(sawBusy&&!busy)freshStateObserved=true;
-            const elapsed=Date.now()-started;
-            if(elapsed-lastResultNotice>=5000){
-              reportStage("Waiting for SPX to finish the search… "+Math.floor(elapsed/1000)+"s elapsed.");
-              lastResultNotice=elapsed;
+            const resultTableChanged=rows!==initialRows&&Date.now()-rowsStableSince>=1800&&!isBusy;
+            const loadingCompleted=sawBusy&&!isBusy&&elapsed>=2500;
+            const exportControlAppeared=controls.length>initialDownloadControls&&elapsed>=2500&&!isBusy;
+            const explicitEmpty=/no (?:matching )?(?:data|records|results|orders)|no result found|0 (?:records|results)/i.test(String(document.body?.innerText||""));
+            if(elapsed>=4000&&!isBusy&&(resultTableChanged||loadingCompleted||exportControlAppeared||explicitEmpty)){
+              ready=true;break;
             }
-            if(elapsed>=4000&&freshStateObserved&&!busy&&Date.now()-stableSince>=2200)break;
           }
-          if(Date.now()>=deadline)throw new Error("SPX did not produce a refreshed, stable result table within 90 seconds. Previous rows were not accepted; TNs will not be marked Not Found.");
-          if(!freshStateObserved)throw new Error("SPX did not show a refreshed result table or completed loading cycle. Search stopped to avoid false Not Found results.");
-
-          stage="read all result pages";
-          const output=new Map(),seenPages=new Set();
-          const pageSignature=()=>signature()+"\n--PAGINATION--\n"+paginationSnapshot();
-          const addCurrentPage=()=>{for(const item of getPage())output.set(clean(item.matchedTN||item.tn),item);};
-          addCurrentPage();
-          seenPages.add(pageSignature());
-          reportStage("SPX results refreshed. Checking pagination and reading all result pages…");
-
-          let roots=findPagerRoots();
-          const refreshPagerRoots=()=>{roots=findPagerRoots();return roots;};
-          const isInPager=el=>roots.some(root=>root===el||root.contains(el));
-          const isArrowGlyph=value=>/^(?:>|›|»|→|⟩|⟶)$/.test(String(value||"").trim());
-          const isNextControl=el=>{
-            const label=controlLabel(el),cls=controlClass(el),raw=controlText(el);
-            if(/next|forward|paginationnext|btnnext|pagenext|chevronright|arrowright|iconright/.test(label+" "+cls))return true;
-            if(isArrowGlyph(raw)&&isInPager(el))return true;
-            const icon=el.querySelector?.("svg,[class*='right'],[class*='next'],[aria-label*='right' i]");
-            if(icon&&(/right|next|chevron|arrow/.test(controlClass(icon)+" "+controlLabel(icon)))&&isInPager(el))return true;
-            return false;
-          };
-          const isDisabled=el=>!!el.disabled||
-            el.getAttribute("aria-disabled")==="true"||
-            el.getAttribute("disabled")!==null||
-            /(^|\s)(disabled|is-disabled|ant-pagination-disabled)(\s|$)/i.test(controlClass(el))||
-            !!el.closest("li")?.classList?.contains("disabled");
-          const getNextPageControl=()=>{
-            // SPX replaces the pagination DOM after every page transition.
-            // Refresh roots before resolving the next control or checking disabled state.
-            refreshPagerRoots();
-            const controls=[...document.querySelectorAll(controlSelector)].filter(visible);
-            const explicit=controls.filter(isNextControl);
-            if(explicit.length){
-              explicit.sort((a,b)=>(isInPager(b)?1:0)-(isInPager(a)?1:0));
-              return explicit[0];
-            }
-            // Some SPX builds use numbered pager buttons but no accessible
-            // label on the chevron. Fall back to the next numeric page link.
-            for(const root of roots){
-              const items=pagerControls(root);
-              const active=items.find(el=>/^(page|true)$/i.test(el.getAttribute("aria-current")||"")||
-                /(^|\s)(active|is-active|active-page)(\s|$)/i.test(controlClass(el)));
-              let current=active&&/^\d+$/.test(controlText(active))?Number(controlText(active)):0;
-              if(!current){
-                const texts=items.map(controlText).filter(x=>/^\d+$/.test(x)).map(Number);
-                if(texts.includes(1))current=1;
-              }
-              if(current){
-                const next=items.find(el=>numericControl(el)&&Number(controlText(el))===current+1);
-                if(next)return next;
-              }
-            }
-            return null;
-          };
-          const readPaginationRange=()=>{
-            const texts=findPagerRoots().map(root=>String(root.innerText||root.textContent||""));
-            // Some Shopee builds render the page-range summary outside the
-            // element carrying the pagination class; include the visible page text.
-            const bodyText=String(document.body?.innerText||"").slice(0,30000);
-            const allText=texts.join(" ")+" "+bodyText;
-            const patterns=[
-              /(\d[\d,]*)\s*(?:-|–|to)\s*(\d[\d,]*)\s*(?:of|\/)\s*(\d[\d,]*)/i,
-              /showing\s+\d[\d,]*\s+(?:to|-)\s+(\d[\d,]*)\s+of\s+(\d[\d,]*)/i,
-              /(\d[\d,]*)\s*-\s*(\d[\d,]*)\s*\/\s*(\d[\d,]*)/i
-            ];
-            for(let i=0;i<patterns.length;i++){
-              const m=allText.match(patterns[i]);
-              if(!m)continue;
-              const end=Number((i===1?m[1]:m[2]).replace(/,/g,""));
-              const total=Number((i===1?m[2]:m[3]).replace(/,/g,""));
-              if(Number.isFinite(end)&&Number.isFinite(total))return {end,total,text:m[0]};
-            }
-            return null;
-          };
-          const hasExplicitEmptyState=()=>/no (?:matching )?(?:data|records|results|orders)|no result found|0 (?:records|results)/i.test(
-            [...document.querySelectorAll("body")].map(el=>String(el.innerText||"")).join(" ")
-          );
-          let page=0,terminalPageConfirmed=false;
-          for(;page<400;page++){
-            const next=getNextPageControl();
-            if(!next){
-              const range=readPaginationRange();
-              if(range&&range.end>=range.total){terminalPageConfirmed=true;break;}
-              if(output.size>=wanted.size){terminalPageConfirmed=true;break;}
-              if(!output.size&&hasExplicitEmptyState()){terminalPageConfirmed=true;break;}
-              const pagerText=paginationSnapshot().slice(0,900)||"No recognizable pagination controls were found.";
-              throw new Error(
-                "Cannot verify that SPX returned every result page. Captured "+output.size.toLocaleString()+
-                " matching TN(s) from "+wanted.size.toLocaleString()+" inputs, but no usable Next Page control or final-page indicator was found. "+
-                "Search was stopped; remaining TNs will not be marked Not Found. Pagination diagnostics: "+pagerText
-              );
-            }
-            if(isDisabled(next)){terminalPageConfirmed=true;break;}
-            stage="paginate results page "+(page+2);
-            reportStage("Reading SPX results page "+(page+2)+"… "+output.size.toLocaleString()+" matching TN(s) collected.");
-            const beforePage=pageSignature();
-            try{next.scrollIntoView({block:"center",inline:"nearest"});}catch{}
-            next.click();
-            let changed=false,lastPageState=beforePage,pageStableSince=Date.now(),pageNotice=0;
-            const pageDeadline=Date.now()+25000;
-            while(Date.now()<pageDeadline){
-              await sleep(300);
-              const current=pageSignature(),busy=searchLoading();
-              if(current!==lastPageState){
-                lastPageState=current;pageStableSince=Date.now();
-                if(current!==beforePage)changed=true;
-              }
-              const elapsed=Date.now()-(pageDeadline-25000);
-              if(elapsed-pageNotice>=5000){
-                reportStage("Waiting for SPX result page "+(page+2)+"…");
-                pageNotice=elapsed;
-              }
-              if(changed&&!busy&&Date.now()-pageStableSince>=1800)break;
-            }
-            if(!changed)throw new Error("SPX Next Page was clicked, but its result table did not change within 25 seconds. Search stopped to prevent false Not Found results. Pagination: "+paginationSnapshot().slice(0,900));
-            const currentPage=pageSignature();
-            if(seenPages.has(currentPage))throw new Error("SPX pagination repeated a result page. Search stopped before classifying uncollected TNs as Not Found.");
-            seenPages.add(currentPage);
-            addCurrentPage();
-          }
-          if(page>=400)throw new Error("SPX exceeded the 400-page safety limit. Search stopped before producing incomplete Not Found results.");
-          if(!terminalPageConfirmed&&output.size<wanted.size){
-            throw new Error("SPX result pagination did not confirm the final page. Captured "+output.size.toLocaleString()+" of "+wanted.size.toLocaleString()+" possible TNs; incomplete results will not be classified as Not Found.");
-          }
-          const pageCount=page+1;
-          reportStage("SPX search finished. Captured "+output.size.toLocaleString()+" matching TN(s) across "+pageCount.toLocaleString()+" page(s).");
-          return { results:[...output.values()],requestedCount:tns.length,pageCount,capturedAt:new Date().toISOString(),diagnostics:diagnostics() };
-        } catch (error) {
-          return {
-            __spxBatchSearchError: true,
-            stage,
-            error: String(error?.message || error),
-            stack: String(error?.stack || "").slice(0, 1200),
-            diagnostics: diagnostics()
-          };
+          if(!ready)throw new Error("SPX did not finish Batch Search or expose an export state within 90 seconds. The downloaded file was not produced, so no Not Found results will be generated.");
+          stage="wait for SPX downloaded result file";
+          reportStage("SPX search finished. Waiting for the actual downloaded CSV/Excel result file…");
+          return {submitted:true,requestedCount:wanted.length,diagnostics:diagnostics()};
+        }catch(error){
+          return {__spxBatchSearchError:true,stage,error:String(error?.message||error),stack:String(error?.stack||"").slice(0,1200),diagnostics:diagnostics()};
         }
       }
     });
-  } catch (error) {
-    throw new Error(`Chrome could not execute the SPX Batch Search script: ${error?.message || error}`);
+  }catch(error){
+    throw new Error("Chrome could not submit SPX Batch Search: "+String(error?.message||error));
   }
 
-  const result = injectionResults?.[0]?.result;
-  if (!injectionResults?.length) {
-    const tab = await chrome.tabs.get(tabId).catch(() => null);
-    throw new Error(`Chrome injected no result frame. SPX tab URL: ${tab?.url || "unknown"}; status: ${tab?.status || "unknown"}.`);
+  const submitted=injectionResults?.[0]?.result;
+  if(!submitted)throw new Error("SPX Batch Search returned no submission status.");
+  if(submitted.__spxBatchSearchError){
+    const detail=submitted.diagnostics||{};
+    throw new Error("Stage: "+submitted.stage+". "+submitted.error+
+      " Visible download controls: "+(detail.downloadControls||[]).map(item=>item.label).join(" | ")+
+      ". Visible SPX buttons: "+(detail.visibleButtons||[]).join(" | "));
   }
-  if (!result) {
-    const tab = await chrome.tabs.get(tabId).catch(() => null);
-    throw new Error(`The SPX script returned no value (frame ${injectionResults[0]?.frameId ?? "unknown"}). Tab URL: ${tab?.url || "unknown"}; status: ${tab?.status || "unknown"}. Check the SPX tab console for a script exception.`);
+  if(submitted.submitted!==true)throw new Error("SPX did not confirm that the Batch Search request was submitted.");
+
+  const pollFile=async(durationMs)=>{
+    const until=Date.now()+durationMs;
+    let last={ready:false};
+    while(Date.now()<until){
+      try{
+        last=await readBatchSearchCapturedFile(tabId);
+        if(last?.ready&&last.file?.base64)return last;
+      }catch(error){last={ready:false,errors:[String(error?.message||error)]};}
+      await sleep(650);
+    }
+    return last;
+  };
+
+  sendBatchSearchFileProgress("Waiting for SPX to create its downloadable result file…");
+  let capture=await pollFile(8000);
+  let exportAction=null;
+  if(!capture?.ready){
+    exportAction=await clickBatchSearchDownloadControl(tabId);
+    if(exportAction?.clicked){
+      sendBatchSearchFileProgress("Clicked SPX "+exportAction.label+" to download the Batch Search result file…");
+      capture=await pollFile(45000);
+    }else{
+      capture=await pollFile(7000);
+    }
   }
-  if (result.__spxBatchSearchError) {
-    const d = result.diagnostics || {};
-    const candidates = d.batchSearchCandidates?.length ? JSON.stringify(d.batchSearchCandidates).slice(0, 800) : "none detected";
-    const details = `Stage: ${result.stage}. ${result.error}. Batch Search text candidates: ${candidates}. URL: ${d.url || "unknown"}; page: ${d.title || "unknown"}; readyState: ${d.readyState || "unknown"}; visible textarea(s): ${(d.visibleTextareas || []).join(" | ") || "none"}; visible buttons: ${(d.visibleButtons || []).join(" | ") || "none"}; tables: ${(d.tables || []).map(t => `#${t.index} ${t.rows} row(s)`).join(", ") || "none"}.`;
-    throw new Error(details.slice(0, 2500));
+  if(!capture?.ready&&capture?.directUrl&&!/^blob:/i.test(capture.directUrl)){
+    const response=await extensionFetchBuffer(capture.directUrl,{
+      headers:{ "Accept":"text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/octet-stream,*/*" }
+    });
+    if(!response.ok)throw new Error("SPX result file download failed (HTTP "+response.status+").");
+    const bytes=new Uint8Array(response.buffer);
+    let binary="";
+    for(let offset=0;offset<bytes.length;offset+=0x8000)binary+=String.fromCharCode(...bytes.subarray(offset,offset+0x8000));
+    const disposition=response.contentDisposition||"";
+    const filenameMatch=disposition.match(/filename\*?=(?:UTF-8''|")?([^;"\r\n]+)/i);
+    capture={ready:true,file:{
+      url:capture.directUrl,
+      fileName:filenameMatch?.[1]?filenameMatch[1].replace(/^"|"$/g,""):(capture.directFileName||"spx_batch_search_result.csv"),
+      contentType:response.contentType||"",
+      size:bytes.length,
+      base64:btoa(binary),
+      capturedAt:Date.now(),
+      source:"authenticated-file-download"
+    }};
   }
-  return result;
+  if(!capture?.ready||!capture.file?.base64){
+    const detail=(capture?.errors||[]).join(" | ")||"No CSV/Excel download link or file response was captured.";
+    const controls=exportAction?.controls?.join(" | ")||"No visible Export/Download button was found.";
+    throw new Error("SPX Batch Search completed, but its downloaded result file could not be read. "+detail+" "+controls);
+  }
+
+  sendBatchSearchFileProgress("Downloaded "+String(capture.file.fileName||"SPX result file")+" · reading the actual file contents…");
+  return await parseDownloadedBatchSearchFile(capture.file,trackingNumbers);
+}
+
+function sendBatchSearchFileProgress(message){
+  try{
+    for(const job of activeJobs.values()){
+      if(job.kind==="batch-search-result"&&job.spxTabId){
+        sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
+          kind:"batch-search-result",message:String(message||"Reading SPX downloaded file…"),selectedDate:job.selectedDate||""
+        });
+      }
+    }
+  }catch{}
 }
 
 const SPX_BATCH_SEARCH_SIZE = 3000;
