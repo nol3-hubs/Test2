@@ -2013,6 +2013,19 @@ async function runBatchSearchExportJob(job) {
     if (tabId) {
       try { await chrome.tabs.remove(tabId); } catch (error) { console.warn("Could not close temporary SPX Batch Search tab:", error); }
     }
+    // Restore the dashboard tab that initiated this Batch Search, even when
+    // the user manually closes the SPX tab or the search ends with an error.
+    const dashboardTabId = Number(job.dashboardTabId) || 0;
+    if (dashboardTabId) {
+      try {
+        const dashboardTab = await chrome.tabs.get(dashboardTabId);
+        const dashboardWindowId = Number(job.dashboardWindowId || dashboardTab?.windowId) || 0;
+        if (dashboardWindowId) await chrome.windows.update(dashboardWindowId, { focused: true });
+        await chrome.tabs.update(dashboardTabId, { active: true });
+      } catch (error) {
+        console.warn("Could not return to the Test2 dashboard tab after Batch Search:", error);
+      }
+    }
     releaseActiveJob(job);
   }
 }
@@ -3209,7 +3222,11 @@ chrome.runtime.onConnect.addListener(port => {
       const job = reserveActiveJob("batch-search-result", port, {
         trackingNumbers,
         selectedDate: String(message?.selectedDate || "").trim(),
-        sourceTaskId: String(message?.sourceTaskId || "").trim()
+        sourceTaskId: String(message?.sourceTaskId || "").trim(),
+        // Remember the exact Test2 tab that requested this search so cleanup
+        // can return the user there after the foreground SPX tab is closed.
+        dashboardTabId: Number(port.sender?.tab?.id) || null,
+        dashboardWindowId: Number(port.sender?.tab?.windowId) || null
       });
       if (!job) {
         sendToPort(port, "BADOC_SPX_BATCH_SEARCH_ERROR", {
