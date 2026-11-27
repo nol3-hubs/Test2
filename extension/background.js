@@ -705,7 +705,14 @@ async function waitForAssignedTodayExportTask(taskId, startSec, job, label) {
       message="SPX accepted "+label+" task "+taskId+"; searching FMS, FM, and default queues (including unfiltered task rows) · elapsed "+String(Math.floor(elapsed/60)).padStart(2,"0")+":"+String(elapsed%60).padStart(2,"0")+"…";
       if(Date.now()-lastMessageAt<5000)message="";else lastMessageAt=Date.now();
     }
-    if(message){progress(message,{phase:"pod-assigned-task",kind:job.kind,taskId,source:label});notifyPodCheckerAssignedProgress(message);}
+    if(message){
+      if(job.kind==="assignment-task"){
+        sendToPort(job.ownerPort,"BADOC_SPX_ASSIGNMENT_TASK_PROGRESS",{taskId,selectedDate:job.selectedDate,message});
+      }else{
+        progress(message,{phase:"pod-assigned-task",kind:job.kind,taskId,source:label});
+        notifyPodCheckerAssignedProgress(message);
+      }
+    }
     await sleep(4000);
   }
   const diagnostic=lastStatus!==null?" Last task status: "+String(lastStatus)+(lastQueue?", queue "+lastQueue:"")+".":" The task ID was not found in returned task rows."+(lastTaskPreview?" Recent task rows: "+lastTaskPreview+".":"");
