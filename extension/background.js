@@ -1658,9 +1658,10 @@ async function installBatchSearchFileCapture(tabId) {
         current.links.length=0;
         current.files.length=0;
         current.errors.length=0;
+        current.events?.splice?.(0);
         return { installed: true, reused: true, reset: true };
       }
-      const state = { installed: true, installedAt: Date.now(), blobs: new Map(), links: [], files: [], errors: [] };
+      const state = { installed: true, installedAt: Date.now(), blobs: new Map(), links: [], files: [], errors: [], events: [] };
       Object.defineProperty(window, key, { configurable: true, value: state });
 
       const fileLike = (url, type, disposition) => {
@@ -1764,6 +1765,49 @@ async function installBatchSearchFileCapture(tabId) {
           });
         };
       } catch (error) { state.errors.push("Could not monitor SPX file responses: " + String(error?.message || error)); }
+
+      try {
+        // SPX pages commonly use Axios, which is backed by XMLHttpRequest.
+        // Capture file payloads from XHR as well as fetch/blob download links.
+        const xhrOpen = XMLHttpRequest.prototype.open;
+        const xhrSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+          this.__badocBatchUrl = String(url || "");
+          this.__badocBatchMethod = String(method || "GET");
+          return xhrOpen.call(this, method, url, ...rest);
+        };
+        XMLHttpRequest.prototype.send = function(...args) {
+          this.addEventListener("loadend", () => {
+            try {
+              const url = String(this.responseURL || this.__badocBatchUrl || "");
+              const type = String(this.getResponseHeader("content-type") || "");
+              const disposition = String(this.getResponseHeader("content-disposition") || "");
+              if (!fileLike(url, type, disposition)) {
+                if (/(export|download|batch.?search|search.?result)/i.test(url)) {
+                  state.events.push({
+                    url, method:this.__badocBatchMethod || "GET",
+                    status:Number(this.status || 0), contentType:type,
+                    disposition, at:Date.now()
+                  });
+                }
+                return;
+              }
+              let blob = null;
+              if (this.response instanceof Blob) blob = this.response;
+              else if (this.response instanceof ArrayBuffer) blob = new Blob([this.response], {type});
+              else if (ArrayBuffer.isView(this.response)) blob = new Blob([this.response], {type});
+              else if (typeof this.responseText === "string") blob = new Blob([this.responseText], {type:type || "text/csv"});
+              if (blob) void storeBlob(blob, {
+                url, contentType:type, disposition,
+                fileName:filenameFrom(url, disposition, ""), source:"xhr-file-response"
+              });
+            } catch(error) {
+              try { state.errors.push("Could not inspect SPX XHR download: "+String(error?.message||error)); } catch {}
+            }
+          }, {once:true});
+          return xhrSend.apply(this,args);
+        };
+      } catch (error) { state.errors.push("Could not monitor SPX XHR file responses: "+String(error?.message||error)); }
 
       return { installed: true, reused: false };
     }
