@@ -93,9 +93,9 @@ function build(){
   const source=typeof getParcelCountRows==="function"?getParcelCountRows():(typeof current!=="undefined"&&Array.isArray(current?.rows)?current.rows:[]);
   const sourceRows=Array.isArray(source)?source:[];
   const roster=rosterIndexes(),assignments=assignmentMap(roster);
-  // Use the exact same OnHold population as Dashboard / Planning Board:
-  // status + Pick Up Time cutoff, current export precedence, exceptions and TN dedup.
-  // Do not infer OnHold from raw status text in this rider view.
+  // Start with the shared Dashboard / Planning Board OnHold population so
+  // its 3 PM cutoff and export precedence stay aligned. Explicit current SPX
+  // OnHold statuses are added below for this rider-attribution view.
   const sharedOnholdRows=typeof window.__badocGetOnholdRows==="function"
     ?window.__badocGetOnholdRows(sourceRows,false):[];
   const onholdRowsByTn=new Map();
