@@ -1949,13 +1949,23 @@ async function clickBatchSearchDownloadControl(tabId) {
       const norm = value => String(value || "").normalize("NFKC")
         .replace(/[\u200B-\u200D\uFEFF]/g, "")
         .toLowerCase().replace(/[^a-z0-9]+/g, "").trim();
-      const textOf = el => String(el?.innerText || el?.textContent ||
-        el?.getAttribute?.("aria-label") || el?.getAttribute?.("title") || "")
+      const textOf = el => String(el?.innerText || el?.textContent || "")
         .replace(/\s+/g, " ").trim();
-      const accessibleText = el => [
-        textOf(el), el?.getAttribute?.("aria-label"), el?.getAttribute?.("title"),
-        el?.getAttribute?.("data-testid"), el?.getAttribute?.("data-test")
-      ].filter(Boolean).join(" ");
+      const attrValues = el => [
+        el?.getAttribute?.("aria-label"), el?.getAttribute?.("title"),
+        el?.getAttribute?.("data-testid"), el?.getAttribute?.("data-test"),
+        el?.getAttribute?.("data-tooltip"), el?.getAttribute?.("aria-description")
+      ].filter(Boolean).map(String);
+      const labelsOf = el => [textOf(el), ...attrValues(el)].filter(Boolean);
+      const isExportLabel = el => labelsOf(el).some(value => {
+        const key = norm(value);
+        return /^(?:export|exportmenu|exportdropdown|exportoptions|exportbutton|exporttrigger|exportcaret)$/.test(key);
+      });
+      const isExportRelated = el => labelsOf(el).some(value => /export/i.test(value));
+      const exportKey = el => {
+        const values = labelsOf(el).map(norm);
+        return values.find(value => /^(?:export|exportmenu|exportdropdown|exportoptions|exportbutton|exporttrigger|exportcaret)$/.test(value)) || "";
+      };
       const disabled = el => !!el?.disabled ||
         el?.getAttribute?.("aria-disabled") === "true" ||
         el?.getAttribute?.("disabled") !== null ||
@@ -1992,7 +2002,6 @@ async function clickBatchSearchDownloadControl(tabId) {
         roots.forEach(walk);
         return out;
       };
-      const elements = allElements();
       const actionable = el => {
         if (!el) return false;
         const tag = String(el.tagName || "").toLowerCase();
@@ -2005,24 +2014,6 @@ async function clickBatchSearchDownloadControl(tabId) {
           el.hasAttribute?.("aria-controls") || typeof el.onclick === "function" ||
           /button|dropdown|caret|trigger|action|menu-item/i.test(cls) ||
           style.cursor === "pointer";
-      };
-      const inExportContext = el => {
-        for (let node = el, depth = 0; node && depth < 7; node = node.parentElement, depth++) {
-          const own = norm(accessibleText(node));
-          const cls = String(node.className || "");
-          if (own === "export" || own === "exportmenu" || own === "exportdropdown" ||
-              own.includes("exportbatchsearch") ||
-              (/export/.test(own) && /dropdown|button.?group|group/i.test(cls))) return true;
-        }
-        return false;
-      };
-      const isDropdownAffordance = el => {
-        const cls = String(el?.className || "");
-        const role = String(el?.getAttribute?.("role") || "");
-        return /caret|dropdown|drop-down|more-options/i.test(cls) ||
-          /menu|listbox/i.test(el?.getAttribute?.("aria-haspopup") || "") ||
-          el?.hasAttribute?.("aria-controls") ||
-          (el?.hasAttribute?.("aria-haspopup") && role !== "menuitem");
       };
       const menuItemMatches = el => {
         const value = norm(textOf(el));
@@ -2063,24 +2054,35 @@ async function clickBatchSearchDownloadControl(tabId) {
         best.click();
         return best;
       };
-      const exportTextNodes = elements.filter(el => {
-        if (!visible(el) || disabled(el)) return false;
-        const own = norm(accessibleText(el));
-        return own === "export" || own === "exportmenu" || own === "exportdropdown";
-      });
+      const elements = allElements();
+      const exportTextNodes = elements.filter(el =>
+        visible(el) && !disabled(el) && isExportLabel(el)
+      );
+      const nearbyExportDiagnostics = elements.filter(el =>
+        isExportRelated(el) && visible(el)
+      ).slice(0, 35).map(el => ({
+        tag: String(el.tagName || "").toLowerCase(),
+        text: textOf(el).slice(0, 90),
+        aria: String(el.getAttribute?.("aria-label") || ""),
+        title: String(el.getAttribute?.("title") || ""),
+        testid: String(el.getAttribute?.("data-testid") || ""),
+        role: String(el.getAttribute?.("role") || ""),
+        className: String(el.className || "").slice(0, 120)
+      }));
       const candidates = new Map();
 
-      // Prefer the actual dropdown arrow/caret belonging to the Export group.
-      // SPX often uses a split button: the text half is not the menu trigger.
+      // Match text and accessibility attributes independently. SPX can set
+      // visible text="Export" and data-testid="export-dropdown" on the same node;
+      // combining those strings and demanding an exact match rejects real controls.
       for (const textNode of exportTextNodes) {
         let wrapper = null;
         for (let node = textNode; node && node !== document.body; node = node.parentElement) {
           const cls = String(node.className || "");
           if (/dropdown|button.?group|el-button-group|ant-btn-group/i.test(cls) ||
-              node.hasAttribute?.("aria-haspopup")) {
+              node.hasAttribute?.("aria-haspopup") || node.hasAttribute?.("aria-controls")) {
             wrapper = node; break;
           }
-          if (norm(textOf(node)).length > 90) break;
+          if (textOf(node).length > 90) break;
         }
         if (!wrapper) {
           for (let node = textNode; node && node !== document.body; node = node.parentElement) {
@@ -2096,45 +2098,76 @@ async function clickBatchSearchDownloadControl(tabId) {
         )] : [])];
         for (const handle of descendants) {
           if (!visible(handle) || disabled(handle) || !actionable(handle)) continue;
-          const caret = isDropdownAffordance(handle);
-          const directExport = norm(accessibleText(handle)) === "export";
-          if (!caret && !directExport && handle !== wrapper) continue;
           const cls = String(handle.className || "");
           const tag = String(handle.tagName || "").toLowerCase();
+          const handleText = norm(textOf(handle));
+          const handleAttrs = attrValues(handle).map(norm);
+          const caret = /caret|dropdown|drop-down|more-options/i.test(cls) ||
+            /menu|listbox/i.test(handle.getAttribute("aria-haspopup") || "") ||
+            handle.hasAttribute("aria-controls") ||
+            (handle.hasAttribute("aria-haspopup") && handle.getAttribute("role") !== "menuitem");
+          const directExport = handleText === "export" || handleAttrs.includes("export");
+          if (!caret && !directExport && handle !== wrapper) continue;
           let score = caret ? 300 : 100;
           if (handle.hasAttribute("aria-haspopup")) score += 65;
           if (handle.hasAttribute("aria-controls")) score += 55;
           if (tag === "button") score += 25;
           if (/caret|dropdown/i.test(cls)) score += 50;
           if (/primary/i.test(cls)) score -= 35;
-          const key = handle;
-          const prior = candidates.get(key);
           const item = {
-            element: handle, label: textOf(handle) || accessibleText(handle) || "Export dropdown",
+            element: handle,
+            label: textOf(handle) || attrValues(handle)[0] || "Export dropdown",
             tag, score, className: cls.slice(0, 120),
             ariaHaspopup: handle.getAttribute("aria-haspopup") || "",
             ariaControls: handle.getAttribute("aria-controls") || "",
             wrapper: String(wrapper.className || "").slice(0, 120)
           };
-          if (!prior || item.score > prior.score) candidates.set(key, item);
+          const prior = candidates.get(handle);
+          if (!prior || item.score > prior.score) candidates.set(handle, item);
         }
       }
 
-      // Fallback when SPX renders a single Export button rather than a split button.
+      // If SPX exposes the caret separately from the text wrapper, inspect
+      // sibling controls before falling back to the primary Export button.
+      for (const textNode of exportTextNodes) {
+        const parent = textNode.parentElement;
+        if (!parent) continue;
+        const siblings = [parent, ...parent.querySelectorAll(
+          "button,[role='button'],[tabindex],[aria-haspopup],[aria-controls],[class*='caret'],[class*='dropdown']"
+        )];
+        for (const handle of siblings) {
+          if (!visible(handle) || disabled(handle) || !actionable(handle)) continue;
+          const cls = String(handle.className || "");
+          if (!/caret|dropdown/i.test(cls) &&
+              !handle.hasAttribute("aria-haspopup") &&
+              !handle.hasAttribute("aria-controls")) continue;
+          if (candidates.has(handle)) continue;
+          candidates.set(handle,{
+            element:handle,label:textOf(handle)||"Export dropdown",
+            tag:String(handle.tagName||"").toLowerCase(),score:340,
+            className:cls.slice(0,120),
+            ariaHaspopup:handle.getAttribute("aria-haspopup")||"",
+            ariaControls:handle.getAttribute("aria-controls")||"",
+            wrapper:String(parent.className||"").slice(0,120)
+          });
+        }
+      }
+
+      // Single-button SPX layouts have no separate caret.
       if (!candidates.size) {
-        for (const el of exportTextNodes) {
-          let target = el;
-          for (let node = el; node && node !== document.body; node = node.parentElement) {
+        for (const textNode of exportTextNodes) {
+          let target = textNode;
+          for (let node = textNode; node && node !== document.body; node = node.parentElement) {
             if (actionable(node)) { target = node; break; }
           }
           if (!visible(target) || disabled(target)) continue;
-          candidates.set(target, {
-            element: target, label: textOf(target) || "Export",
-            tag: String(target.tagName || "").toLowerCase(), score: 100,
-            className: String(target.className || "").slice(0, 120),
-            ariaHaspopup: target.getAttribute("aria-haspopup") || "",
-            ariaControls: target.getAttribute("aria-controls") || "",
-            wrapper: ""
+          candidates.set(target,{
+            element:target,label:textOf(target)||"Export",
+            tag:String(target.tagName||"").toLowerCase(),score:100,
+            className:String(target.className||"").slice(0,120),
+            ariaHaspopup:target.getAttribute("aria-haspopup")||"",
+            ariaControls:target.getAttribute("aria-controls")||"",
+            wrapper:"single Export control"
           });
         }
       }
@@ -2158,31 +2191,29 @@ async function clickBatchSearchDownloadControl(tabId) {
           const handle = item.element;
           usedTrigger = item.label;
           attempts.push({
-            label: item.label, tag: item.tag, score: item.score,
-            className: item.className, wrapper: item.wrapper,
-            ariaHaspopup: item.ariaHaspopup, ariaControls: item.ariaControls
+            label:item.label,tag:item.tag,score:item.score,
+            className:item.className,wrapper:item.wrapper,
+            ariaHaspopup:item.ariaHaspopup,ariaControls:item.ariaControls
           });
+          try { handle.scrollIntoView({block:"center",inline:"nearest"}); } catch (_) {}
+          try { handle.focus?.({preventScroll:true}); } catch (_) {}
 
-          try { handle.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
-          try { handle.focus?.({ preventScroll: true }); } catch (_) {}
-
-          // Activate the dropdown control directly. No physical mouse movement or
-          // manual hover is required; this also handles SPX split-button carets.
+          // Activate the SPX Export menu control by script; physical mouse
+          // movement is never required.
           try { handle.click(); } catch (_) {}
           chosen = await waitForMenu(item.ariaHaspopup || item.ariaControls ? 5500 : 3200);
           if (chosen) break;
 
-          // Try keyboard activation on the same dropdown handle before moving on.
           try {
             const view = handle.ownerDocument?.defaultView || window;
-            for (const [key, code] of [["Enter","Enter"],[" ","Space"],["ArrowDown","ArrowDown"]]) {
-              handle.dispatchEvent(new view.KeyboardEvent("keydown", {
-                key, code, bubbles: true, cancelable: true
+            for (const [key,code] of [["Enter","Enter"],[" ","Space"],["ArrowDown","ArrowDown"]]) {
+              handle.dispatchEvent(new view.KeyboardEvent("keydown",{
+                key,code,bubbles:true,cancelable:true
               }));
-              handle.dispatchEvent(new view.KeyboardEvent("keyup", {
-                key, code, bubbles: true, cancelable: true
+              handle.dispatchEvent(new view.KeyboardEvent("keyup",{
+                key,code,bubbles:true,cancelable:true
               }));
-              chosen = await waitForMenu(700);
+              chosen = await waitForMenu(650);
               if (chosen) break;
             }
           } catch (_) {}
@@ -2192,32 +2223,36 @@ async function clickBatchSearchDownloadControl(tabId) {
 
       if (!chosen) {
         const visibleText = String(document.body?.innerText || "")
-          .replace(/\s+/g, " ").slice(-2200);
+          .replace(/\s+/g," ").slice(-1800);
         return {
-          clicked: false, menuOpened: false, menuItem: "",
-          trigger: usedTrigger,
-          reason: "SPX Export dropdown could not be opened automatically by clicking its menu/caret control.",
-          menuText: visibleText,
-          menuCandidates: menuDiagnostics(),
-          triggerCandidates: attempts,
-          url: String(location.href || ""), title: String(document.title || "")
+          clicked:false,menuOpened:false,menuItem:"",
+          trigger:usedTrigger,
+          reason:exportTextNodes.length
+            ? "SPX Export label was detected, but its dropdown did not open after automatic click and keyboard activation."
+            : "SPX Export control could not be matched. The label may be rendered with different DOM text or inside a separate component.",
+          menuText:visibleText,
+          menuCandidates:menuDiagnostics(),
+          triggerCandidates:attempts,
+          nearbyExportElements:nearbyExportDiagnostics,
+          exportLabelCount:exportTextNodes.length,
+          url:String(location.href||""),title:String(document.title||"")
         };
       }
 
-      const selectedText = textOf(chosen).slice(0, 180);
+      const selectedText = textOf(chosen).slice(0,180);
       clickTarget(chosen);
       return {
-        clicked: true, menuOpened: true,
-        trigger: usedTrigger || "Export",
-        menuItem: selectedText,
-        clickedAt: Date.now(),
-        url: String(location.href || "")
+        clicked:true,menuOpened:true,
+        trigger:usedTrigger||"Export",
+        menuItem:selectedText,
+        clickedAt:Date.now(),
+        url:String(location.href||"")
       };
     }
   });
   return injected?.[0]?.result || {
-    clicked: false, menuOpened: false, menuItem: "",
-    reason: "SPX did not return an Export menu result."
+    clicked:false,menuOpened:false,menuItem:"",
+    reason:"SPX did not return an Export menu result."
   };
 }
 function parseBatchSearchDelimitedRows(source) {
@@ -2813,7 +2848,9 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
         String(exportAction?.reason||exportAction?.menuText||"The SPX export option was not found.")+
         (exportAction?.menuText?" Menu: "+exportAction.menuText:"")+
         (Array.isArray(exportAction?.menuCandidates)&&exportAction.menuCandidates.length?" Dropdowns: "+exportAction.menuCandidates.join(" | "):"")+
-        (Array.isArray(exportAction?.triggerCandidates)&&exportAction.triggerCandidates.length?" Export controls: "+exportAction.triggerCandidates.map(item=>item.label+" ["+item.tag+", "+item.className+"]").join(" | "):"")
+        (Number(exportAction?.exportLabelCount)>=0?" Export labels matched: "+Number(exportAction?.exportLabelCount||0):"")+
+        (Array.isArray(exportAction?.triggerCandidates)&&exportAction.triggerCandidates.length?" Export controls: "+exportAction.triggerCandidates.map(item=>item.label+" ["+item.tag+", "+item.className+"]").join(" | "):"")+
+        (Array.isArray(exportAction?.nearbyExportElements)&&exportAction.nearbyExportElements.length?" Export DOM: "+exportAction.nearbyExportElements.map(item=>item.tag+" text="+item.text+" aria="+item.aria+" title="+item.title+" testid="+item.testid+" class="+item.className).join(" | "):"")
       );
     }
     exportSubmittedAtSec=Math.max(0,Math.floor((Number(exportAction.clickedAt)||Date.now())/1000));
