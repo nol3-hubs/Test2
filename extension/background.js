@@ -2125,6 +2125,105 @@ async function parseDownloadedBatchSearchFile(file, requestedTns) {
   };
 }
 
+
+function batchSearchBase64FromText(text) {
+  const bytes = new TextEncoder().encode(String(text || ""));
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+async function resolveBatchSearchExportPayload(file, tabId, job) {
+  const binary = atob(String(file?.base64 || ""));
+  if (!binary) throw new Error("SPX Export returned an empty response.");
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+  const isXlsx = bytes.length > 3 && bytes[0] === 0x50 && bytes[1] === 0x4b;
+  const text = isXlsx ? "" : new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+  const trimmed = text.trim();
+  let json = null;
+  if (trimmed && /^[\[{]/.test(trimmed)) {
+    try { json = JSON.parse(trimmed); } catch {}
+  }
+  const isHtml = /^<!doctype|^<html/i.test(trimmed) || /text\/html/i.test(String(file?.contentType || ""));
+  if (isHtml) {
+    throw new Error("SPX Export returned its HTML page instead of an export file or export-task response. The SPX tab was left open.");
+  }
+
+  let taskId = json ? getExportTaskId(json) : 0;
+  const directUrl = String(
+    json?.data?.download_url || json?.data?.url || json?.download_url || json?.url || ""
+  ).trim();
+
+  if (directUrl) {
+    sendBatchSearchFileProgress("SPX returned a direct export URL. Downloading the actual CSV/Excel file…");
+    const response = await extensionFetchBuffer(directUrl, {
+      headers: {
+        "Accept": "text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/octet-stream,*/*",
+        "Referer": SPX_ORIGIN + "/"
+      }
+    });
+    if (!response.ok) throw new Error("SPX Batch Search direct file download failed (HTTP " + response.status + ").");
+    const converted = await firstMileBufferToCsv(
+      response.buffer,
+      String(json?.data?.file_name || json?.file_name || "spx_batch_search_result.csv"),
+      response.contentDisposition
+    );
+    return {
+      base64: batchSearchBase64FromText(converted.text),
+      fileName: converted.fileName,
+      contentType: "text/csv",
+      size: new TextEncoder().encode(converted.text).length,
+      source: "SPX direct export URL"
+    };
+  }
+
+  if (taskId) {
+    sendBatchSearchFileProgress("SPX accepted the Export request as task " + taskId + ". Waiting for SPX to finish generating the file…");
+    const startSec = Math.max(0, Math.floor(((job?.startedAt || Date.now()) - 10 * 60 * 1000) / 1000));
+    let completed = await waitForAssignedTodayExportTask(taskId, startSec, job, "Batch Search");
+    let task = completed.task || {};
+    let source = completed.source || "fms";
+    let mediaId = getExportMediaId(task) || getExportMediaId(json);
+
+    if (!mediaId && !String(task.file_name || "").trim()) {
+      const recovered = await waitForAssignmentTaskMediaId(
+        taskId, { task, source }, job, "Batch Search"
+      );
+      task = recovered.task || task;
+      source = recovered.source || source;
+      mediaId = recovered.mediaId || getExportMediaId(task) || getExportMediaId(json);
+    }
+    if (!mediaId) {
+      throw new Error("SPX Batch Search export task " + taskId + " completed, but no media_id or downloadable file path was available.");
+    }
+
+    sendBatchSearchFileProgress("SPX Batch Search export task " + taskId + " completed. Requesting its signed download URL…");
+    const signedUrl = await getSignedDownloadUrl(taskId, source, mediaId);
+    const converted = await downloadFirstMileExportFile(
+      signedUrl, String(task.file_name || "spx_batch_search_result.csv")
+    );
+    return {
+      base64: batchSearchBase64FromText(converted.text),
+      fileName: converted.fileName,
+      contentType: "text/csv",
+      size: new TextEncoder().encode(converted.text).length,
+      source: "SPX export task " + taskId + " signed download"
+    };
+  }
+
+  if (isXlsx || (trimmed && !/^(?:\{|\[|<!doctype|<html)/i.test(trimmed))) return file;
+  const preview = trimmed.replace(/\s+/g, " ").slice(0, 260);
+  throw new Error(
+    "SPX Export returned JSON/HTML metadata but no export task ID or direct download URL was found. " +
+    (preview ? "Response: " + preview : "The response was empty.") +
+    " The SPX tab was left open for inspection."
+  );
+}
+
 async function executeSpxBatchSearch(tabId, trackingNumbers) {
   await installBatchSearchFileCapture(tabId);
   let injectionResults;
