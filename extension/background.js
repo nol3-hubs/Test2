@@ -1918,119 +1918,85 @@ async function clickBatchSearchDownloadControl(tabId) {
     func: async () => {
       const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
       const visible=el=>!!el&&!!(el.offsetWidth||el.offsetHeight||el.getClientRects().length);
-      const label=el=>[
-        el?.innerText,el?.textContent,el?.getAttribute?.("aria-label"),
-        el?.getAttribute?.("title"),el?.getAttribute?.("data-testid")
-      ].filter(Boolean).join(" ").normalize("NFKC").toLowerCase()
-        .replace(/[\u200B-\u200D\uFEFF]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+      const norm=value=>String(value||"").normalize("NFKC")
+        .replace(/[\\u200B-\\u200D\\uFEFF]/g,"")
+        .toLowerCase().replace(/[^a-z0-9]+/g,"").trim();
+      const textOf=el=>String(el?.innerText||el?.textContent||
+        el?.getAttribute?.("aria-label")||el?.title||"").replace(/\\s+/g," ").trim();
       const disabled=el=>!!el.disabled||el.getAttribute("aria-disabled")==="true"||
-        el.getAttribute("disabled")!==null||/(^|\s)(disabled|is-disabled)(\s|$)/i.test(String(el.className||""));
-      const controls=[...document.querySelectorAll(
-        "button,[role='button'],a,[tabindex],.el-button,.ant-btn,.ssc-button,[class*='button']"
-      )].filter(visible);
-      const trigger=controls
-        .filter(el=>!disabled(el)&&/^(?:export|export results?|download|download results?)$/.test(label(el)))
-        .sort((a,b)=>{
-          const rank=el=>/export/.test(label(el))?0:1;
-          return rank(a)-rank(b);
-        })[0] || controls.find(el=>!disabled(el)&&/\bexport\b/.test(label(el))&&!/(import|template|sample)/.test(label(el)));
-      if(!trigger){
-        return {
-          clicked:false,
-          controls:controls.map(el=>String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").trim())
-            .filter(Boolean).slice(0,60),
-          reason:"No visible SPX Export or Download control was found."
-        };
-      }
-      const triggerLabel=String(trigger.innerText||trigger.textContent||trigger.getAttribute("aria-label")||trigger.title||"Export").trim().slice(0,120);
-      try{trigger.scrollIntoView({block:"center",inline:"nearest"});}catch{}
-      trigger.click();
-
-      const menuContainers=()=>[...document.querySelectorAll(
-        "[role='menu'],[role='listbox'],.el-dropdown-menu,.el-popper,.ant-dropdown,.ant-dropdown-menu,"+
-        "[class*='dropdown-menu'],[class*='dropdown__menu'],[class*='export-menu'],[class*='menu-popup']"
-      )].filter(visible);
+        el.getAttribute("disabled")!==null||
+        /(^|\\s)(disabled|is-disabled)(\\s|$)/i.test(String(el.className||""));
+      const targetOption=el=>{
+        const t=norm(textOf(el));
+        return /^exportbatchsearchresults?$/.test(t)||
+          /^batchsearchresults?$/.test(t)||
+          /batchsearch.*results?/.test(t);
+      };
       const menuOptions=()=>{
-        const found=new Set();
-        for(const root of menuContainers()){
-          for(const el of root.querySelectorAll(
-            "[role='menuitem'],[role='option'],button,a,li,.el-dropdown-menu__item,.ant-dropdown-menu-item,[tabindex],[class*='item'],span,div"
-          )){
-            if(!visible(el))continue;
-            const text=String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").replace(/\s+/g," ").trim();
-            if(text&&text.length<180)found.add(el);
-          }
+        const candidates=[...document.querySelectorAll(
+          "[role='menuitem'],[role='option'],li,.el-dropdown-menu__item,.ant-dropdown-menu-item,"+
+          "[class*='dropdown-menu'] a,[class*='dropdown-menu'] button"
+        )].filter(visible);
+        // Some Shopee releases render menu entries as plain portal divs/spans.
+        // Match the exact menu label and click the smallest matching element.
+        for(const el of document.querySelectorAll("body *")){
+          if(!visible(el))continue;
+          const t=norm(textOf(el));
+          if(/^exportbatchsearchresults?$/.test(t)||/^batchsearchresults?$/.test(t))candidates.push(el);
         }
-        // Also handle SPX menus rendered as a top-level portal without menu roles.
-        for(const el of document.querySelectorAll("li,[role='menuitem'],[role='option'],.el-dropdown-menu__item,.ant-dropdown-menu-item")){
-          if(visible(el)){
-            const text=String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").replace(/\s+/g," ").trim();
-            if(text&&text.length<180)found.add(el);
-          }
-        }
-        return [...found].map(el=>({el,text:String(el.innerText||el.textContent||el.getAttribute("aria-label")||el.title||"").replace(/\s+/g," ").trim(),normalized:label(el)}));
+        return [...new Set(candidates)]
+          .filter(el=>!disabled(el)&&targetOption(el))
+          .sort((a,b)=>textOf(a).length-textOf(b).length);
       };
-      let options=[];
-      const menuDeadline=Date.now()+5000;
-      while(Date.now()<menuDeadline){
-        options=menuOptions();
-        if(options.length)break;
-        await sleep(150);
+      const existing=menuOptions();
+      let chosen=existing[0]||null;
+      let triggerLabel="";
+      if(!chosen){
+        const controls=[...document.querySelectorAll(
+          "button,[role='button'],a,[tabindex],.el-button,.ant-btn,.ssc-button,[class*='button']"
+        )].filter(visible);
+        const trigger=controls.find(el=>!disabled(el)&&
+          /^(export|exportresults?|download|downloadresults?)$/.test(norm(textOf(el))))||
+          controls.find(el=>!disabled(el)&&/^export$/.test(norm(textOf(el))));
+        if(!trigger){
+          return {
+            clicked:false,menuOpened:false,menuItem:"",
+            reason:"Could not find the SPX Order Tracking Export dropdown.",
+            controls:controls.map(textOf).filter(Boolean).slice(0,40)
+          };
+        }
+        triggerLabel=textOf(trigger).slice(0,120);
+        try{trigger.scrollIntoView({block:"center",inline:"nearest"});}catch{}
+        trigger.click();
+        const deadline=Date.now()+7000;
+        while(Date.now()<deadline){
+          chosen=menuOptions()[0]||null;
+          if(chosen)break;
+          await sleep(150);
+        }
       }
-      const usable=options.filter(item=>!/(template|sample|instruction|import|upload|column setting|setting)/i.test(item.text)&&!disabled(item.el));
-      const rank=item=>{
-        const t=item.normalized;
-        if(/^export batch search results?$/.test(t)||/^batch search results?$/.test(t))return 0;
-        if(/batch search.*results?|search results?.*batch/.test(t))return 1;
-        if(/search results?/.test(t))return 2;
-        if(/export all|download all|all results/.test(t))return 3;
-        if(/csv|excel|spreadsheet/.test(t))return 4;
-        if(/export|download/.test(t))return 5;
-        if(/^all(?: records| results| orders| pages)?$/.test(t))return 6;
-        return 9;
-      };
-      const chooseExportOption=(items,allowAll=false)=>{
-        const candidates=items.filter(item=>
-          !/(template|sample|instruction|import|upload|column setting|setting)/i.test(item.text)&&
-          !disabled(item.el)&&
-          (/batch search.*results?|search results?.*batch|batch search|search results?/.test(item.normalized)||
-            (allowAll&&/^all(?: records| results| orders| pages)?$/.test(item.normalized)))
-        );
-        candidates.sort((a,b)=>rank(a)-rank(b));
-        return candidates[0]||null;
-      };
-      const hasCurrentChoice=usable.some(item=>/current page|current records|current results/i.test(item.normalized));
-      let chosen=chooseExportOption(usable,hasCurrentChoice);
-      if(chosen){
-        try{chosen.el.scrollIntoView({block:"center",inline:"nearest"});}catch{}
-        chosen.el.click();
-        let selectedText=chosen.text;
-        // Some SPX versions nest CSV/Excel choices under an Export submenu.
-        await sleep(450);
-        const nested=menuOptions().filter(item=>item.text!==chosen.text);
-        const nestedHasCurrent=nested.some(item=>/current page|current records|current results/i.test(item.normalized));
-        const nestedHasOnlyAll=nested.length===1&&/^all(?: records| results| orders| pages)?$/.test(nested[0].normalized);
-        const nestedChosen=chooseExportOption(nested,nestedHasCurrent||nestedHasOnlyAll);
-        if(nestedChosen&&nestedChosen.normalized!==chosen.normalized){
-          try{nestedChosen.el.scrollIntoView({block:"center",inline:"nearest"});}catch{}
-          nestedChosen.el.click();
-          selectedText+=" → "+nestedChosen.text;
-        }
+      if(!chosen){
+        const visibleText=String(document.body?.innerText||"").replace(/\\s+/g," ").slice(-1800);
         return {
-          clicked:true,trigger:triggerLabel,
-          menuItem:selectedText.slice(0,180),
-          menuOptions:menuOptions().map(item=>item.text).slice(0,35)
+          clicked:false,menuOpened:true,menuItem:"",
+          trigger:triggerLabel,
+          reason:"The SPX Export menu opened, but the exact Export Batch-Search Results option was not found.",
+          menuText:visibleText
         };
       }
+      const selectedText=textOf(chosen).slice(0,180);
+      try{chosen.scrollIntoView({block:"center",inline:"nearest"});}catch{}
+      chosen.click();
       return {
-        clicked:true,trigger:triggerLabel,menuOpened:options.length>0,
-        menuItem:"",
-        menuOptions:usable.map(item=>item.text).slice(0,35),
-        note:options.length?"Export dropdown opened, but no recognizable download/export menu item was found.":"Export control was clicked, but no dropdown menu items appeared."
+        clicked:true,menuOpened:true,trigger:triggerLabel||"Export",
+        menuItem:selectedText,clickedAt:Date.now()
       };
     }
   });
-  return injected?.[0]?.result || {clicked:false,controls:[],reason:"SPX did not return an Export control result."};
+  return injected?.[0]?.result || {
+    clicked:false,menuOpened:false,menuItem:"",
+    reason:"SPX did not return an Export menu result."
+  };
 }
 function parseBatchSearchDelimitedRows(source) {
   const input = String(source || "").replace(/^\uFEFF/, "");
@@ -2281,6 +2247,104 @@ function findBatchSearchExportTaskResponse(events) {
   return null;
 }
 
+function batchSearchTaskCreatedAt(task) {
+  for (const key of ["ctime","create_time","createTime","created_at","createdAt","task_create_time","start_time","submit_time"]) {
+    const raw=Number(task?.[key]||0);
+    if(Number.isFinite(raw)&&raw>0)return raw>100000000000?Math.floor(raw/1000):Math.floor(raw);
+  }
+  return 0;
+}
+
+async function discoverNewBatchSearchExportTask(submittedAtSec, job) {
+  const sources=["fms","fm",""];
+  const deadline=Date.now()+4*60*1000;
+  let lastProgressAt=0;
+  let lastPreview="";
+  const excluded=/feeder_assignment_task|assignment_task|spx_driver|inbound_to_from_spx|pickup_task_export/i;
+  while(Date.now()<deadline) {
+    if(job?.cancelled)throw new Error("Batch Search export task lookup cancelled.");
+    const settled=await Promise.allSettled(
+      sources.map(source=>listTasks(Math.max(0,submittedAtSec-90),source,1,false,0))
+    );
+    const candidates=[];
+    const errors=[];
+    for(let i=0;i<settled.length;i++) {
+      const result=settled[i];
+      if(result.status!=="fulfilled") {
+        errors.push((sources[i]||"default")+": "+(result.reason?.message||String(result.reason)));
+        continue;
+      }
+      for(const task of result.value||[]) {
+        const taskId=getExportTaskId(task);
+        if(!taskId)continue;
+        const createdAt=batchSearchTaskCreatedAt(task);
+        // The endpoint is already bounded by start_time. Require a recent
+        // creation timestamp as a second guard against reusing an older task.
+        if(!createdAt||createdAt<submittedAtSec-90||createdAt>Math.floor(Date.now()/1000)+60)continue;
+        const taskName=String(task?.export_name||task?.task_name||task?.name||"");
+        if(excluded.test(taskName))continue;
+        candidates.push({task,source:sources[i],taskId,createdAt});
+      }
+    }
+    candidates.sort((a,b)=>b.createdAt-a.createdAt||b.taskId-a.taskId);
+    if(candidates.length) {
+      const found=candidates[0];
+      sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
+        kind:"batch-search-result",
+        message:"Found the new SPX Batch Search export task "+found.taskId+" in the "+(found.source||"default")+" task list. Waiting for its download…",
+        selectedDate:job.selectedDate||""
+      });
+      return {task:found.task,source:found.source,taskId:found.taskId,createdAt:found.createdAt};
+    }
+    lastPreview=settled.map((r,i)=>r.status==="fulfilled"
+      ?(sources[i]||"default")+": "+(r.value||[]).slice(0,4).map(t=>"#"+getExportTaskId(t)+" "+String(t?.export_name||t?.biz_name||t?.status||"")).join(", ")
+      :(sources[i]||"default")+": "+(r.reason?.message||"lookup failed")
+    ).join(" | ");
+    if(Date.now()-lastProgressAt>=8000) {
+      sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
+        kind:"batch-search-result",
+        message:"Export was submitted. Checking the SPX Latest Task export queue for the new Batch Search file…",
+        selectedDate:job.selectedDate||""
+      });
+      lastProgressAt=Date.now();
+    }
+    await sleep(2500);
+  }
+  throw new Error("SPX Export Batch-Search Results was selected, but no new export task appeared in the Latest Task queue. "+(lastPreview?"Task queue check: "+lastPreview:""));
+}
+
+async function downloadDiscoveredBatchSearchTask(found, submittedAtSec, job) {
+  const taskId=Number(found?.taskId||getExportTaskId(found?.task)||0);
+  if(!taskId)throw new Error("The new SPX Batch Search export task did not include a task ID.");
+  const waitStartSec=Math.max(0,submittedAtSec-90);
+  const completedInfo=await waitForAssignedTodayExportTask(taskId,waitStartSec,job,"Batch Search");
+  let task=completedInfo.task||found.task||{};
+  let source=completedInfo.source||found.source||"fms";
+  let mediaId=getExportMediaId(task)||getExportMediaId(found.task);
+  if(!mediaId) {
+    const recovered=await waitForAssignmentTaskMediaId(taskId,{task,source},job,"Batch Search");
+    task=recovered.task||task;
+    source=recovered.source||source;
+    mediaId=recovered.mediaId||getExportMediaId(task);
+  }
+  sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
+    kind:"batch-search-result",
+    message:"SPX Batch Search export task "+taskId+" succeeded. Downloading the generated result file…",
+    selectedDate:job.selectedDate||""
+  });
+  const signedUrl=await getSignedDownloadUrl(taskId,source,mediaId);
+  const converted=await downloadFirstMileExportFile(
+    signedUrl,String(task.file_name||task.filename||"spx_batch_search_result.csv")
+  );
+  return {
+    base64:batchSearchBase64FromText(converted.text),
+    fileName:converted.fileName,
+    contentType:"text/csv",
+    size:new TextEncoder().encode(converted.text).length,
+    source:"SPX Batch Search task "+taskId+" signed download"
+  };
+}
+
 async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
   await installBatchSearchFileCapture(tabId);
   let injectionResults;
@@ -2450,17 +2514,25 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
     return last;
   };
 
-  sendBatchSearchFileProgress("Waiting for SPX to create its downloadable result file…");
-  let capture=await pollFile(8000);
+  sendBatchSearchFileProgress("SPX Batch Search completed. Selecting Export → Export Batch-Search Results…");
+  let capture=await pollFile(2500);
   let exportAction=null;
-  if(!capture?.ready){
+  let exportSubmittedAtSec=0;
+  if(!capture?.ready&&!capture?.exportTaskResponse){
     exportAction=await clickBatchSearchDownloadControl(tabId);
-    if(exportAction?.clicked){
-      sendBatchSearchFileProgress("Selected SPX "+exportAction.trigger+" → "+(exportAction.menuItem||"download")+"; waiting for the Batch Search result file…");
-      capture=await pollFile(45000);
-    }else{
-      capture=await pollFile(7000);
+    if(!exportAction?.clicked||!exportAction?.menuItem){
+      throw new Error(
+        "SPX Batch Search finished, but Test2 could not select Export Batch-Search Results. "+
+        String(exportAction?.reason||exportAction?.menuText||"The SPX export option was not found.")+
+        (exportAction?.menuText?" Menu: "+exportAction.menuText:"")
+      );
     }
+    exportSubmittedAtSec=Math.max(0,Math.floor((Number(exportAction.clickedAt)||Date.now())/1000));
+    job.batchSearchExportSubmittedAtSec=exportSubmittedAtSec;
+    sendBatchSearchFileProgress(
+      "Selected SPX Export → "+exportAction.menuItem+". Waiting for the new Latest Task export to finish…"
+    );
+    capture=await pollFile(10000);
   }
   if(!capture?.ready&&capture?.directUrl&&!/^blob:/i.test(capture.directUrl)){
     const response=await extensionFetchBuffer(capture.directUrl,{
@@ -2509,7 +2581,14 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
       (events?". SPX export requests: "+events:""));
   }
 
-  const resolvedFile=await resolveBatchSearchExportPayload(capture.file,tabId,job);
+  let resolvedFile=null;
+  if(!capture?.ready&&!capture?.exportTaskResponse&&exportSubmittedAtSec){
+    sendBatchSearchFileProgress("No direct file response was exposed. Checking SPX Latest Task and retrieving the newly created export…");
+    const foundTask=await discoverNewBatchSearchExportTask(exportSubmittedAtSec,job);
+    resolvedFile=await downloadDiscoveredBatchSearchTask(foundTask,exportSubmittedAtSec,job);
+  }else{
+    resolvedFile=await resolveBatchSearchExportPayload(capture.file,tabId,job);
+  }
   sendBatchSearchFileProgress("Downloaded "+String(resolvedFile.fileName||"SPX result file")+" · reading the actual file contents…");
   return await parseDownloadedBatchSearchFile(resolvedFile,trackingNumbers);
 }
