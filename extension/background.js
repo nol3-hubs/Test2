@@ -1784,7 +1784,10 @@ async function installBatchSearchFileCapture(tabId) {
               const type = String(this.getResponseHeader("content-type") || "");
               const disposition = String(this.getResponseHeader("content-disposition") || "");
               const binaryResponse=this.responseType==="blob"||this.responseType==="arraybuffer";
-              if (!fileLike(url, type, disposition) && !binaryResponse) {
+              const textPayload=typeof this.responseText==="string"?this.responseText:"";
+              const csvHeaderLike=/tracking|awb|order(?:\s|_)?(?:id|sn|number)|parcel|shipment|status/i.test(textPayload.slice(0,2000))&&
+                /[,\t;]/.test((textPayload.split(/\r?\n/,1)[0]||""));
+              if (!fileLike(url, type, disposition) && !binaryResponse && !csvHeaderLike) {
                 if (/(export|download|batch.?search|search.?result)/i.test(url)) {
                   state.events.push({
                     url, method:this.__badocBatchMethod || "GET",
@@ -1974,7 +1977,9 @@ async function clickBatchSearchDownloadControl(tabId) {
         // Some SPX versions nest CSV/Excel choices under an Export submenu.
         await sleep(450);
         const nested=menuOptions().filter(item=>item.text!==chosen.text);
-        const nestedChosen=chooseExportOption(nested,false);
+        const nestedHasCurrent=nested.some(item=>/current page|current records|current results/i.test(item.normalized));
+        const nestedHasOnlyAll=nested.length===1&&/^all(?: records| results| orders| pages)?$/.test(nested[0].normalized);
+        const nestedChosen=chooseExportOption(nested,nestedHasCurrent||nestedHasOnlyAll);
         if(nestedChosen&&nestedChosen.normalized!==chosen.normalized){
           try{nestedChosen.el.scrollIntoView({block:"center",inline:"nearest"});}catch{}
           nestedChosen.el.click();
@@ -2284,7 +2289,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
   if(!capture?.ready){
     exportAction=await clickBatchSearchDownloadControl(tabId);
     if(exportAction?.clicked){
-      sendBatchSearchFileProgress("Clicked SPX "+exportAction.label+" to download the Batch Search result file…");
+      sendBatchSearchFileProgress("Selected SPX "+exportAction.trigger+" → "+(exportAction.menuItem||"download")+"; waiting for the Batch Search result file…");
       capture=await pollFile(45000);
     }else{
       capture=await pollFile(7000);
