@@ -2386,14 +2386,15 @@ async function parseDownloadedBatchSearchFile(file, requestedTns) {
       ?candidateIndexes.map(index=>values[index]||"")
       :values.filter(value=>/^[A-Z0-9_-]{6,60}$/i.test(value));
     const keys=[...new Set(candidateValues.map(normalizeBatchSearchTn).filter(value=>value&&wanted.has(value)))];
-    const sourceFields={};
-    headers.forEach((header,index)=>{sourceFields[header]=values[index]??"";});
-    const record={sourceFields,matchedKeys:keys};
-    sourceRows.push(record);
-
     const resultText=(resultIndex>=0?String(values[resultIndex]||""):"")+" "+
       (statusIndex>=0?String(values[statusIndex]||""):"");
     const explicitlyNotFound=/not[\s_-]*found|no[\s_-]*(?:match|record|result)|unmatched|no data/i.test(resultText);
+    const sourceFields={};
+    headers.forEach((header,index)=>{sourceFields[header]=values[index]??"";});
+    // Preserve the row exactly as downloaded, but do not count an explicit
+    // SPX Not Found record as a successful tracking-number match.
+    const record={sourceFields,matchedKeys:explicitlyNotFound?[]:keys};
+    sourceRows.push(record);
     if(explicitlyNotFound)continue;
     for(const key of keys) {
       results.set(key,{
