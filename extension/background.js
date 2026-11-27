@@ -1865,8 +1865,10 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
               const label = controlLabel(el);
               const cls = controlClass(el);
               const text = controlText(el);
+              const icon=el.querySelector?.("svg,[class*='right'],[class*='next'],[aria-label*='right' i]");
+              const iconSignal=icon&&/right|next|chevron|arrow/.test(controlClass(icon)+" "+controlLabel(icon));
               return /next|forward|paginationnext|btnnext|pagenext|chevronright|arrowright|iconright/.test(label+" "+cls) ||
-                /^(?:>|›|»|→|⟩|⟶)$/.test(text);
+                /^(?:>|›|»|→|⟩|⟶)$/.test(text) || !!iconSignal;
             };
             for (const control of controls) {
               if (!hasNextSignal(control) && !/pagination|pager|page-item|page-link/.test(controlClass(control))) continue;
@@ -1963,7 +1965,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
             // label on the chevron. Fall back to the next numeric page link.
             for(const root of roots){
               const items=pagerControls(root);
-              const active=items.find(el=>el.getAttribute("aria-current")==="page"||
+              const active=items.find(el=>/^(page|true)$/i.test(el.getAttribute("aria-current")||"")||
                 /(^|\s)(active|is-active|active-page)(\s|$)/i.test(controlClass(el)));
               let current=active&&/^\d+$/.test(controlText(active))?Number(controlText(active)):0;
               if(!current){
@@ -1979,7 +1981,10 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
           };
           const readPaginationRange=()=>{
             const texts=findPagerRoots().map(root=>String(root.innerText||root.textContent||""));
-            const allText=texts.join(" ");
+            // Some Shopee builds render the page-range summary outside the
+            // element carrying the pagination class; include the visible page text.
+            const bodyText=String(document.body?.innerText||"").slice(0,30000);
+            const allText=texts.join(" ")+" "+bodyText;
             const patterns=[
               /(\d[\d,]*)\s*(?:-|–|to)\s*(\d[\d,]*)\s*(?:of|\/)\s*(\d[\d,]*)/i,
               /showing\s+\d[\d,]*\s+(?:to|-)\s+(\d[\d,]*)\s+of\s+(\d[\d,]*)/i,
