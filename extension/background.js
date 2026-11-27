@@ -1841,14 +1841,58 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
           }).filter(r => r.matchedTN);
           const signature = () => [...document.querySelectorAll("table tbody tr")]
             .map(tr => String(tr.innerText || "").replace(/\\s+/g, " ").trim()).join("\\n");
-          const paginationRoots = () => [...document.querySelectorAll(
-            ".el-pagination,.ant-pagination,[class*=\'pagination\'],nav[aria-label*=\'pagination\' i]"
-          )].filter(visible);
-          const paginationSnapshot = () => paginationRoots().map(root => {
-            const text = String(root.innerText || root.textContent || "").replace(/\\s+/g, " ").trim();
-            const active = [...root.querySelectorAll("[aria-current=true],.active,.is-active")]
-              .filter(visible).map(el => String(el.innerText || el.textContent || "").trim()).join(",");
-            return text + "|active:" + active;
+          const controlSelector = "button,a,[role='button'],[tabindex],li,[data-page]";
+          const controlText = el => String(
+            el?.innerText || el?.textContent || el?.getAttribute?.("aria-label") ||
+            el?.getAttribute?.("title") || ""
+          ).replace(/\s+/g," ").trim();
+          const controlClass = el => String(el?.className || "").toLowerCase();
+          const controlLabel = el => normalizeActionLabel([
+            el?.innerText,el?.textContent,el?.getAttribute?.("aria-label"),
+            el?.getAttribute?.("title"),el?.getAttribute?.("data-testid"),
+            el?.getAttribute?.("data-tooltip")
+          ].filter(Boolean).join(" "));
+          const numericControl = el => /^\d+$/.test(controlText(el));
+          const explicitPaginationRoots = () => [
+            ...document.querySelectorAll(
+              ".el-pagination,.ant-pagination,[class*='pagination'],[class*='pager'],[data-testid*='pagination'],nav[aria-label*='page' i]"
+            )
+          ].filter(visible);
+          const findPagerRoots = () => {
+            const roots = new Set(explicitPaginationRoots());
+            const controls = [...document.querySelectorAll(controlSelector)].filter(visible);
+            const hasNextSignal = el => {
+              const label = controlLabel(el);
+              const cls = controlClass(el);
+              const text = controlText(el);
+              return /next|forward|paginationnext|btnnext|pagenext|chevronright|arrowright|iconright/.test(label+" "+cls) ||
+                /^(?:>|›|»|→|⟩|⟶)$/.test(text);
+            };
+            for (const control of controls) {
+              if (!hasNextSignal(control) && !/pagination|pager|page-item|page-link/.test(controlClass(control))) continue;
+              let parent = control.parentElement;
+              for (let depth=0; parent && parent!==document.body && depth<7; depth++,parent=parent.parentElement) {
+                if (!visible(parent)) continue;
+                const descendants=[...parent.querySelectorAll(controlSelector)].filter(visible);
+                if (descendants.length<2 || descendants.length>50) continue;
+                const numberCount=descendants.filter(numericControl).length;
+                const classes=controlClass(parent);
+                if (numberCount>=1 || /pagination|pager|page-nav/.test(classes)) roots.add(parent);
+              }
+            }
+            return [...roots].filter(root=>visible(root));
+          };
+          const pagerControls = root => [...root.querySelectorAll(controlSelector)].filter(visible);
+          const paginationSnapshot = () => findPagerRoots().map(root => {
+            const controls=pagerControls(root).map(el=>({
+              text:controlText(el).slice(0,24),
+              label:el.getAttribute("aria-label")||"",
+              title:el.getAttribute("title")||"",
+              cls:controlClass(el).slice(0,90),
+              disabled:!!el.disabled || el.getAttribute("aria-disabled")==="true"
+            })).slice(0,40);
+            return String(root.innerText||root.textContent||"").replace(/\s+/g," ").trim().slice(0,350)+
+              "|controls:"+JSON.stringify(controls);
           }).join("||");
           const searchLoading = () => [...document.querySelectorAll(
             ".el-loading-mask,.el-loading-spinner,.ant-spin-spinning,.ssc-loading,[aria-busy=true],[data-loading=true]"
@@ -1859,136 +1903,146 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
           stage = "submit Batch Search and wait for results";
           reportStage("Submitting " + wanted.size.toLocaleString() + " tracking number(s) to SPX…");
           submitButton.click();
-          let lastSig = before, lastPager = beforePager, stableSince = Date.now();
-          let lastResultNotice = 0, sawBusy = false, freshStateObserved = false;
-          const deadline = Date.now() + 90000;
-          while (Date.now() < deadline) {
+          let lastSig=before,lastPager=beforePager,stableSince=Date.now();
+          let lastResultNotice=0,sawBusy=false,freshStateObserved=false;
+          const deadline=Date.now()+90000;
+          while(Date.now()<deadline){
             await sleep(350);
-            const sig = signature();
-            const pager = paginationSnapshot();
-            const busy = searchLoading();
-            if (busy) sawBusy = true;
-            if (sig !== lastSig || pager !== lastPager) {
-              lastSig = sig;
-              lastPager = pager;
-              stableSince = Date.now();
-              freshStateObserved = true;
+            const sig=signature(),pager=paginationSnapshot(),busy=searchLoading();
+            if(busy)sawBusy=true;
+            if(sig!==lastSig||pager!==lastPager){
+              lastSig=sig;lastPager=pager;stableSince=Date.now();freshStateObserved=true;
             }
-            if (sawBusy && !busy) freshStateObserved = true;
-            const elapsed = Date.now() - started;
-            if (elapsed - lastResultNotice >= 5000) {
-              reportStage("Waiting for SPX to finish the search… " + Math.floor(elapsed / 1000) + "s elapsed.");
-              lastResultNotice = elapsed;
+            if(sawBusy&&!busy)freshStateObserved=true;
+            const elapsed=Date.now()-started;
+            if(elapsed-lastResultNotice>=5000){
+              reportStage("Waiting for SPX to finish the search… "+Math.floor(elapsed/1000)+"s elapsed.");
+              lastResultNotice=elapsed;
             }
-            // Old rows already in the table are not evidence that this search
-            // has completed. Require a refreshed table/pager or a full loading cycle.
-            if (elapsed >= 4000 && freshStateObserved && !busy && Date.now() - stableSince >= 2200) break;
+            if(elapsed>=4000&&freshStateObserved&&!busy&&Date.now()-stableSince>=2200)break;
           }
-          if (Date.now() >= deadline) {
-            throw new Error("SPX did not produce a refreshed, stable result table within 90 seconds. The previous table was not accepted, so TNs will not be marked Not Found.");
-          }
-          if (!freshStateObserved) {
-            throw new Error("SPX did not show a refreshed result table or completed loading cycle. Search stopped to avoid false Not Found results.");
-          }
+          if(Date.now()>=deadline)throw new Error("SPX did not produce a refreshed, stable result table within 90 seconds. Previous rows were not accepted; TNs will not be marked Not Found.");
+          if(!freshStateObserved)throw new Error("SPX did not show a refreshed result table or completed loading cycle. Search stopped to avoid false Not Found results.");
 
-          stage = "read all result pages";
-          const output = new Map();
-          const seenPages = new Set();
-          const pageSignature = () => signature() + "\\n--PAGINATION--\\n" + paginationSnapshot();
-          const addCurrentPage = () => {
-            for (const item of getPage()) output.set(clean(item.matchedTN || item.tn), item);
-          };
+          stage="read all result pages";
+          const output=new Map(),seenPages=new Set();
+          const pageSignature=()=>signature()+"\n--PAGINATION--\n"+paginationSnapshot();
+          const addCurrentPage=()=>{for(const item of getPage())output.set(clean(item.matchedTN||item.tn),item);};
           addCurrentPage();
           seenPages.add(pageSignature());
-          reportStage("SPX results refreshed. Reading every available result page…");
+          reportStage("SPX results refreshed. Checking pagination and reading all result pages…");
 
-          const findNextPageControl = () => {
-            const selectors = [
-              ".el-pagination button.btn-next",
-              ".el-pagination .btn-next",
-              ".ant-pagination-next",
-              "button[aria-label=\'Next page\']",
-              "[aria-label=\'Next page\']",
-              "button[aria-label*=\'next\' i]",
-              "button[title*=\'next\' i]",
-              "[class*=\'pagination\'] [class*=\'next\']",
-              "[class*=\'pagination\'] button",
-              "[class*=\'pagination\'] a",
-              "[class*=\'pagination\'] [role=\'button\']",
-              "[class*=\'pagination\'] [tabindex]"
-            ];
-            const candidates = selectors.flatMap(selector => {
-              try { return [...document.querySelectorAll(selector)]; } catch { return []; }
-            }).filter((el,index,array) => visible(el) && array.indexOf(el) === index);
-            return candidates.find(el => {
-              const label = labelVariants(el).join(" ");
-              const cls = String(el.className || "").toLowerCase();
-              return cls.includes("btn-next") || cls.includes("pagination-next") ||
-                label.includes("next") || label.replace(/[^a-z]/g,"") === "nextpage";
-            }) || null;
+          const roots=findPagerRoots();
+          const isInPager=el=>roots.some(root=>root===el||root.contains(el));
+          const isArrowGlyph=value=>/^(?:>|›|»|→|⟩|⟶)$/.test(String(value||"").trim());
+          const isNextControl=el=>{
+            const label=controlLabel(el),cls=controlClass(el),raw=controlText(el);
+            if(/next|forward|paginationnext|btnnext|pagenext|chevronright|arrowright|iconright/.test(label+" "+cls))return true;
+            if(isArrowGlyph(raw)&&isInPager(el))return true;
+            const icon=el.querySelector?.("svg,[class*='right'],[class*='next'],[aria-label*='right' i]");
+            if(icon&&(/right|next|chevron|arrow/.test(controlClass(icon)+" "+controlLabel(icon)))&&isInPager(el))return true;
+            return false;
           };
-          const isDisabled = el => !!el.disabled ||
-            el.getAttribute("aria-disabled") === "true" ||
-            /(^|\\s)(disabled|is-disabled)(\\s|$)/i.test(String(el.className || "")) ||
+          const isDisabled=el=>!!el.disabled||
+            el.getAttribute("aria-disabled")==="true"||
+            el.getAttribute("disabled")!==null||
+            /(^|\s)(disabled|is-disabled|ant-pagination-disabled)(\s|$)/i.test(controlClass(el))||
             !!el.closest("li")?.classList?.contains("disabled");
-          const hasPaginationBeyondCurrent = () => {
-            const text = paginationRoots().map(root => String(root.innerText || root.textContent || "")).join(" ");
-            const range = text.match(/(\d[\d,]*)\s*(?:-|–|to)\s*(\d[\d,]*)\s*(?:of|\/)\s*(\d[\d,]*)/i);
-            if (!range) return false;
-            const end = Number(range[2].replace(/,/g,""));
-            const total = Number(range[3].replace(/,/g,""));
-            return Number.isFinite(end) && Number.isFinite(total) && end < total;
+          const getNextPageControl=()=>{
+            const controls=[...document.querySelectorAll(controlSelector)].filter(visible);
+            const explicit=controls.filter(isNextControl);
+            if(explicit.length){
+              explicit.sort((a,b)=>(isInPager(b)?1:0)-(isInPager(a)?1:0));
+              return explicit[0];
+            }
+            // Some SPX builds use numbered pager buttons but no accessible
+            // label on the chevron. Fall back to the next numeric page link.
+            for(const root of roots){
+              const items=pagerControls(root);
+              const active=items.find(el=>el.getAttribute("aria-current")==="page"||
+                /(^|\s)(active|is-active|active-page)(\s|$)/i.test(controlClass(el)));
+              let current=active&&/^\d+$/.test(controlText(active))?Number(controlText(active)):0;
+              if(!current){
+                const texts=items.map(controlText).filter(x=>/^\d+$/.test(x)).map(Number);
+                if(texts.includes(1))current=1;
+              }
+              if(current){
+                const next=items.find(el=>numericControl(el)&&Number(controlText(el))===current+1);
+                if(next)return next;
+              }
+            }
+            return null;
           };
-
-          let page = 0;
-          for (; page < 400; page++) {
-            const next = findNextPageControl();
-            if (!next) {
-              if (hasPaginationBeyondCurrent()) {
-                throw new Error("SPX indicates additional result pages, but its Next Page control could not be located. Pagination: " + paginationSnapshot().slice(0,500));
-              }
-              break;
+          const readPaginationRange=()=>{
+            const texts=findPagerRoots().map(root=>String(root.innerText||root.textContent||""));
+            const allText=texts.join(" ");
+            const patterns=[
+              /(\d[\d,]*)\s*(?:-|–|to)\s*(\d[\d,]*)\s*(?:of|\/)\s*(\d[\d,]*)/i,
+              /showing\s+\d[\d,]*\s+(?:to|-)\s+(\d[\d,]*)\s+of\s+(\d[\d,]*)/i,
+              /(\d[\d,]*)\s*-\s*(\d[\d,]*)\s*\/\s*(\d[\d,]*)/i
+            ];
+            for(let i=0;i<patterns.length;i++){
+              const m=allText.match(patterns[i]);
+              if(!m)continue;
+              const end=Number((i===1?m[1]:m[2]).replace(/,/g,""));
+              const total=Number((i===1?m[2]:m[3]).replace(/,/g,""));
+              if(Number.isFinite(end)&&Number.isFinite(total))return {end,total,text:m[0]};
             }
-            if (isDisabled(next)) break;
-            stage = `paginate results page ${page + 2}`;
-            reportStage("Reading SPX results page " + (page + 2) + "… " + output.size.toLocaleString() + " matching TN(s) collected.");
-            const beforePage = pageSignature();
+            return null;
+          };
+          const hasExplicitEmptyState=()=>/no (?:matching )?(?:data|records|results|orders)|no result found|0 (?:records|results)/i.test(
+            [...document.querySelectorAll("body")].map(el=>String(el.innerText||"")).join(" ")
+          );
+          let page=0,terminalPageConfirmed=false;
+          for(;page<400;page++){
+            const next=getNextPageControl();
+            if(!next){
+              const range=readPaginationRange();
+              if(range&&range.end>=range.total){terminalPageConfirmed=true;break;}
+              if(output.size>=wanted.size){terminalPageConfirmed=true;break;}
+              if(!output.size&&hasExplicitEmptyState()){terminalPageConfirmed=true;break;}
+              const pagerText=paginationSnapshot().slice(0,900)||"No recognizable pagination controls were found.";
+              throw new Error(
+                "Cannot verify that SPX returned every result page. Captured "+output.size.toLocaleString()+
+                " matching TN(s) from "+wanted.size.toLocaleString()+" inputs, but no usable Next Page control or final-page indicator was found. "+
+                "Search was stopped; remaining TNs will not be marked Not Found. Pagination diagnostics: "+pagerText
+              );
+            }
+            if(isDisabled(next)){terminalPageConfirmed=true;break;}
+            stage="paginate results page "+(page+2);
+            reportStage("Reading SPX results page "+(page+2)+"… "+output.size.toLocaleString()+" matching TN(s) collected.");
+            const beforePage=pageSignature();
+            try{next.scrollIntoView({block:"center",inline:"nearest"});}catch{}
             next.click();
-            let changed = false, lastPageState = beforePage, pageStableSince = Date.now(), pageNotice = 0;
-            const pageDeadline = Date.now() + 20000;
-            while (Date.now() < pageDeadline) {
+            let changed=false,lastPageState=beforePage,pageStableSince=Date.now(),pageNotice=0;
+            const pageDeadline=Date.now()+25000;
+            while(Date.now()<pageDeadline){
               await sleep(300);
-              const current = pageSignature();
-              const busy = searchLoading();
-              if (current !== lastPageState) {
-                lastPageState = current;
-                pageStableSince = Date.now();
-                if (current !== beforePage) changed = true;
+              const current=pageSignature(),busy=searchLoading();
+              if(current!==lastPageState){
+                lastPageState=current;pageStableSince=Date.now();
+                if(current!==beforePage)changed=true;
               }
-              const elapsed = Date.now() - (pageDeadline - 20000);
-              if (elapsed - pageNotice >= 5000) {
-                reportStage("Waiting for SPX result page " + (page + 2) + "…");
-                pageNotice = elapsed;
+              const elapsed=Date.now()-(pageDeadline-25000);
+              if(elapsed-pageNotice>=5000){
+                reportStage("Waiting for SPX result page "+(page+2)+"…");
+                pageNotice=elapsed;
               }
-              if (changed && !busy && Date.now() - pageStableSince >= 1800) break;
+              if(changed&&!busy&&Date.now()-pageStableSince>=1800)break;
             }
-            if (!changed) {
-              throw new Error("SPX Next Page was clicked, but the result table did not change within 20 seconds. Stopping rather than marking uncollected TNs as Not Found. Pagination: " + paginationSnapshot().slice(0,500));
-            }
-            const currentPage = pageSignature();
-            if (seenPages.has(currentPage)) throw new Error("SPX pagination repeated a result page. Stopping to prevent incomplete results.");
+            if(!changed)throw new Error("SPX Next Page was clicked, but its result table did not change within 25 seconds. Search stopped to prevent false Not Found results. Pagination: "+paginationSnapshot().slice(0,900));
+            const currentPage=pageSignature();
+            if(seenPages.has(currentPage))throw new Error("SPX pagination repeated a result page. Search stopped before classifying uncollected TNs as Not Found.");
             seenPages.add(currentPage);
             addCurrentPage();
           }
-          if (page >= 400) {
-            const lastNext = findNextPageControl();
-            if (lastNext && !isDisabled(lastNext)) {
-              throw new Error("SPX has more than 400 result pages. Search stopped to avoid incomplete Not Found results.");
-            }
+          if(page>=400)throw new Error("SPX exceeded the 400-page safety limit. Search stopped before producing incomplete Not Found results.");
+          if(!terminalPageConfirmed&&output.size<wanted.size){
+            throw new Error("SPX result pagination did not confirm the final page. Captured "+output.size.toLocaleString()+" of "+wanted.size.toLocaleString()+" possible TNs; incomplete results will not be classified as Not Found.");
           }
-          reportStage("SPX search results read: " + output.size.toLocaleString() + " matching TN(s) captured across " + (page + 1).toLocaleString() + " page(s).");
-          return { results: [...output.values()], requestedCount: tns.length, pageCount: page + 1, capturedAt: new Date().toISOString(), diagnostics: diagnostics() };        } catch (error) {
-          return {
+          const pageCount=page+1;
+          reportStage("SPX search finished. Captured "+output.size.toLocaleString()+" matching TN(s) across "+pageCount.toLocaleString()+" page(s).");
+          return { results:[...output.values()],requestedCount:tns.length,pageCount,capturedAt:new Date().toISOString(),diagnostics:diagnostics() };          return {
             __spxBatchSearchError: true,
             stage,
             error: String(error?.message || error),
