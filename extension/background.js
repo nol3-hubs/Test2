@@ -2518,8 +2518,13 @@ async function runBatchSearchExportJob(job) {
       } catch (error) {
         const message = String(error?.message || error);
         batch.forEach(value => failedByTn.set(normalizeBatchSearchTn(value), message));
+        // Keep the SPX tab visible on export/download/parse failure so the
+        // actual Export menu and task state can be inspected. Do not retry
+        // further chunks against an uncertain SPX page state.
+        job.keepSpxTabOpen = true;
         console.error("SPX Batch Search chunk failed:", error);
-        sendProgress("Batch " + (i + 1) + "/" + batches.length + " failed · " + message);
+        sendProgress("Batch " + (i + 1) + "/" + batches.length + " failed · " + message + " · SPX tab left open for inspection.");
+        break;
       }
     }
 
@@ -2558,26 +2563,36 @@ async function runBatchSearchExportJob(job) {
       failedBatchCount: new Set([...failedByTn.keys()]).size ? [...batches.keys()].filter(i => batches[i].some(value => failedByTn.has(normalizeBatchSearchTn(value)))).length : 0
     });
   } catch (error) {
+    if (tabId) job.keepSpxTabOpen = true;
     console.error("SPX Batch Search export failed:", error);
     sendToPort(job.ownerPort, "BADOC_SPX_BATCH_SEARCH_ERROR", {
       kind: "batch-search-result",
-      message: error?.message || String(error)
+      message: (error?.message || String(error)) + (tabId ? " · SPX tab left open for inspection." : "")
     });
   } finally {
-    if (tabId) {
-      try { await chrome.tabs.remove(tabId); } catch (error) { console.warn("Could not close temporary SPX Batch Search tab:", error); }
-    }
-    // Restore the dashboard tab that initiated this Batch Search, even when
-    // the user manually closes the SPX tab or the search ends with an error.
-    const dashboardTabId = Number(job.dashboardTabId) || 0;
-    if (dashboardTabId) {
+    if (tabId && job.keepSpxTabOpen) {
+      // Keep the actual SPX page available after an export or download failure.
+      // This avoids hiding the failed Export dropdown/task state from the user.
       try {
-        const dashboardTab = await chrome.tabs.get(dashboardTabId);
-        const dashboardWindowId = Number(job.dashboardWindowId || dashboardTab?.windowId) || 0;
-        if (dashboardWindowId) await chrome.windows.update(dashboardWindowId, { focused: true });
-        await chrome.tabs.update(dashboardTabId, { active: true });
+        const spxTab = await chrome.tabs.get(tabId);
+        if (spxTab?.windowId) await chrome.windows.update(spxTab.windowId, { focused: true });
+        await chrome.tabs.update(tabId, { active: true });
       } catch (error) {
-        console.warn("Could not return to the Test2 dashboard tab after Batch Search:", error);
+        console.warn("Could not keep SPX Batch Search tab open for inspection:", error);
+      }
+    } else if (tabId) {
+      try { await chrome.tabs.remove(tabId); } catch (error) { console.warn("Could not close temporary SPX Batch Search tab:", error); }
+      // Only return to the dashboard after a successful downloaded-file run.
+      const dashboardTabId = Number(job.dashboardTabId) || 0;
+      if (dashboardTabId) {
+        try {
+          const dashboardTab = await chrome.tabs.get(dashboardTabId);
+          const dashboardWindowId = Number(job.dashboardWindowId || dashboardTab?.windowId) || 0;
+          if (dashboardWindowId) await chrome.windows.update(dashboardWindowId, { focused: true });
+          await chrome.tabs.update(dashboardTabId, { active: true });
+        } catch (error) {
+          console.warn("Could not return to the Test2 dashboard tab after Batch Search:", error);
+        }
       }
     }
     releaseActiveJob(job);
