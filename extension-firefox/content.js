@@ -174,12 +174,17 @@
       "BADOC_START_ASSIGNED_ONHOLD_TODAY",
       "BADOC_START_RECEIVED_CHECKING_INBOUND_SYNC",
       "BADOC_START_PARCEL_SECONDARY_SYNC",
+      "BADOC_START_ASSIGNMENT_TASK_EXPORT",
       "BADOC_START_BATCH_SEARCH_EXPORT",
       "BADOC_LOOKUP_PICKUP_INFO",
       "BADOC_ABORT_SYNC"
     ]);
     if (!supported.has(data.type)) return;
     if (!port) {
+      if (data.type === "BADOC_START_ASSIGNMENT_TASK_EXPORT") {
+        emit("BADOC_SPX_ASSIGNMENT_TASK_ERROR", { kind: "assignment-task", message: "Badoc Hub Extension background connection is unavailable. Reload the extension and refresh Badoc Hub." });
+        return;
+      }
       if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
         emit("BADOC_SPX_BATCH_SEARCH_ERROR", { kind: "batch-search-result", message: "Badoc Hub Extension background connection is unavailable. Reload the extension and refresh Badoc Hub." });
         return;
@@ -198,6 +203,9 @@
     try {
       const payload = { type: data.type };
       if (data.type === "BADOC_LOOKUP_PICKUP_INFO") { payload.reqId=String(data.reqId||""); payload.orderId=String(data.orderId||"").trim(); }
+      if (data.type === "BADOC_START_ASSIGNMENT_TASK_EXPORT") {
+        payload.selectedDate = String(data.selectedDate || "");
+      }
       if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
         payload.selectedDate = String(data.selectedDate || "");
         payload.sourceTaskId = String(data.sourceTaskId || "");
@@ -220,7 +228,12 @@
           message: "Assigned Today command forwarded to the extension background."
         });
       }
-      if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
+      if (data.type === "BADOC_START_ASSIGNMENT_TASK_EXPORT") {
+        emit("BADOC_SPX_COMMAND_FORWARDED", {
+          kind: "assignment-task",
+          message: "Assignment Task command forwarded to the extension background."
+        });
+      } else if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
         emit("BADOC_SPX_COMMAND_FORWARDED", {
           kind: "batch-search-result",
           message: "Batch Search command forwarded to the extension background."
@@ -232,7 +245,9 @@
         });
       }
     } catch (error) {
-      if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
+      if (data.type === "BADOC_START_ASSIGNMENT_TASK_EXPORT") {
+        emit("BADOC_SPX_ASSIGNMENT_TASK_ERROR", { kind: "assignment-task", message: error?.message || String(error) });
+      } else if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
         emit("BADOC_SPX_BATCH_SEARCH_ERROR", { kind: "batch-search-result", message: error?.message || String(error) });
       } else {
         emit("BADOC_SPX_ERROR", { message: error?.message || String(error) });
