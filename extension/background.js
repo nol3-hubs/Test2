@@ -2046,7 +2046,9 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
           }
           const pageCount=page+1;
           reportStage("SPX search finished. Captured "+output.size.toLocaleString()+" matching TN(s) across "+pageCount.toLocaleString()+" page(s).");
-          return { results:[...output.values()],requestedCount:tns.length,pageCount,capturedAt:new Date().toISOString(),diagnostics:diagnostics() };          return {
+          return { results:[...output.values()],requestedCount:tns.length,pageCount,capturedAt:new Date().toISOString(),diagnostics:diagnostics() };
+        } catch (error) {
+          return {
             __spxBatchSearchError: true,
             stage,
             error: String(error?.message || error),
