@@ -1601,6 +1601,7 @@ async function createDedicatedSpxTab() {
   });
 
   await sleep(2200);
+  await updateSpxBatchSearchNotice(tab.id,"SPX Order Tracking opened. Preparing the Batch Search controls…","working");
   return tab.id;
 }
 
@@ -2953,13 +2954,100 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
   return await parseDownloadedBatchSearchFile(resolvedFile,trackingNumbers);
 }
 
+async function updateSpxBatchSearchNotice(tabId, message, state = "working") {
+  const id=Number(tabId)||0;
+  if(!id||!chrome.scripting)return;
+  const text=String(message||"Working on SPX Batch Search…").slice(0,500);
+  const safeState=["working","success","error"].includes(state)?state:"working";
+  try {
+    await chrome.scripting.executeScript({
+      target:{tabId:id},
+      world:"MAIN",
+      args:[text,safeState],
+      func:(message,status)=>{
+        const KEY="__badocHubBatchSearchNoticeV1";
+        let memory=window[KEY];
+        if(!memory||typeof memory!=="object") {
+          memory={entries:[],collapsed:false};
+          try{Object.defineProperty(window,KEY,{configurable:true,value:memory});}
+          catch(_){window[KEY]=memory;}
+        }
+        memory.entries ||= [];
+        if(memory.entries[memory.entries.length-1]?.message!==message) {
+          memory.entries.push({message,at:new Date().toLocaleTimeString([],{
+            hour:"2-digit",minute:"2-digit",second:"2-digit"
+          })});
+          memory.entries=memory.entries.slice(-5);
+        }
+        memory.status=status;
+        let host=document.getElementById("badoc-spx-batch-search-notice");
+        if(!host) {
+          host=document.createElement("div");
+          host.id="badoc-spx-batch-search-notice";
+          host.style.cssText="all:initial;position:fixed;right:18px;bottom:18px;z-index:2147483647;display:block;width:350px;max-width:calc(100vw - 28px);font-family:Arial,Helvetica,sans-serif;color:#eef5fc;pointer-events:auto;";
+          (document.body||document.documentElement).appendChild(host);
+        }
+        const root=host.shadowRoot||host.attachShadow({mode:"open"});
+        root.innerHTML="";
+        const css=[
+          ":host{all:initial}*{box-sizing:border-box}",
+          ".card{background:#101a27;border:1px solid #38516a;border-radius:14px;box-shadow:0 12px 34px rgba(0,0,0,.38);overflow:hidden;color:#eef5fc}",
+          ".head{display:flex;align-items:center;gap:10px;padding:11px 13px;background:#162536;border-bottom:1px solid #2b4055}",
+          ".mark{width:9px;height:9px;border-radius:50%;background:#38bdf8;box-shadow:0 0 0 4px rgba(56,189,248,.12);flex:none}",
+          ".mark.success{background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.12)}",
+          ".mark.error{background:#fb7185;box-shadow:0 0 0 4px rgba(251,113,133,.12)}",
+          ".brand{font-size:10px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#a9bfd3;flex:1}",
+          ".state{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;padding:4px 7px;border:1px solid #38516a;border-radius:999px;color:#7dd3fc}",
+          ".state.success{color:#86efac;border-color:#25664d}.state.error{color:#fda4af;border-color:#813e50}",
+          ".toggle{border:0;background:transparent;color:#b8c9d9;font-size:18px;line-height:1;padding:1px 3px;cursor:pointer}",
+          ".body{padding:12px 14px 13px}.current{font-size:13px;line-height:1.45;font-weight:700;color:#f4f8fc;overflow-wrap:anywhere}",
+          ".history{margin-top:9px;border-top:1px solid #293d51;padding-top:8px;display:grid;gap:5px}",
+          ".entry{display:flex;gap:8px;font-size:10px;line-height:1.35;color:#a9bfd3}",
+          ".time{color:#6f91ad;white-space:nowrap;font-variant-numeric:tabular-nums}",
+          ".collapsed .body{display:none}",
+          "@media(max-width:600px){:host{right:10px;bottom:10px;width:calc(100vw - 20px)}}"
+        ].join("");
+        const style=document.createElement("style");style.textContent=css;root.appendChild(style);
+        const card=document.createElement("section");card.className="card"+(memory.collapsed?" collapsed":"");
+        const head=document.createElement("header");head.className="head";
+        const mark=document.createElement("span");mark.className="mark "+status;
+        const brand=document.createElement("span");brand.className="brand";brand.textContent="Badoc Hub · Batch Search";
+        const badge=document.createElement("span");badge.className="state "+status;badge.textContent=status==="success"?"Done":status==="error"?"Needs attention":"Working";
+        const toggle=document.createElement("button");toggle.type="button";toggle.className="toggle";toggle.textContent=memory.collapsed?"+":"−";
+        toggle.setAttribute("aria-label",memory.collapsed?"Expand Batch Search notifications":"Collapse Batch Search notifications");
+        toggle.addEventListener("click",()=>{
+          memory.collapsed=!memory.collapsed;
+          card.classList.toggle("collapsed",memory.collapsed);
+          toggle.textContent=memory.collapsed?"+":"−";
+          toggle.setAttribute("aria-label",memory.collapsed?"Expand Batch Search notifications":"Collapse Batch Search notifications");
+        });
+        head.append(mark,brand,badge,toggle);
+        const body=document.createElement("div");body.className="body";
+        const current=document.createElement("div");current.className="current";current.textContent=message;
+        const history=document.createElement("div");history.className="history";
+        for(const item of memory.entries.slice(-4).reverse()){
+          const line=document.createElement("div");line.className="entry";
+          const time=document.createElement("span");time.className="time";time.textContent=item.at;
+          const label=document.createElement("span");label.textContent=item.message;
+          line.append(time,label);history.appendChild(line);
+        }
+        body.append(current,history);card.append(head,body);root.appendChild(card);
+      }
+    });
+  } catch(error) {
+    console.warn("Could not update the SPX Batch Search notification panel:",error);
+  }
+}
+
 function sendBatchSearchFileProgress(message){
   try{
     for(const job of activeJobs.values()){
       if(job.kind==="batch-search-result"&&job.spxTabId){
+        const text=String(message||"Reading SPX downloaded file…");
         sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
-          kind:"batch-search-result",message:String(message||"Reading SPX downloaded file…"),selectedDate:job.selectedDate||""
+          kind:"batch-search-result",message:text,selectedDate:job.selectedDate||""
         });
+        void updateSpxBatchSearchNotice(job.spxTabId,text,/\b(failed|error|could not)\b/i.test(text)?"error":"working");
       }
     }
   }catch{}
@@ -3004,9 +3092,13 @@ async function runBatchSearchExportJob(job) {
     if(!uniqueSearchTns.has(key))uniqueSearchTns.set(key,inputTn);
   }
   const tns=[...uniqueSearchTns.values()];
-  const sendProgress=message=>sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
-    kind:"batch-search-result",message,selectedDate:job.selectedDate||""
-  });
+  const sendProgress=(message,state="working")=>{
+    const text=String(message||"Batch Search is running…");
+    sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
+      kind:"batch-search-result",message:text,selectedDate:job.selectedDate||""
+    });
+    if(tabId)void updateSpxBatchSearchNotice(tabId,text,state);
+  };
 
   try {
     if(!inputRows.length)throw new Error("The Assignment Task SPX Tracking Number column contains no non-empty rows.");
@@ -3066,7 +3158,7 @@ async function runBatchSearchExportJob(job) {
           }
           job.keepSpxTabOpen=true;
           console.error("SPX Batch Search chunk failed:",error);
-          sendProgress("Batch "+(i+1)+"/"+batches.length+" failed · "+message+" · SPX tab left open for inspection.");
+          sendProgress("Batch "+(i+1)+"/"+batches.length+" failed · "+message+" · SPX tab left open for inspection.","error");
           break;
         }
       }
@@ -3117,6 +3209,7 @@ async function runBatchSearchExportJob(job) {
       const insertAt=1;
       outputHeaders.splice(insertAt,0,...sourceHeaders);
     }
+    sendProgress("SPX export read successfully · "+downloadedFileRows.toLocaleString()+" downloaded row(s) checked · preparing "+outputRows.length.toLocaleString()+" Assignment Task rows.","success");
     sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_CSV",{
       selectedDate:String(job.selectedDate||""),
       sourceTaskId:String(job.sourceTaskId||""),
@@ -4476,11 +4569,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       item.kind === "batch-search-result" && Number(item.spxTabId) === tabId
     );
     if (job) {
+      const stageText=String(message.message || "Running SPX Batch Search…");
       sendToPort(job.ownerPort, "BADOC_SPX_BATCH_SEARCH_PROGRESS", {
         kind: "batch-search-result",
-        message: String(message.message || "Running SPX Batch Search…"),
+        message: stageText,
         selectedDate: job.selectedDate || ""
       });
+      void updateSpxBatchSearchNotice(tabId,stageText,"working");
     }
     return false;
   }

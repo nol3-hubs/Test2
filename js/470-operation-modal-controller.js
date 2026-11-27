@@ -31,7 +31,7 @@
     setVisible(false);resolve(!!accepted);return true;
   }
   window.__badocOperationModalStart=function(title,message){
-    active=true;completed=false;clearCopyAction();root.classList.remove("is-success","is-error","is-info","is-confirm");
+    active=true;completed=false;clearCopyAction();root.classList.remove("is-success","is-error","is-info","is-confirm","is-batch-search");
     get("badocOpTitle").textContent=title||"Working…";get("badocOpMessage").textContent=message||"Working…";
     get("badocOpState").textContent="In progress";get("badocOpState").className="badoc-op-state busy";
     get("badocOpIcon").textContent="↻";closeBtn.textContent="Working…";closeBtn.disabled=true;cancelBtn.hidden=true;
@@ -54,7 +54,7 @@
     if(confirmResolver)resolveConfirm(false);
     return new Promise(resolve=>{
       active=false;completed=false;confirmResolver=resolve;
-      root.classList.remove("is-success","is-error","is-info","is-confirm");root.classList.add("is-confirm");
+      root.classList.remove("is-success","is-error","is-info","is-confirm","is-batch-search");root.classList.add("is-confirm");
       get("badocOpTitle").textContent=title||"Confirm action";
       get("badocOpMessage").textContent=message||"Continue?";
       get("badocOpState").textContent="Confirm";get("badocOpState").className="badoc-op-state done";
@@ -65,7 +65,8 @@
   window.__badocOperationModalFinish=function(title,message,details=[],state="success"){
     active=false;completed=true;
     if(state!=="success"&&state!=="info")clearCopyAction();
-    root.classList.remove("is-success","is-error","is-info","is-confirm");
+    root.classList.remove("is-success","is-error","is-info","is-confirm","is-batch-search");
+    if(/batch search result/i.test(String(title||"")))root.classList.add("is-batch-search");
     if(!["success","error","info"].includes(state))state="success";
     root.classList.add("is-"+state);
     get("badocOpTitle").textContent=title||"Operation finished";get("badocOpMessage").textContent=message||"";

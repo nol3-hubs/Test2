@@ -232,7 +232,7 @@
             const button=batchSearchReportButton;
             batchSearchReportButton=null;
             const meta=window.__badocBatchSearchResultMeta;
-            const summary="Completed "+meta.inputCount.toLocaleString()+" unique TN(s) · "+meta.matchedCount.toLocaleString()+" found · "+meta.notFoundCount.toLocaleString()+" not found"+(meta.failedCount?" · "+meta.failedCount.toLocaleString()+" failed":"")+". Use Copy Results in this dialog or click the report button again.";
+            const summary="Completed "+meta.inputCount.toLocaleString()+" Assignment Task tracking-number row(s) · "+meta.matchedCount.toLocaleString()+" found · "+meta.notFoundCount.toLocaleString()+" not found"+(meta.failedCount?" · "+meta.failedCount.toLocaleString()+" failed":"")+". Copy the full results below.";
             const failureReasons=[...new Set(rows.map(row=>String(row?.Error??row?.error??"").trim()).filter(Boolean))];
             const failureReason=failureReasons[0]||"The SPX Batch Search request failed before usable results were returned.";
             const failureDetail=meta.failedCount
@@ -249,8 +249,12 @@
               button.textContent="⧉ Batch Search Result ("+rows.length.toLocaleString()+")";
               setStatus(button,summary,meta.failedCount?"warn":"success");
             }
-            const batchDetails=[["Assignment Task TN rows",meta.inputCount.toLocaleString()],["Downloaded file",meta.downloadedFileName||"SPX export"],["File rows read",meta.downloadedFileRows.toLocaleString()],["Rows returned",rows.length.toLocaleString()],["Found",meta.matchedCount.toLocaleString()],["Not found",meta.notFoundCount.toLocaleString()],["Failed",meta.failedCount.toLocaleString()],["Failed batches",meta.failedBatchCount.toLocaleString()],["SPX search batches",meta.chunkCount.toLocaleString()]];
-            if(meta.failedCount)batchDetails.push(["Failure reason",failureReason.slice(0,500)]);
+            const batchDetails=[
+              ["Assignment Task rows",meta.inputCount.toLocaleString()],
+              ["Found",meta.matchedCount.toLocaleString()],
+              ["Not found",meta.notFoundCount.toLocaleString()],
+              ["Failed",meta.failedCount.toLocaleString()]
+            ];
             window.__badocOperationModalFinish?.(
               meta.failedCount?"Batch Search Result Completed with Warnings":"Batch Search Result Loaded",
               meta.failedCount?failureDetail:summary,
