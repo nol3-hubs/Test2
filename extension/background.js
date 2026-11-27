@@ -2373,9 +2373,12 @@ async function parseDownloadedBatchSearchFile(file, requestedTns) {
   const inputByKey=new Map((requestedTns||[]).map(value=>[normalizeBatchSearchTn(value),String(value??"").trim()]));
   for(const row of dataRows) {
     const values=headers.map((_,index)=>String(row[index]??"").trim());
-    const candidateValues=candidateIndexes.length
-      ?candidateIndexes.map(index=>values[index]||"")
-      :values.filter(value=>/^[A-Z0-9_-]{6,60}$/i.test(value));
+    // Prefer the named tracking-number columns, but always scan the rest of
+    // the downloaded row as well. SPX can place SPEPH/input aliases in a
+    // column whose header is not one of the known labels; ignoring those cells
+    // left valid Assignment Task TNs with blank result fields.
+    const preferredValues=candidateIndexes.map(index=>values[index]||"");
+    const candidateValues=[...preferredValues,...values.filter(value=>value&&!preferredValues.includes(value))];
     const keys=[...new Set(candidateValues.map(normalizeBatchSearchTn).filter(value=>value&&wanted.has(value)))];
     const resultText=(resultIndex>=0?String(values[resultIndex]||""):"")+" "+
       (statusIndex>=0?String(values[statusIndex]||""):"");
