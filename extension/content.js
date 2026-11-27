@@ -164,6 +164,7 @@
       "BADOC_START_PARCEL_SECONDARY_SYNC",
       "BADOC_START_FIRST_MILE_ORDERS_SYNC",
       "BADOC_START_FIRST_MILE_TASKS_SYNC",
+      "BADOC_START_BATCH_SEARCH_EXPORT",
       "BADOC_LOOKUP_PICKUP_INFO",
       "BADOC_ABORT_SYNC",    ]);
     if (!supported.has(data.type)) return;
@@ -174,6 +175,10 @@
           requestId: String(data.requestId || ""),
           message: "Badoc Hub Extension background connection is unavailable. Reload the extension and refresh BADOC HUB."
         });
+        return;
+      }
+      if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
+        emit("BADOC_SPX_BATCH_SEARCH_ERROR", { kind: "batch-search-result", message: "Badoc Hub Extension background connection is unavailable. Reload the extension and refresh Badoc Hub." });
         return;
       }
       const errorKind =         data.type === "BADOC_START_PARCEL_SECONDARY_SYNC" ? "parcel-secondary" :
@@ -195,6 +200,11 @@
       if (data.type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" || data.type === "BADOC_START_FIRST_MILE_TASKS_SYNC") {
         if (data.selectedDate !== undefined) payload.selectedDate = String(data.selectedDate || "");
       }
+      if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
+        payload.selectedDate = String(data.selectedDate || "");
+        payload.sourceTaskId = String(data.sourceTaskId || "");
+        payload.trackingNumbers = Array.isArray(data.trackingNumbers) ? data.trackingNumbers.map(value => String(value || "").trim()).filter(Boolean).slice(0, 50000) : [];
+      }
       if (data.type === "BADOC_START_RIDER_SYNC") {
         payload.hubId = Number(data.hubId || 0) || 0;
         payload.hubName = String(data.hubName || "").trim();
@@ -212,7 +222,12 @@
           message: "Assigned Today command forwarded to the extension background."
         });
       }
-      if (data.type === "BADOC_START_PARCEL_INBOUND_SYNC") {
+      if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
+        emit("BADOC_SPX_COMMAND_FORWARDED", {
+          kind: "batch-search-result",
+          message: "Batch Search command forwarded to the extension background."
+        });
+      } else if (data.type === "BADOC_START_PARCEL_INBOUND_SYNC") {
         emit("BADOC_SPX_COMMAND_FORWARDED", {
           kind: "parcel-inbound",
           message: "Received sync command forwarded to the extension background."
@@ -224,7 +239,11 @@
         });
       }
     } catch (error) {
-      emit("BADOC_SPX_ERROR", { message: error?.message || String(error) });
+      if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
+        emit("BADOC_SPX_BATCH_SEARCH_ERROR", { kind: "batch-search-result", message: error?.message || String(error) });
+      } else {
+        emit("BADOC_SPX_ERROR", { message: error?.message || String(error) });
+      }
     }
   });
 
