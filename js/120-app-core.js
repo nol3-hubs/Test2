@@ -2903,13 +2903,9 @@ $("riderPerformanceSearch")?.addEventListener("input",renderRiderPerformance);
     return key==='canceled'||key==='cancelled'||key==='disabled'||key.startsWith('canceled')||key.startsWith('cancelled');
   }
   function fmAssignedRiderDisplay(group){
-    // Do not show a rider on an order cancelled by either source.
-    const order=group?.eligibleOrders?.[0]||group?.orders?.[0]||{};
-    if(group?.pickupOrderOnly&&(fmIsCancelledPickupOrder(order)||group.taskDisabled))return "Unassigned";
-
-    // Pickup Orders own the row, ETA, status, and point ID. Matched Pickup
-    // Tasks contribute only a non-empty Driver Name; prefer the latest named
-    // task so a newer blank assignment cannot hide an available rider name.
+    // Show the rider recorded by SPX even when the task/order was later
+    // Disabled/Cancelled. The separate Status column remains authoritative
+    // for whether the pickup is active; hiding this name would erase history.
     const tasks=Array.isArray(group?.tasks)?group.tasks:[];
     const namedTasks=tasks.filter(task=>fmTaskDriverName(task));
     const latest=fmLatestTask({tasks:namedTasks});
