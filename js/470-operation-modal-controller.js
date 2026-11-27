@@ -3,7 +3,12 @@
   const get=id=>document.getElementById(id);
   const root=get("badocOperationModal");
   if(!root)return;
-  const closeBtn=get("badocOpClose"),cancelBtn=get("badocOpCancel");
+  const closeBtn=get("badocOpClose"),cancelBtn=get("badocOpCancel"),copyBtn=get("badocOpCopy");
+  let copyAction=null;
+  function clearCopyAction(){
+    copyAction=null;
+    if(copyBtn){copyBtn.hidden=true;copyBtn.disabled=false;copyBtn.textContent="Copy Results";}
+  }
   function setVisible(show){root.hidden=!show;root.setAttribute("aria-hidden",String(!show));document.body.classList.toggle("badoc-op-open",show);}
   function clearDetails(){const node=get("badocOpDetails");if(node)node.replaceChildren();}
   function addDetails(items){
@@ -23,7 +28,7 @@
     setVisible(false);resolve(!!accepted);return true;
   }
   window.__badocOperationModalStart=function(title,message){
-    active=true;completed=false;root.classList.remove("is-success","is-error","is-info","is-confirm");
+    active=true;completed=false;clearCopyAction();root.classList.remove("is-success","is-error","is-info","is-confirm");
     get("badocOpTitle").textContent=title||"Working…";get("badocOpMessage").textContent=message||"Working…";
     get("badocOpState").textContent="In progress";get("badocOpState").className="badoc-op-state busy";
     get("badocOpIcon").textContent="↻";closeBtn.textContent="Working…";closeBtn.disabled=true;cancelBtn.hidden=true;
@@ -33,7 +38,15 @@
     if(!active||completed)return;
     if(message)get("badocOpMessage").textContent=String(message);
   };
+  window.__badocOperationModalSetCopy=function(label,callback){
+    if(!copyBtn)return;
+    copyAction=typeof callback==="function"?callback:null;
+    copyBtn.textContent=String(label||"Copy Results");
+    copyBtn.disabled=false;
+    copyBtn.hidden=!copyAction;
+  };
   window.__badocOperationModalConfirm=function(title,message,details=[],acceptLabel="Confirm"){
+    clearCopyAction();
     if(confirmResolver)resolveConfirm(false);
     return new Promise(resolve=>{
       active=false;completed=false;confirmResolver=resolve;
@@ -46,7 +59,9 @@
     });
   };
   window.__badocOperationModalFinish=function(title,message,details=[],state="success"){
-    active=false;completed=true;root.classList.remove("is-success","is-error","is-info","is-confirm");
+    active=false;completed=true;
+    if(state!=="success"&&state!=="info")clearCopyAction();
+    root.classList.remove("is-success","is-error","is-info","is-confirm");
     if(!["success","error","info"].includes(state))state="success";
     root.classList.add("is-"+state);
     get("badocOpTitle").textContent=title||"Operation finished";get("badocOpMessage").textContent=message||"";
@@ -58,6 +73,26 @@
   };
   function close(){if(!completed)return;setVisible(false);}
   closeBtn.addEventListener("click",()=>{if(confirmResolver){resolveConfirm(true);return;}close();});
+  copyBtn?.addEventListener("click",async()=>{
+    if(typeof copyAction!=="function")return;
+    const action=copyAction;
+    copyBtn.disabled=true;
+    copyBtn.textContent="Copying…";
+    try{
+      const copied=await action();
+      if(copied===false){
+        copyBtn.textContent="Retry Copy";
+        copyBtn.disabled=false;
+      }else{
+        copyBtn.textContent="Copied";
+        copyBtn.disabled=true;
+      }
+    }catch(error){
+      console.error("Badoc report copy failed:",error);
+      copyBtn.textContent="Retry Copy";
+      copyBtn.disabled=false;
+    }
+  });
   cancelBtn.addEventListener("click",()=>resolveConfirm(false));
   document.addEventListener("keydown",event=>{
     if(event.key!=="Escape"||root.hidden)return;
