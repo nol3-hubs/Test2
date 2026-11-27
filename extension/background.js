@@ -1545,14 +1545,16 @@ async function createDedicatedSpxTab() {
   // hash-only route change fails to trigger tabs.onUpdated(status=complete).
   const tab = await chrome.tabs.create({
     url: `${SPX_ORIGIN}${PARCEL_ORDER_TRACKING_ROUTE}`,
-    active: false
+    // Bring SPX Order Tracking to the foreground. The SPX SPA does not always
+    // render its controls reliably while the temporary tab is throttled in background.
+    active: true
   });
 
   if (!tab?.id) {
     throw new Error("Could not create the temporary SPX tab.");
   }
 
-  progress("Created a dedicated temporary SPX tab…", { phase: "tab", tabId: tab.id });
+  progress("Opened SPX Order Tracking in a new foreground tab. Waiting for the page to load…", { phase: "tab", tabId: tab.id });
 
   await new Promise((resolve, reject) => {
     let settled = false;
