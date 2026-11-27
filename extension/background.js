@@ -2189,7 +2189,7 @@ async function resolveBatchSearchExportPayload(file, tabId, job) {
     let source = completed.source || "fms";
     let mediaId = getExportMediaId(task) || getExportMediaId(json);
 
-    if (!mediaId && !String(task.file_name || "").trim()) {
+    if (!mediaId) {
       const recovered = await waitForAssignmentTaskMediaId(
         taskId, { task, source }, job, "Batch Search"
       );
@@ -2224,7 +2224,7 @@ async function resolveBatchSearchExportPayload(file, tabId, job) {
   );
 }
 
-async function executeSpxBatchSearch(tabId, trackingNumbers) {
+async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
   await installBatchSearchFileCapture(tabId);
   let injectionResults;
   try {
@@ -2427,8 +2427,9 @@ async function executeSpxBatchSearch(tabId, trackingNumbers) {
       (events?". SPX export requests: "+events:""));
   }
 
-  sendBatchSearchFileProgress("Downloaded "+String(capture.file.fileName||"SPX result file")+" · reading the actual file contents…");
-  return await parseDownloadedBatchSearchFile(capture.file,trackingNumbers);
+  const resolvedFile=await resolveBatchSearchExportPayload(capture.file,tabId,job);
+  sendBatchSearchFileProgress("Downloaded "+String(resolvedFile.fileName||"SPX result file")+" · reading the actual file contents…");
+  return await parseDownloadedBatchSearchFile(resolvedFile,trackingNumbers);
 }
 
 function sendBatchSearchFileProgress(message){
@@ -2496,7 +2497,7 @@ async function runBatchSearchExportJob(job) {
       const batchKeys = new Set(batch.map(normalizeBatchSearchTn));
       sendProgress("SPX Batch Search " + (i + 1) + "/" + batches.length + " · submitting " + batch.length.toLocaleString() + " tracking number(s)…");
       try {
-        const response = await executeSpxBatchSearch(tabId, batch);
+        const response = await executeSpxBatchSearch(tabId, batch, job);
         if (!response || !Array.isArray(response.results)) throw new Error("SPX downloaded Batch Search file returned an invalid result payload.");
         if (response.fileName) downloadedFileNames.push(String(response.fileName));
         downloadedFileRows += Math.max(0, Number(response.fileRowCount || 0));
