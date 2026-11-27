@@ -116,7 +116,7 @@ function build(){
     const tnKey=key(trackingNumber(row));
     if(!tnKey)return;
     const currentStatus=norm(value(row,onholdStatusAliases))
-      .replace(/[_-]+/g," ").replace(/\\s+/g," ").trim();
+      .replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
     if(["ONHOLD","ON HOLD","LMHUB ONHOLD","LMHUB ON HOLD"].includes(currentStatus)){
       onholdRowsByTn.set(tnKey,row);
     }
