@@ -1961,11 +1961,6 @@ async function clickBatchSearchDownloadControl(tabId) {
         const key = norm(value);
         return /^(?:export|exportmenu|exportdropdown|exportoptions|exportbutton|exporttrigger|exportcaret)$/.test(key);
       });
-      const isExportRelated = el => labelsOf(el).some(value => /export/i.test(value));
-      const exportKey = el => {
-        const values = labelsOf(el).map(norm);
-        return values.find(value => /^(?:export|exportmenu|exportdropdown|exportoptions|exportbutton|exporttrigger|exportcaret)$/.test(value)) || "";
-      };
       const disabled = el => !!el?.disabled ||
         el?.getAttribute?.("aria-disabled") === "true" ||
         el?.getAttribute?.("disabled") !== null ||
@@ -2002,30 +1997,31 @@ async function clickBatchSearchDownloadControl(tabId) {
         roots.forEach(walk);
         return out;
       };
+      const elements = allElements();
       const actionable = el => {
         if (!el) return false;
         const tag = String(el.tagName || "").toLowerCase();
         const role = String(el.getAttribute?.("role") || "");
         const cls = String(el.className || "");
         const style = (el.ownerDocument?.defaultView || window).getComputedStyle(el);
-        return tag === "button" || tag === "a" ||
-          role === "button" || role === "menuitem" ||
-          el.hasAttribute?.("tabindex") || el.hasAttribute?.("aria-haspopup") ||
-          el.hasAttribute?.("aria-controls") || typeof el.onclick === "function" ||
+        return tag === "button" || tag === "a" || role === "button" ||
+          role === "menuitem" || el.hasAttribute?.("tabindex") ||
+          el.hasAttribute?.("aria-haspopup") || el.hasAttribute?.("aria-controls") ||
+          typeof el.onclick === "function" ||
           /button|dropdown|caret|trigger|action|menu-item/i.test(cls) ||
           style.cursor === "pointer";
       };
-      const menuItemMatches = el => {
+      const menuTextMatches = el => {
         const value = norm(textOf(el));
         return /^(?:export)?batchsearchresults?$/.test(value) ||
           /^batchsearchresult(?:s)?export$/.test(value);
       };
-      const menuOptions = () => allElements().filter(el =>
-        visible(el) && !disabled(el) && menuItemMatches(el)
-      ).sort((a, b) => {
-        const depth = el => { let n=0; for(let x=el;x&&x!==document.body;x=x.parentElement)n++; return n; };
-        return depth(b)-depth(a) || textOf(a).length-textOf(b).length;
-      });
+      const menuNodes = () => allElements().filter(el => menuTextMatches(el));
+      const menuOptions = () => menuNodes().filter(el => visible(el) && !disabled(el))
+        .sort((a,b) => {
+          const depth = el => { let n=0; for(let x=el;x&&x!==document.body;x=x.parentElement)n++; return n; };
+          return depth(b)-depth(a) || textOf(a).length-textOf(b).length;
+        });
       const menuDiagnostics = () => {
         const out = [];
         for (const el of allElements()) {
@@ -2041,109 +2037,138 @@ async function clickBatchSearchDownloadControl(tabId) {
       const clickTarget = el => {
         let best = el;
         const initial = norm(textOf(el));
-        for (let node = el; node && node !== (el.ownerDocument || document).body; node = node.parentElement) {
-          if (node.getAttribute?.("role") === "menuitem" || node.getAttribute?.("role") === "option") {
-            best = node; break;
-          }
+        for (let node=el; node && node !== (el.ownerDocument || document).body; node=node.parentElement) {
+          const role = String(node.getAttribute?.("role") || "");
+          if (role === "menuitem" || role === "option") { best=node; break; }
           const parentText = norm(textOf(node));
           if (parentText && initial && parentText !== initial) break;
-          if (actionable(node)) { best = node; break; }
-          best = node;
+          if (actionable(node)) { best=node; break; }
+          best=node;
         }
-        try { best.scrollIntoView({ block: "center", inline: "nearest" }); } catch (_) {}
+        try { best.scrollIntoView({block:"center",inline:"nearest"}); } catch (_) {}
         best.click();
         return best;
       };
-      const elements = allElements();
+      const dispatchHover = target => {
+        if (!target || !target.isConnected) return;
+        const doc=target.ownerDocument||document, view=doc.defaultView||window;
+        const rect=target.getBoundingClientRect();
+        const init={
+          bubbles:true,cancelable:true,composed:true,view,
+          clientX:rect.left+Math.max(1,rect.width/2),
+          clientY:rect.top+Math.max(1,rect.height/2),
+          button:0,buttons:0
+        };
+        try {
+          if (view.PointerEvent) {
+            target.dispatchEvent(new view.PointerEvent("pointerover",{...init,pointerType:"mouse",isPrimary:true}));
+            target.dispatchEvent(new view.PointerEvent("pointerenter",{...init,bubbles:false,pointerType:"mouse",isPrimary:true}));
+          }
+          target.dispatchEvent(new view.MouseEvent("mouseover",init));
+          target.dispatchEvent(new view.MouseEvent("mouseenter",{...init,bubbles:false}));
+        } catch (_) {}
+      };
       const exportTextNodes = elements.filter(el =>
         visible(el) && !disabled(el) && isExportLabel(el)
       );
       const nearbyExportDiagnostics = elements.filter(el =>
-        isExportRelated(el) && visible(el)
-      ).slice(0, 35).map(el => ({
-        tag: String(el.tagName || "").toLowerCase(),
-        text: textOf(el).slice(0, 90),
-        aria: String(el.getAttribute?.("aria-label") || ""),
-        title: String(el.getAttribute?.("title") || ""),
-        testid: String(el.getAttribute?.("data-testid") || ""),
-        role: String(el.getAttribute?.("role") || ""),
-        className: String(el.className || "").slice(0, 120)
+        labelsOf(el).some(value => /export/i.test(value)) && visible(el)
+      ).slice(0,35).map(el=>({
+        tag:String(el.tagName||"").toLowerCase(),text:textOf(el).slice(0,90),
+        aria:String(el.getAttribute?.("aria-label")||""),title:String(el.getAttribute?.("title")||""),
+        testid:String(el.getAttribute?.("data-testid")||""),role:String(el.getAttribute?.("role")||""),
+        className:String(el.className||"").slice(0,120)
       }));
-      const candidates = new Map();
 
-      // Match text and accessibility attributes independently. SPX can set
-      // visible text="Export" and data-testid="export-dropdown" on the same node;
-      // combining those strings and demanding an exact match rejects real controls.
+      // If SPX keeps the menu item mounted but visually hidden until hover,
+      // HTMLElement.click() can still call the Vue/React menu handler directly.
+      const hiddenMenuItem = menuNodes().find(el => !disabled(el));
+      if (hiddenMenuItem) {
+        clickTarget(hiddenMenuItem);
+        await sleep(900);
+        return {
+          clicked:true,menuOpened:true,menuItem:textOf(hiddenMenuItem),
+          trigger:"hidden SPX menu item",method:"direct-hidden-menu-item",
+          clickedAt:Date.now(),url:String(location.href||"")
+        };
+      }
+
+      const candidates=new Map();
       for (const textNode of exportTextNodes) {
-        let wrapper = null;
-        for (let node = textNode; node && node !== document.body; node = node.parentElement) {
-          const cls = String(node.className || "");
-          if (/dropdown|button.?group|el-button-group|ant-btn-group/i.test(cls) ||
+        let wrapper=null;
+        for (let node=textNode; node&&node!==document.body; node=node.parentElement) {
+          const cls=String(node.className||"");
+          if (/el-dropdown|ant-dropdown|dropdown|button.?group|el-button-group|ant-btn-group/i.test(cls) ||
               node.hasAttribute?.("aria-haspopup") || node.hasAttribute?.("aria-controls")) {
-            wrapper = node; break;
+            wrapper=node; break;
           }
-          if (textOf(node).length > 90) break;
+          if (textOf(node).length>100) break;
         }
         if (!wrapper) {
-          for (let node = textNode; node && node !== document.body; node = node.parentElement) {
+          for (let node=textNode; node&&node!==document.body; node=node.parentElement) {
             if (node.querySelectorAll?.("button,[role='button'],[aria-haspopup],[aria-controls]")?.length) {
-              wrapper = node; break;
+              wrapper=node; break;
             }
           }
         }
-        if (!wrapper) wrapper = textNode.parentElement || textNode;
+        if (!wrapper) wrapper=textNode.parentElement||textNode;
 
-        const descendants = [wrapper, ...(wrapper.querySelectorAll ? [...wrapper.querySelectorAll(
+        const handles=[wrapper,...(wrapper.querySelectorAll?[...wrapper.querySelectorAll(
           "button,a,[role='button'],[tabindex],[aria-haspopup],[aria-controls],[class*='caret'],[class*='dropdown'],[class*='trigger']"
-        )] : [])];
-        for (const handle of descendants) {
-          if (!visible(handle) || disabled(handle) || !actionable(handle)) continue;
-          const cls = String(handle.className || "");
-          const tag = String(handle.tagName || "").toLowerCase();
-          const handleText = norm(textOf(handle));
-          const handleAttrs = attrValues(handle).map(norm);
-          const caret = /caret|dropdown|drop-down|more-options/i.test(cls) ||
-            /menu|listbox/i.test(handle.getAttribute("aria-haspopup") || "") ||
-            handle.hasAttribute("aria-controls") ||
-            (handle.hasAttribute("aria-haspopup") && handle.getAttribute("role") !== "menuitem");
-          const directExport = handleText === "export" || handleAttrs.includes("export");
-          if (!caret && !directExport && handle !== wrapper) continue;
-          let score = caret ? 300 : 100;
-          if (handle.hasAttribute("aria-haspopup")) score += 65;
-          if (handle.hasAttribute("aria-controls")) score += 55;
-          if (tag === "button") score += 25;
-          if (/caret|dropdown/i.test(cls)) score += 50;
-          if (/primary/i.test(cls)) score -= 35;
-          const item = {
-            element: handle,
-            label: textOf(handle) || attrValues(handle)[0] || "Export dropdown",
-            tag, score, className: cls.slice(0, 120),
-            ariaHaspopup: handle.getAttribute("aria-haspopup") || "",
-            ariaControls: handle.getAttribute("aria-controls") || "",
-            wrapper: String(wrapper.className || "").slice(0, 120)
+        )]:[])];
+        const hoverTargets=[];
+        for(let node=wrapper,depth=0;node&&node!==document.body&&depth<5;node=node.parentElement,depth++) {
+          hoverTargets.push(node);
+          if(/el-dropdown|ant-dropdown|dropdown/i.test(String(node.className||"")))break;
+        }
+        if(!hoverTargets.includes(textNode))hoverTargets.push(textNode);
+
+        for(const handle of handles) {
+          if(!visible(handle)||disabled(handle)||!actionable(handle))continue;
+          const cls=String(handle.className||"");
+          const tag=String(handle.tagName||"").toLowerCase();
+          const handleText=norm(textOf(handle));
+          const handleAttrs=attrValues(handle).map(norm);
+          const caret=/caret|dropdown|drop-down|more-options/i.test(cls) ||
+            /menu|listbox/i.test(handle.getAttribute?.("aria-haspopup")||"") ||
+            handle.hasAttribute?.("aria-controls") ||
+            (handle.hasAttribute?.("aria-haspopup")&&handle.getAttribute?.("role")!=="menuitem");
+          const directExport=handleText==="export"||handleAttrs.includes("export")||isExportLabel(handle);
+          if(!caret&&!directExport&&handle!==wrapper)continue;
+          let score=caret?300:100;
+          if(handle.hasAttribute("aria-haspopup"))score+=65;
+          if(handle.hasAttribute("aria-controls"))score+=55;
+          if(tag==="button")score+=25;
+          if(/caret|dropdown/i.test(cls))score+=50;
+          if(/primary/i.test(cls))score-=35;
+          const item={
+            element:handle,hoverTargets,label:textOf(handle)||attrValues(handle)[0]||"Export dropdown",
+            tag,score,className:cls.slice(0,120),
+            ariaHaspopup:handle.getAttribute("aria-haspopup")||"",
+            ariaControls:handle.getAttribute("aria-controls")||"",
+            wrapper:String(wrapper.className||"").slice(0,120)
           };
-          const prior = candidates.get(handle);
-          if (!prior || item.score > prior.score) candidates.set(handle, item);
+          const prior=candidates.get(handle);
+          if(!prior||item.score>prior.score)candidates.set(handle,item);
         }
       }
 
-      // If SPX exposes the caret separately from the text wrapper, inspect
-      // sibling controls before falling back to the primary Export button.
-      for (const textNode of exportTextNodes) {
-        const parent = textNode.parentElement;
-        if (!parent) continue;
-        const siblings = [parent, ...parent.querySelectorAll(
+      // If SPX renders a split button, explicitly include the adjacent caret
+      // control rather than only clicking the visible Export text segment.
+      for(const textNode of exportTextNodes) {
+        const parent=textNode.parentElement;
+        if(!parent)continue;
+        const siblings=[parent,...parent.querySelectorAll(
           "button,[role='button'],[tabindex],[aria-haspopup],[aria-controls],[class*='caret'],[class*='dropdown']"
         )];
-        for (const handle of siblings) {
-          if (!visible(handle) || disabled(handle) || !actionable(handle)) continue;
-          const cls = String(handle.className || "");
-          if (!/caret|dropdown/i.test(cls) &&
-              !handle.hasAttribute("aria-haspopup") &&
-              !handle.hasAttribute("aria-controls")) continue;
-          if (candidates.has(handle)) continue;
+        for(const handle of siblings) {
+          if(!visible(handle)||disabled(handle)||!actionable(handle))continue;
+          const cls=String(handle.className||"");
+          if(!/caret|dropdown/i.test(cls)&&!handle.hasAttribute("aria-haspopup")&&!handle.hasAttribute("aria-controls"))continue;
+          if(candidates.has(handle))continue;
+          const hoverTargets=[parent,parent.parentElement].filter(Boolean);
           candidates.set(handle,{
-            element:handle,label:textOf(handle)||"Export dropdown",
+            element:handle,hoverTargets,label:textOf(handle)||"Export dropdown",
             tag:String(handle.tagName||"").toLowerCase(),score:340,
             className:cls.slice(0,120),
             ariaHaspopup:handle.getAttribute("aria-haspopup")||"",
@@ -2153,104 +2178,93 @@ async function clickBatchSearchDownloadControl(tabId) {
         }
       }
 
-      // Single-button SPX layouts have no separate caret.
-      if (!candidates.size) {
-        for (const textNode of exportTextNodes) {
-          let target = textNode;
-          for (let node = textNode; node && node !== document.body; node = node.parentElement) {
-            if (actionable(node)) { target = node; break; }
+      if(!candidates.size) {
+        for(const textNode of exportTextNodes) {
+          let target=textNode;
+          for(let node=textNode;node&&node!==document.body;node=node.parentElement) {
+            if(actionable(node)){target=node;break;}
           }
-          if (!visible(target) || disabled(target)) continue;
+          if(!visible(target)||disabled(target))continue;
           candidates.set(target,{
-            element:target,label:textOf(target)||"Export",
-            tag:String(target.tagName||"").toLowerCase(),score:100,
-            className:String(target.className||"").slice(0,120),
+            element:target,hoverTargets:[target.parentElement,target].filter(Boolean),
+            label:textOf(target)||"Export",tag:String(target.tagName||"").toLowerCase(),
+            score:100,className:String(target.className||"").slice(0,120),
             ariaHaspopup:target.getAttribute("aria-haspopup")||"",
-            ariaControls:target.getAttribute("aria-controls")||"",
-            wrapper:"single Export control"
+            ariaControls:target.getAttribute("aria-controls")||"",wrapper:"single Export control"
           });
         }
       }
 
-      const triggerList = [...candidates.values()].sort((a,b)=>b.score-a.score);
-      const waitForMenu = async timeout => {
-        const deadline = Date.now() + timeout;
-        while (Date.now() < deadline) {
-          const option = menuOptions()[0];
-          if (option) return option;
+      const triggerList=[...candidates.values()].sort((a,b)=>b.score-a.score);
+      const waitForMenu=async timeout=>{
+        const deadline=Date.now()+timeout;
+        while(Date.now()<deadline) {
+          const option=menuOptions()[0];
+          if(option)return option;
           await sleep(100);
         }
-        return menuOptions()[0] || null;
+        return menuOptions()[0]||null;
       };
-      const attempts = [];
-      let chosen = menuOptions()[0] || null;
-      let usedTrigger = "";
-
-      if (!chosen) {
-        for (const item of triggerList.slice(0, 10)) {
-          const handle = item.element;
-          usedTrigger = item.label;
+      const attempts=[];
+      let chosen=menuOptions()[0]||null;
+      let usedTrigger="";
+      if(!chosen) {
+        for(const item of triggerList.slice(0,10)) {
+          const handle=item.element;
+          usedTrigger=item.label;
           attempts.push({
-            label:item.label,tag:item.tag,score:item.score,
-            className:item.className,wrapper:item.wrapper,
-            ariaHaspopup:item.ariaHaspopup,ariaControls:item.ariaControls
+            label:item.label,tag:item.tag,score:item.score,className:item.className,
+            wrapper:item.wrapper,ariaHaspopup:item.ariaHaspopup,ariaControls:item.ariaControls
           });
           try { handle.scrollIntoView({block:"center",inline:"nearest"}); } catch (_) {}
           try { handle.focus?.({preventScroll:true}); } catch (_) {}
 
-          // Activate the SPX Export menu control by script; physical mouse
-          // movement is never required.
+          // SPX uses a hover-triggered dropdown in this layout. Dispatch the
+          // enter events on the dropdown wrapper itself (not just the label),
+          // so its framework listener opens the menu without user input.
+          for(const target of [...(item.hoverTargets||[]),handle])dispatchHover(target);
+          chosen=await waitForMenu(1800);
+          if(chosen)break;
+
           try { handle.click(); } catch (_) {}
-          chosen = await waitForMenu(item.ariaHaspopup || item.ariaControls ? 5500 : 3200);
-          if (chosen) break;
+          chosen=await waitForMenu(item.ariaHaspopup||item.ariaControls?4500:2600);
+          if(chosen)break;
 
           try {
-            const view = handle.ownerDocument?.defaultView || window;
-            for (const [key,code] of [["Enter","Enter"],[" ","Space"],["ArrowDown","ArrowDown"]]) {
-              handle.dispatchEvent(new view.KeyboardEvent("keydown",{
-                key,code,bubbles:true,cancelable:true
-              }));
-              handle.dispatchEvent(new view.KeyboardEvent("keyup",{
-                key,code,bubbles:true,cancelable:true
-              }));
-              chosen = await waitForMenu(650);
-              if (chosen) break;
+            const view=handle.ownerDocument?.defaultView||window;
+            for(const [key,code] of [["Enter","Enter"],[" ","Space"],["ArrowDown","ArrowDown"]]) {
+              handle.dispatchEvent(new view.KeyboardEvent("keydown",{key,code,bubbles:true,cancelable:true}));
+              handle.dispatchEvent(new view.KeyboardEvent("keyup",{key,code,bubbles:true,cancelable:true}));
+              chosen=await waitForMenu(650);
+              if(chosen)break;
             }
           } catch (_) {}
-          if (chosen) break;
+          if(chosen)break;
         }
       }
-
-      if (!chosen) {
-        const visibleText = String(document.body?.innerText || "")
-          .replace(/\s+/g," ").slice(-1800);
+      if(!chosen) {
+        const visibleText=String(document.body?.innerText||"").replace(/\s+/g," ").slice(-1800);
         return {
-          clicked:false,menuOpened:false,menuItem:"",
-          trigger:usedTrigger,
+          clicked:false,menuOpened:false,menuItem:"",trigger:usedTrigger,
           reason:exportTextNodes.length
-            ? "SPX Export label was detected, but its dropdown did not open after automatic click and keyboard activation."
-            : "SPX Export control could not be matched. The label may be rendered with different DOM text or inside a separate component.",
-          menuText:visibleText,
-          menuCandidates:menuDiagnostics(),
-          triggerCandidates:attempts,
-          nearbyExportElements:nearbyExportDiagnostics,
-          exportLabelCount:exportTextNodes.length,
-          url:String(location.href||""),title:String(document.title||"")
+            ?"SPX Export dropdown did not open after automatic wrapper mouse-enter, click, and keyboard activation."
+            :"SPX Export control could not be matched in the Order Tracking page.",
+          menuText:visibleText,menuCandidates:menuDiagnostics(),
+          triggerCandidates:attempts,nearbyExportElements:nearbyExportDiagnostics,
+          exportLabelCount:exportTextNodes.length,url:String(location.href||""),
+          title:String(document.title||"")
         };
       }
-
-      const selectedText = textOf(chosen).slice(0,180);
+      const selectedText=textOf(chosen).slice(0,180);
       clickTarget(chosen);
       return {
-        clicked:true,menuOpened:true,
-        trigger:usedTrigger||"Export",
-        menuItem:selectedText,
-        clickedAt:Date.now(),
-        url:String(location.href||"")
+        clicked:true,menuOpened:true,trigger:usedTrigger||"Export",
+        menuItem:selectedText,method:"automatic-wrapper-hover-or-click",
+        clickedAt:Date.now(),url:String(location.href||"")
       };
     }
   });
-  return injected?.[0]?.result || {
+  return injected?.[0]?.result||{
     clicked:false,menuOpened:false,menuItem:"",
     reason:"SPX did not return an Export menu result."
   };
@@ -2302,84 +2316,107 @@ function batchHeaderIndex(headers, aliases) {
 }
 
 async function parseDownloadedBatchSearchFile(file, requestedTns) {
-  const base64 = String(file?.base64 || "");
-  if (!base64) throw new Error("SPX download capture returned no file bytes.");
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  if (!bytes.length) throw new Error("SPX Batch Search downloaded an empty file.");
+  const base64=String(file?.base64||"");
+  if(!base64)throw new Error("SPX download capture returned no file bytes.");
+  const binary=atob(base64);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+  if(!bytes.length)throw new Error("SPX Batch Search downloaded an empty file.");
 
-  let rows = [];
-  if (bytes.length > 3 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
-    rows = await xlsxToRows(bytes.buffer);
+  let rows=[];
+  if(bytes.length>3&&bytes[0]===0x50&&bytes[1]===0x4b) {
+    rows=await xlsxToRows(bytes.buffer);
   } else {
-    const text = new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/,"");
-    const trimmed = text.trim();
-    if (!trimmed) throw new Error("SPX Batch Search downloaded an empty CSV file.");
-    if (/^(?:\{|\[|<!doctype|<html)/i.test(trimmed)) {
+    const text=new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/,"");
+    const trimmed=text.trim();
+    if(!trimmed)throw new Error("SPX Batch Search downloaded an empty CSV file.");
+    if(/^(?:\{|\[|<!doctype|<html)/i.test(trimmed)) {
       throw new Error("SPX Batch Search download was JSON/HTML, not a CSV or Excel result file.");
     }
-    rows = parseBatchSearchDelimitedRows(text);
+    rows=parseBatchSearchDelimitedRows(text);
   }
-  rows = rows.filter(row => Array.isArray(row) && row.some(value => String(value ?? "").trim()));
-  if (rows.length < 2) throw new Error("SPX downloaded file contains no result rows.");
+  rows=rows.filter(row=>Array.isArray(row)&&row.some(value=>String(value??"").trim()));
+  if(rows.length<2)throw new Error("SPX downloaded file contains no result rows.");
 
-  const headerRowIndex = rows.findIndex(row => row.some(cell => {
+  const headerRowIndex=rows.findIndex(row=>row.some(cell=>{
     const header=String(cell||"").trim().replace(/[^a-z0-9]/gi,"").toLowerCase();
-    return /trackingnumber|trackingno|trackingnum|spxtn|slstn|awb|ordernumber|orderid|^status$|orderstatus|parcelstatus/.test(header);
+    return /trackingnumber|trackingno|trackingnum|spxtn|slstn|3pltracking|awb|ordernumber|orderid|^status$|orderstatus|parcelstatus/.test(header);
   }));
-  if (headerRowIndex < 0) {
-    throw new Error("SPX downloaded file has no recognizable tracking-number/status header. File: " + String(file.fileName || "unknown"));
-  }
-  const headers = rows[headerRowIndex].map(value => String(value ?? "").trim());
-  const dataRows = rows.slice(headerRowIndex + 1);
-  const wanted = new Set((requestedTns || []).map(normalizeBatchSearchTn).filter(Boolean));
-  const spxIndex = batchHeaderIndex(headers, ["SPX Tracking Number","SPX TN","Tracking Number","Tracking No","Tracking Number (SPX)"]);
-  const slsIndex = batchHeaderIndex(headers, ["SLS Tracking Number","SLS TN","Shopee Tracking Number"]);
-  const thirdIndex = batchHeaderIndex(headers, ["Third TN","Third Tracking Number","Shipment ID"]);
-  const matchedIndex = batchHeaderIndex(headers, ["Matched Tracking Number","Input Tracking Number","Input TN","Search Tracking Number"]);
-  const statusIndex = batchHeaderIndex(headers, ["Status","Order Status","Parcel Status","Tracking Status","Parcel Order Status"]);
-  const resultIndex = batchHeaderIndex(headers, ["Search Result","Result","Match Result","Search Status"]);
-  const results = new Map();
-  const clean = normalizeBatchSearchTn;
-  for (const row of dataRows) {
-    const values = row.map(value => String(value ?? "").trim());
-    const candidateValues = [];
-    if (matchedIndex >= 0) candidateValues.push(values[matchedIndex] || "");
-    if (spxIndex >= 0) candidateValues.push(values[spxIndex] || "");
-    if (slsIndex >= 0) candidateValues.push(values[slsIndex] || "");
-    if (thirdIndex >= 0) candidateValues.push(values[thirdIndex] || "");
-    candidateValues.push(...values);
-    const keys = [...new Set(candidateValues.map(clean).filter(value => value && wanted.has(value)))];
-    if (!keys.length) continue;
+  if(headerRowIndex<0)throw new Error("SPX downloaded file has no recognizable tracking-number/status header. File: "+String(file.fileName||"unknown"));
+  const headers=rows[headerRowIndex].map(value=>String(value??"").trim());
+  const dataRows=rows.slice(headerRowIndex+1);
+  const wanted=new Set((requestedTns||[]).map(normalizeBatchSearchTn).filter(Boolean));
+  const findHeader=(aliases,pattern)=>{
+    const exact=batchHeaderIndex(headers,aliases);
+    if(exact>=0)return exact;
+    if(pattern){
+      const matches=headers.findIndex(value=>pattern.test(String(value||"").trim().toLowerCase().replace(/[^a-z0-9]/g,"")));
+      return matches;
+    }
+    return -1;
+  };
+  const spxIndex=findHeader(
+    ["SPX Tracking Number","SPX TN","Tracking Number","Tracking No","Tracking Number (SPX)"],
+    /^(?:spx)?tracking(?:number|no|num)$/
+  );
+  const slsIndex=findHeader(
+    ["SLS Tracking Number","SLS TN","Shopee Tracking Number"],
+    /^(?:sls|shopee)tracking(?:number|no|num)$/
+  );
+  const thirdIndex=findHeader(
+    ["3PL Tracking Number","3PL TN","Third TN","Third Tracking Number","Third Party Tracking Number","Third Party TN","Shipment ID"],
+    /^(?:3pl|third(?:party)?)tracking(?:number|no|num|tn)$/
+  );
+  const matchedIndex=findHeader(
+    ["Matched Tracking Number","Input Tracking Number","Input TN","Search Tracking Number"],
+    /^(?:matched|input|search)tracking(?:number|no|num)$/
+  );
+  const statusIndex=findHeader(
+    ["Status","Order Status","Parcel Status","Tracking Status","Parcel Order Status","Current Status"],
+    /^(?:order|parcel|tracking|current)?status$/
+  );
+  const resultIndex=findHeader(headers,["Search Result","Result","Match Result","Search Status"],/^(?:search|match)?result$/);
+  const results=new Map();
+  const sourceRows=[];
+  const candidateIndexes=[matchedIndex,spxIndex,slsIndex,thirdIndex].filter((value,index,array)=>value>=0&&array.indexOf(value)===index);
+  const inputByKey=new Map((requestedTns||[]).map(value=>[normalizeBatchSearchTn(value),String(value??"").trim()]));
+  for(const row of dataRows) {
+    const values=headers.map((_,index)=>String(row[index]??"").trim());
+    const candidateValues=candidateIndexes.length
+      ?candidateIndexes.map(index=>values[index]||"")
+      :values.filter(value=>/^[A-Z0-9_-]{6,60}$/i.test(value));
+    const keys=[...new Set(candidateValues.map(normalizeBatchSearchTn).filter(value=>value&&wanted.has(value)))];
+    const sourceFields={};
+    headers.forEach((header,index)=>{sourceFields[header]=values[index]??"";});
+    const record={sourceFields,matchedKeys:keys};
+    sourceRows.push(record);
 
-    const resultText = (resultIndex >= 0 ? String(values[resultIndex] || "") : "") + " " +
-      (statusIndex >= 0 ? String(values[statusIndex] || "") : "");
-    const explicitlyNotFound = /not[\s_-]*found|no[\s_-]*(?:match|record|result)|unmatched|no data/i.test(resultText);
-    if (explicitlyNotFound) continue;
-
-    const identifiers = values.filter(value => /^(?:PH[A-Z0-9]{8,}|[A-Z0-9]{10,})$/i.test(value));
-    for (const key of keys) {
-      results.set(key, {
-        tn: key,
-        matchedTN: key,
-        spxTN: spxIndex >= 0 ? values[spxIndex] : (identifiers[0] || ""),
-        slsTN: slsIndex >= 0 ? values[slsIndex] : (identifiers[1] || ""),
-        thirdTN: thirdIndex >= 0 ? values[thirdIndex] : (identifiers[2] || ""),
-        status: statusIndex >= 0 ? values[statusIndex] : ""
+    const resultText=(resultIndex>=0?String(values[resultIndex]||""):"")+" "+
+      (statusIndex>=0?String(values[statusIndex]||""):"");
+    const explicitlyNotFound=/not[\s_-]*found|no[\s_-]*(?:match|record|result)|unmatched|no data/i.test(resultText);
+    if(explicitlyNotFound)continue;
+    for(const key of keys) {
+      results.set(key,{
+        tn:inputByKey.get(key)||key,
+        matchedTN:key,
+        spxTN:spxIndex>=0?values[spxIndex]:"",
+        slsTN:slsIndex>=0?values[slsIndex]:"",
+        thirdTN:thirdIndex>=0?values[thirdIndex]:"",
+        status:statusIndex>=0?values[statusIndex]:"",
+        sourceFields
       });
     }
   }
   return {
-    results: [...results.values()],
-    fileName: String(file.fileName || "spx_batch_search_result.csv"),
-    fileRowCount: dataRows.length,
-    headerCount: headers.length,
-    source: "SPX downloaded file"
+    results:[...results.values()],
+    sourceHeaders:headers,
+    sourceRows,
+    fileName:String(file.fileName||"spx_batch_search_result.csv"),
+    fileRowCount:dataRows.length,
+    headerCount:headers.length,
+    source:"SPX downloaded file"
   };
 }
-
-
 function batchSearchBase64FromText(text) {
   const bytes = new TextEncoder().encode(String(text || ""));
   let binary = "";
@@ -2850,6 +2887,7 @@ async function executeSpxBatchSearch(tabId, trackingNumbers, job = null) {
         (Array.isArray(exportAction?.menuCandidates)&&exportAction.menuCandidates.length?" Dropdowns: "+exportAction.menuCandidates.join(" | "):"")+
         (Number(exportAction?.exportLabelCount)>=0?" Export labels matched: "+Number(exportAction?.exportLabelCount||0):"")+
         (Array.isArray(exportAction?.triggerCandidates)&&exportAction.triggerCandidates.length?" Export controls: "+exportAction.triggerCandidates.map(item=>item.label+" ["+item.tag+", "+item.className+"]").join(" | "):"")+
+        (Array.isArray(exportAction?.nearbyExportElements)&&exportAction.nearbyExportElements.length?" Export DOM: "+exportAction.nearbyExportElements.map(item=>item.tag+" text="+item.text+" aria="+item.aria+" title="+item.title+" testid="+item.testid+" class="+item.className).join(" | "):"")+
         (Array.isArray(exportAction?.nearbyExportElements)&&exportAction.nearbyExportElements.length?" Export DOM: "+exportAction.nearbyExportElements.map(item=>item.tag+" text="+item.text+" aria="+item.aria+" title="+item.title+" testid="+item.testid+" class="+item.className).join(" | "):"")
       );
     }
@@ -2937,159 +2975,190 @@ function normalizeBatchSearchTn(value) {
   return String(value ?? "").normalize("NFKC").trim().replace(/\s+/g, "").toUpperCase();
 }
 
-function batchSearchCsv(rows) {
-  const headers = ["Input Tracking Number","Matched Tracking Number","SPX TN","SLS TN","Third TN","Status","Search Result","Error"];
-  const cell = value => {
-    const text = String(value ?? "");
-    return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+function batchSearchCsv(rows, headers) {
+  const columns=Array.isArray(headers)&&headers.length
+    ?headers
+    :["Input Tracking Number","Matched Tracking Number","SPX TN","SLS TN","Third TN","Status","Search Result","Error"];
+  const cell=value=>{
+    const text=String(value??"");
+    return /[",\r\n]/.test(text)?'"'+text.replace(/"/g,'""')+'"':text;
   };
-  return [headers, ...rows.map(row => headers.map(header => row[header] ?? ""))]
-    .map(row => row.map(cell).join(",")).join("\r\n");
+  return [columns,...rows.map(row=>columns.map(header=>row[header]??""))]
+    .map(row=>row.map(cell).join(",")).join("\r\n");
 }
-
 async function runBatchSearchExportJob(job) {
-  let tabId = null;
-  const allResults = new Map();
-  const failedByTn = new Map();
-  const downloadedFileNames = [];
-  let downloadedFileRows = 0;
-  const rawTns = Array.isArray(job.trackingNumbers) ? job.trackingNumbers : [];
-  const tns = [...new Map(rawTns.map(value => {
-    const original = String(value ?? "").trim();
-    return [normalizeBatchSearchTn(original), original];
-  }).filter(([key, value]) => key && value)).values()];
-
-  const sendProgress = message => sendToPort(job.ownerPort, "BADOC_SPX_BATCH_SEARCH_PROGRESS", {
-    kind: "batch-search-result", message, selectedDate: job.selectedDate || ""
+  let tabId=null;
+  const allResults=new Map();
+  const failedByTn=new Map();
+  const downloadedFileNames=[];
+  const downloadedRecords=[];
+  const sourceHeaders=[];
+  let downloadedFileRows=0;
+  const rawTns=Array.isArray(job.trackingNumbers)?job.trackingNumbers:[];
+  const tns=[...new Map(rawTns.map(value=>{
+    const original=String(value??"").trim();
+    return [normalizeBatchSearchTn(original),original];
+  }).filter(([key,value])=>key&&value)).values()];
+  const inputByKey=new Map(tns.map(value=>[normalizeBatchSearchTn(value),value]));
+  const sendProgress=message=>sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_PROGRESS",{
+    kind:"batch-search-result",message,selectedDate:job.selectedDate||""
   });
 
   try {
-    if (!tns.length) throw new Error("No valid SPX Tracking Numbers were supplied from the Assignment Task export.");
-    if (tns.length > 50000) throw new Error("Batch Search is limited to 50,000 unique tracking numbers per run.");
-
-    job.startedAt = Date.now();
-    sendProgress("Opening SPX Order Tracking for " + tns.length.toLocaleString() + " unique tracking number(s)…");
-    tabId = await createDedicatedSpxTab();
-    job.spxTabId = tabId;
+    if(!tns.length)throw new Error("No valid SPX Tracking Numbers were supplied from the Assignment Task export.");
+    if(tns.length>50000)throw new Error("Batch Search is limited to 50,000 unique tracking numbers per run.");
+    job.startedAt=Date.now();
+    sendProgress("Opening SPX Order Tracking for "+tns.length.toLocaleString()+" unique tracking number(s)…");
+    tabId=await createDedicatedSpxTab();
+    job.spxTabId=tabId;
     await ensureParcelOrderTrackingRoute(tabId);
 
-    const batches = [];
-    for (let i = 0; i < tns.length; i += SPX_BATCH_SEARCH_SIZE) {
-      batches.push(tns.slice(i, i + SPX_BATCH_SEARCH_SIZE));
-    }
-
-    for (let i = 0; i < batches.length; i++) {
-      if (job.cancelled) throw new Error("Batch Search was cancelled.");
-      const batch = batches[i];
-      const batchKeys = new Set(batch.map(normalizeBatchSearchTn));
-      sendProgress("SPX Batch Search " + (i + 1) + "/" + batches.length + " · submitting " + batch.length.toLocaleString() + " tracking number(s)…");
+    const batches=[];
+    for(let i=0;i<tns.length;i+=SPX_BATCH_SEARCH_SIZE)batches.push(tns.slice(i,i+SPX_BATCH_SEARCH_SIZE));
+    for(let i=0;i<batches.length;i++) {
+      if(job.cancelled)throw new Error("Batch Search was cancelled.");
+      const batch=batches[i];
+      const batchKeys=new Set(batch.map(normalizeBatchSearchTn));
+      sendProgress("SPX Batch Search "+(i+1)+"/"+batches.length+" · submitting "+batch.length.toLocaleString()+" tracking number(s)…");
       try {
-        const response = await executeSpxBatchSearch(tabId, batch, job);
-        if (!response || !Array.isArray(response.results)) throw new Error("SPX downloaded Batch Search file returned an invalid result payload.");
-        if (response.fileName) downloadedFileNames.push(String(response.fileName));
-        downloadedFileRows += Math.max(0, Number(response.fileRowCount || 0));
-        for (const item of response.results) {
-          const key = normalizeBatchSearchTn(item?.matchedTN || item?.tn || "");
-          if (!key || !batchKeys.has(key)) continue;
-          allResults.set(key, {
-            tn: String(item.tn || item.matchedTN || "").trim(),
-            matchedTN: String(item.matchedTN || item.tn || "").trim(),
-            spxTN: String(item.spxTN || "").trim(),
-            slsTN: String(item.slsTN || "").trim(),
-            thirdTN: String(item.thirdTN || "").trim(),
-            status: String(item.status || "").trim()
+        const response=await executeSpxBatchSearch(tabId,batch,job);
+        if(!response||!Array.isArray(response.results))throw new Error("SPX downloaded Batch Search file returned an invalid result payload.");
+        if(response.fileName)downloadedFileNames.push(String(response.fileName));
+        downloadedFileRows+=Math.max(0,Number(response.fileRowCount||0));
+        for(const header of (Array.isArray(response.sourceHeaders)?response.sourceHeaders:[])) {
+          if(!sourceHeaders.includes(String(header)))sourceHeaders.push(String(header));
+        }
+        for(const row of (Array.isArray(response.sourceRows)?response.sourceRows:[])) {
+          downloadedRecords.push({
+            sourceFields:row?.sourceFields&&typeof row.sourceFields==="object"?row.sourceFields:{},
+            matchedKeys:Array.isArray(row?.matchedKeys)?row.matchedKeys.map(normalizeBatchSearchTn).filter(key=>batchKeys.has(key)):[]
           });
         }
-        const foundInBatch = batch.filter(value => allResults.has(normalizeBatchSearchTn(value))).length;
-        sendProgress("Batch " + (i + 1) + "/" + batches.length + " complete · read " + Number(response.fileRowCount || 0).toLocaleString() + " row(s) from " + String(response.fileName || "SPX download") + " · " + foundInBatch.toLocaleString() + "/" + batch.length.toLocaleString() + " matched.");
-      } catch (error) {
-        const message = String(error?.message || error);
-        // Mark this and every not-yet-run chunk as failed. Never label an
-        // unsubmitted TN as Not Found just because an earlier export failed.
-        for (const pendingBatch of batches.slice(i)) {
-          pendingBatch.forEach(value => failedByTn.set(normalizeBatchSearchTn(value), message));
+        for(const item of response.results) {
+          const key=normalizeBatchSearchTn(item?.matchedTN||item?.tn||"");
+          if(!key||!batchKeys.has(key))continue;
+          allResults.set(key,{
+            tn:String(item.tn||item.matchedTN||"").trim(),
+            matchedTN:String(item.matchedTN||item.tn||"").trim(),
+            sourceFields:item.sourceFields&&typeof item.sourceFields==="object"?item.sourceFields:{},
+            status:String(item.status||"").trim()
+          });
         }
-        // Keep the SPX tab visible on export/download/parse failure so the
-        // actual Export menu and task state can be inspected. Do not retry
-        // further chunks against an uncertain SPX page state.
-        job.keepSpxTabOpen = true;
-        console.error("SPX Batch Search chunk failed:", error);
-        sendProgress("Batch " + (i + 1) + "/" + batches.length + " failed · " + message + " · SPX tab left open for inspection.");
+        const foundInBatch=batch.filter(value=>allResults.has(normalizeBatchSearchTn(value))).length;
+        sendProgress("Batch "+(i+1)+"/"+batches.length+" complete · read "+Number(response.fileRowCount||0).toLocaleString()+" row(s) from "+String(response.fileName||"SPX download")+" · "+foundInBatch.toLocaleString()+"/"+batch.length.toLocaleString()+" matched.");
+      } catch(error) {
+        const message=String(error?.message||error);
+        for(const pendingBatch of batches.slice(i))pendingBatch.forEach(value=>failedByTn.set(normalizeBatchSearchTn(value),message));
+        job.keepSpxTabOpen=true;
+        console.error("SPX Batch Search chunk failed:",error);
+        sendProgress("Batch "+(i+1)+"/"+batches.length+" failed · "+message+" · SPX tab left open for inspection.");
         break;
       }
     }
 
-    const outputRows = tns.map(inputTn => {
-      const key = normalizeBatchSearchTn(inputTn);
-      const result = allResults.get(key);
-      const error = failedByTn.get(key) || "";
-      return {
-        "Input Tracking Number": inputTn,
-        "Matched Tracking Number": result?.matchedTN || "",
-        "SPX TN": result?.spxTN || "",
-        "SLS TN": result?.slsTN || "",
-        "Third TN": result?.thirdTN || "",
-        "Status": result?.status || (error ? "Search Failed" : ""),
-        "Search Result": result ? "Found" : (error ? "Search Failed" : "Not Found"),
-        "Error": error
-      };
-    });
-    const matchedCount = outputRows.filter(row => row["Search Result"] === "Found").length;
-    const failedCount = outputRows.filter(row => row["Search Result"] === "Search Failed").length;
-    const notFoundCount = outputRows.length - matchedCount - failedCount;
+    const foundKeys=new Set();
+    const outputRows=[];
+    const inputHeader=sourceHeaders.some(header=>normalizeBatchSearchTn(header)==="INPUTTRACKINGNUMBER")
+      ?"Requested Tracking Number":"Input Tracking Number";
+    const resultHeader=sourceHeaders.some(header=>normalizeBatchSearchTn(header)==="SEARCHRESULT")
+      ?"Badoc Search Result":"Search Result";
+    const errorHeader=sourceHeaders.some(header=>normalizeBatchSearchTn(header)==="ERROR")
+      ?"Badoc Error":"Error";
+    const outputHeaders=[inputHeader,...sourceHeaders.filter(header=>normalizeBatchSearchTn(header)!==normalizeBatchSearchTn(inputHeader)),resultHeader,errorHeader];
 
-    sendToPort(job.ownerPort, "BADOC_SPX_BATCH_SEARCH_CSV", {
-      selectedDate: String(job.selectedDate || ""),
-      sourceTaskId: String(job.sourceTaskId || ""),
-      csvText: batchSearchCsv(outputRows),
-      fileName: "batch_search_result.csv",
-      inputCount: tns.length,
-      chunkCount: batches.length,
-      downloadedFileName: downloadedFileNames.join(" | "),
+    // Keep every row and every column from every SPX download. Do not collapse
+    // the export to the old eight-column summary or drop rows that do not match.
+    for(const record of downloadedRecords) {
+      const keys=[...new Set(record.matchedKeys||[])];
+      if(!keys.length) {
+        const row={};
+        row[inputHeader]="";
+        for(const header of sourceHeaders)row[header]=String(record.sourceFields?.[header]??"");
+        row[resultHeader]="Downloaded Row";
+        row[errorHeader]="";
+        outputRows.push(row);
+        continue;
+      }
+      for(const key of keys) {
+        foundKeys.add(key);
+        const row={};
+        row[inputHeader]=inputByKey.get(key)||key;
+        for(const header of sourceHeaders)row[header]=String(record.sourceFields?.[header]??"");
+        row[resultHeader]="Found";
+        row[errorHeader]="";
+        outputRows.push(row);
+      }
+    }
+
+    for(const inputTn of tns) {
+      const key=normalizeBatchSearchTn(inputTn);
+      if(foundKeys.has(key))continue;
+      const error=failedByTn.get(key)||"";
+      const row={};
+      row[inputHeader]=inputTn;
+      for(const header of sourceHeaders)row[header]="";
+      row[resultHeader]=error?"Search Failed":"Not Found";
+      row[errorHeader]=error;
+      outputRows.push(row);
+    }
+
+    const matchedCount=tns.filter(value=>foundKeys.has(normalizeBatchSearchTn(value))).length;
+    const failedCount=tns.filter(value=>failedByTn.has(normalizeBatchSearchTn(value))&&!foundKeys.has(normalizeBatchSearchTn(value))).length;
+    const notFoundCount=tns.length-matchedCount-failedCount;
+
+    if(!sourceHeaders.length) {
+      sourceHeaders.push("Matched Tracking Number","SPX TN","SLS TN","Third TN","Status");
+      outputHeaders.splice(1,0,...sourceHeaders);
+    }
+    sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_CSV",{
+      selectedDate:String(job.selectedDate||""),
+      sourceTaskId:String(job.sourceTaskId||""),
+      csvText:batchSearchCsv(outputRows,outputHeaders),
+      fileName:"batch_search_result.csv",
+      inputCount:tns.length,
+      chunkCount:batches.length,
+      downloadedFileName:downloadedFileNames.join(" | "),
       downloadedFileRows,
-      rowCount: outputRows.length,
+      rowCount:outputRows.length,
       matchedCount,
       notFoundCount,
       failedCount,
-      failedBatchCount: new Set([...failedByTn.keys()]).size ? [...batches.keys()].filter(i => batches[i].some(value => failedByTn.has(normalizeBatchSearchTn(value)))).length : 0
+      failedBatchCount:failedByTn.size?[...batches.keys()].filter(i=>batches[i].some(value=>failedByTn.has(normalizeBatchSearchTn(value)))).length:0
     });
-  } catch (error) {
-    if (tabId) job.keepSpxTabOpen = true;
-    console.error("SPX Batch Search export failed:", error);
-    sendToPort(job.ownerPort, "BADOC_SPX_BATCH_SEARCH_ERROR", {
-      kind: "batch-search-result",
-      message: (error?.message || String(error)) + (tabId ? " · SPX tab left open for inspection." : "")
+  } catch(error) {
+    if(tabId)job.keepSpxTabOpen=true;
+    console.error("SPX Batch Search export failed:",error);
+    sendToPort(job.ownerPort,"BADOC_SPX_BATCH_SEARCH_ERROR",{
+      kind:"batch-search-result",
+      message:(error?.message||String(error))+(tabId?" · SPX tab left open for inspection.":"")
     });
   } finally {
-    if (tabId && job.keepSpxTabOpen) {
-      // Keep the actual SPX page available after an export or download failure.
-      // This avoids hiding the failed Export dropdown/task state from the user.
+    if(tabId&&job.keepSpxTabOpen) {
       try {
-        const spxTab = await chrome.tabs.get(tabId);
-        if (spxTab?.windowId) await chrome.windows.update(spxTab.windowId, { focused: true });
-        await chrome.tabs.update(tabId, { active: true });
-      } catch (error) {
-        console.warn("Could not keep SPX Batch Search tab open for inspection:", error);
+        const spxTab=await chrome.tabs.get(tabId);
+        if(spxTab?.windowId)await chrome.windows.update(spxTab.windowId,{focused:true});
+        await chrome.tabs.update(tabId,{active:true});
+      } catch(error) {
+        console.warn("Could not keep SPX Batch Search tab open for inspection:",error);
       }
-    } else if (tabId) {
-      try { await chrome.tabs.remove(tabId); } catch (error) { console.warn("Could not close temporary SPX Batch Search tab:", error); }
-      // Only return to the dashboard after a successful downloaded-file run.
-      const dashboardTabId = Number(job.dashboardTabId) || 0;
-      if (dashboardTabId) {
+    } else if(tabId) {
+      try { await chrome.tabs.remove(tabId); }
+      catch(error) { console.warn("Could not close temporary SPX Batch Search tab:",error); }
+      const dashboardTabId=Number(job.dashboardTabId)||0;
+      if(dashboardTabId) {
         try {
-          const dashboardTab = await chrome.tabs.get(dashboardTabId);
-          const dashboardWindowId = Number(job.dashboardWindowId || dashboardTab?.windowId) || 0;
-          if (dashboardWindowId) await chrome.windows.update(dashboardWindowId, { focused: true });
-          await chrome.tabs.update(dashboardTabId, { active: true });
-        } catch (error) {
-          console.warn("Could not return to the Test2 dashboard tab after Batch Search:", error);
+          const dashboardTab=await chrome.tabs.get(dashboardTabId);
+          const dashboardWindowId=Number(job.dashboardWindowId||dashboardTab?.windowId)||0;
+          if(dashboardWindowId)await chrome.windows.update(dashboardWindowId,{focused:true});
+          await chrome.tabs.update(dashboardTabId,{active:true});
+        } catch(error) {
+          console.warn("Could not return to the Test2 dashboard tab after Batch Search:",error);
         }
       }
     }
     releaseActiveJob(job);
   }
 }
-
 function getExportMediaId(value, depth = 0, seen = new Set()) {
   if (value == null || depth > 18) return "";
   if (typeof value === "string") {

@@ -106,6 +106,22 @@
           if(batchSearchExportPending)finishBatchSearchReportError(message);
         },timeoutMs);
       }
+      function batchSearchRowsToTsv(rows){
+        const textRows=(Array.isArray(rows)?rows:[]).map(row=>{
+          const out={};
+          for(const [header,value] of Object.entries(row||{})){
+            const raw=String(value??"");
+            // Excel interprets long digit-only IDs as numbers and displays
+            // them in scientific notation. Formula-wrapped text keeps the
+            // full tracking ID visible when pasted into Excel.
+            out[header]=/^\d{7,}$/.test(raw)&&/(?:tracking|track|awb|shipment|waybill|\btn\b|3pl|third)/i.test(String(header))
+              ?'="'+raw+'"':raw;
+          }
+          return out;
+        });
+        return rowsToTsv(textRows);
+      }
+
       function finishBatchSearchReportError(message){
         clearBatchSearchReportWatchdog();
         batchSearchExportPending=false;
@@ -221,8 +237,8 @@
             const copyTarget=button||root.querySelector('[data-report-copy="batch-search-result"]');
             window.__badocOperationModalSetCopy?.("Copy Results",()=>copyText(
               copyTarget,
-              rowsToTsv(rows),
-              "Copied "+rows.length.toLocaleString()+" Batch Search result row(s) to the clipboard."
+              batchSearchRowsToTsv(rows),
+              "Copied "+rows.length.toLocaleString()+" Batch Search result row(s) to the clipboard. Long numeric tracking IDs were kept as text."
             ));
             if(button){
               button.disabled=false;
