@@ -80,14 +80,16 @@
       function finishAssignmentTaskReportError(message){
         clearAssignmentTaskReportWatchdog();
         assignmentTaskExportPending=false;
+        const failureMessage=String(message||"SPX Assignment Task export failed.");
         const button=assignmentTaskReportButton;
         assignmentTaskReportButton=null;
         if(button){
           button.disabled=false;
           button.textContent="⧉ Assignment Task";
-          setStatus(button,message||"SPX Assignment Task export failed.","error");
+          setStatus(button,failureMessage,"error");
         }
-        window.dispatchEvent(new CustomEvent("badoc:assignment-task-error",{detail:{message:String(message||"SPX Assignment Task export failed.")}}));
+        window.__badocOperationModalFinish?.("Assignment Task Failed",failureMessage,[],"error");
+        window.dispatchEvent(new CustomEvent("badoc:assignment-task-error",{detail:{message:failureMessage}}));
       }
 
       let batchSearchReportButton=null;
@@ -107,13 +109,15 @@
       function finishBatchSearchReportError(message){
         clearBatchSearchReportWatchdog();
         batchSearchExportPending=false;
+        const failureMessage=String(message||"SPX Batch Search Result export failed.");
         const button=batchSearchReportButton;
         batchSearchReportButton=null;
         if(button){
           button.disabled=false;
           button.textContent="⧉ Batch Search Result";
-          setStatus(button,message||"SPX Batch Search Result export failed.","error");
+          setStatus(button,failureMessage,"error");
         }
+        window.__badocOperationModalFinish?.("Batch Search Result Failed",failureMessage,[],"error");
       }
       function extractAssignmentTaskSpXTrackingNumbers(rows){
         if(!Array.isArray(rows)||!rows.length)throw new Error("Run Assignment Task first and wait for its CSV to load.");
@@ -159,21 +163,27 @@
         if(data.type==="BADOC_SPX_COMMAND_FORWARDED"&&data.kind==="assignment-task"){
           if(assignmentTaskReportButton){
             armAssignmentTaskReportWatchdog(15000,"The extension page bridge forwarded the Assignment Task command, but the background service worker did not acknowledge it within 15 seconds. Open chrome://extensions → Badoc Hub Extension → Service worker → Inspect, check for errors, then reload the extension and retry.");
-            setStatus(assignmentTaskReportButton,data.message||"Assignment Task command forwarded. Waiting for the extension background worker…","info");
+            const progressMessage=data.message||"Assignment Task command forwarded. Waiting for the extension background worker…";
+            setStatus(assignmentTaskReportButton,progressMessage,"info");
+            window.__badocOperationModalUpdate?.(progressMessage);
           }
           return;
         }
         if(data.type==="BADOC_SPX_COMMAND_FORWARDED"&&data.kind==="batch-search-result"){
           if(batchSearchReportButton){
             armBatchSearchReportWatchdog(15000,"The Batch Search command reached the extension page bridge, but the background service worker did not acknowledge it within 15 seconds. Reload Badoc Hub Extension v1.5.33 and refresh Badoc Hub.");
-            setStatus(batchSearchReportButton,data.message||"Batch Search command forwarded. Waiting for the extension background worker…","info");
+            const progressMessage=data.message||"Batch Search command forwarded. Waiting for the extension background worker…";
+            setStatus(batchSearchReportButton,progressMessage,"info");
+            window.__badocOperationModalUpdate?.(progressMessage);
           }
           return;
         }
         if(data.type==="BADOC_SPX_BATCH_SEARCH_PROGRESS"){
           if(batchSearchReportButton){
             armBatchSearchReportWatchdog(8*60*1000,"SPX Batch Search stopped reporting progress for 8 minutes. Check the Order Tracking tab and extension service worker, then retry.");
-            setStatus(batchSearchReportButton,data.message||"Running SPX Batch Search and export…","info");
+            const progressMessage=data.message||"Running SPX Batch Search and export…";
+            setStatus(batchSearchReportButton,progressMessage,"info");
+            window.__badocOperationModalUpdate?.(progressMessage);
           }
           return;
         }
@@ -199,13 +209,19 @@
             batchSearchExportPending=false;
             const button=batchSearchReportButton;
             batchSearchReportButton=null;
+            const meta=window.__badocBatchSearchResultMeta;
+            const summary="Completed "+meta.inputCount.toLocaleString()+" unique TN(s) · "+meta.matchedCount.toLocaleString()+" found · "+meta.notFoundCount.toLocaleString()+" not found"+(meta.failedCount?" · "+meta.failedCount.toLocaleString()+" failed":"")+". Click again to copy.";
             if(button){
               button.disabled=false;
               button.textContent="⧉ Batch Search Result ("+rows.length.toLocaleString()+")";
-              const meta=window.__badocBatchSearchResultMeta;
-              const summary="Completed "+meta.inputCount.toLocaleString()+" unique TN(s) · "+meta.matchedCount.toLocaleString()+" found · "+meta.notFoundCount.toLocaleString()+" not found"+(meta.failedCount?" · "+meta.failedCount.toLocaleString()+" failed":"")+". Click again to copy.";
               setStatus(button,summary,meta.failedCount?"warn":"success");
             }
+            window.__badocOperationModalFinish?.(
+              meta.failedCount?"Batch Search Result Completed with Warnings":"Batch Search Result Loaded",
+              summary,
+              [["Input TNs",meta.inputCount.toLocaleString()],["Rows returned",rows.length.toLocaleString()],["Found",meta.matchedCount.toLocaleString()],["Not found",meta.notFoundCount.toLocaleString()],["Failed",meta.failedCount.toLocaleString()],["Search batches",meta.chunkCount.toLocaleString()]],
+              meta.failedCount?"info":"success"
+            );
           }catch(error){finishBatchSearchReportError(error?.message||String(error));}
           return;
         }
@@ -220,7 +236,9 @@
         if(data.type==="BADOC_SPX_ASSIGNMENT_TASK_PROGRESS"){
           if(assignmentTaskReportButton){
             armAssignmentTaskReportWatchdog(6*60*1000,"Assignment Task export stopped reporting progress for 6 minutes. Check the Badoc Hub Extension service worker in chrome://extensions, reload the extension, refresh Badoc Hub, and retry.");
-            setStatus(assignmentTaskReportButton,data.message||"Exporting Assignment Task directly from SPX…","info");
+            const progressMessage=data.message||"Exporting Assignment Task directly from SPX…";
+            setStatus(assignmentTaskReportButton,progressMessage,"info");
+            window.__badocOperationModalUpdate?.(progressMessage);
           }
           return;
         }
@@ -240,11 +258,18 @@
             assignmentTaskExportPending=false;
             const button=assignmentTaskReportButton;
             assignmentTaskReportButton=null;
+            const assignmentSummary="Loaded "+rows.length.toLocaleString()+" Assignment Task row(s) from SPX · "+window.__badocAssignmentTaskMeta.selectedDate+". Click again to copy.";
             if(button){
               button.disabled=false;
               button.textContent="⧉ Assignment Task ("+rows.length.toLocaleString()+")";
-              setStatus(button,"Loaded "+rows.length.toLocaleString()+" Assignment Task row(s) from SPX · "+window.__badocAssignmentTaskMeta.selectedDate+". Click again to copy.","success");
+              setStatus(button,assignmentSummary,"success");
             }
+            window.__badocOperationModalFinish?.(
+              "Assignment Task Loaded",
+              "SPX Assignment Task is ready to copy.",
+              [["Rows loaded",rows.length.toLocaleString()],["Created Date",window.__badocAssignmentTaskMeta.selectedDate],["Source","SPX"]],
+              "success"
+            );
           }catch(error){finishAssignmentTaskReportError(error?.message||String(error));}
           return;
         }
@@ -438,6 +463,10 @@
               }
               assignmentTaskExportPending=true;
               assignmentTaskReportButton=button;
+              window.__badocOperationModalStart?.(
+                "Loading Assignment Task",
+                "The extension is ready. Requesting today's Assignment Task directly from SPX…"
+              );
               button.textContent="Fetching Assignment Task…";
               setStatus(button,"Submitting Created Date "+today+" directly to SPX (no SPX tab required)…","info");
               if(typeof postBadocSpxMessage!=="function"){
@@ -476,6 +505,10 @@
               }
               batchSearchExportPending=true;
               batchSearchReportButton=button;
+              window.__badocOperationModalStart?.(
+                "Loading Batch Search Result",
+                "Submitting "+extracted.numbers.length.toLocaleString()+" unique SPX Tracking Number(s) to SPX Batch Search. Large lists will run in multiple batches…"
+              );
               button.textContent="Searching SPX…";
               setStatus(button,"Using "+extracted.numbers.length.toLocaleString()+" unique SPX Tracking Number(s) from Assignment Task column "+extracted.column+". SPX supports 3,000 per search; larger lists will run in chunks.","info");
               armBatchSearchReportWatchdog(15000,"The Batch Search command was not forwarded to the extension within 15 seconds. Reload the extension and refresh Badoc Hub.");
