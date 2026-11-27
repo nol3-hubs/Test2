@@ -165,7 +165,7 @@
         }
         if(data.type==="BADOC_SPX_COMMAND_FORWARDED"&&data.kind==="batch-search-result"){
           if(batchSearchReportButton){
-            armBatchSearchReportWatchdog(15000,"The Batch Search command reached the extension page bridge, but the background service worker did not acknowledge it within 15 seconds. Reload Badoc Hub Extension v1.5.24 and refresh Badoc Hub.");
+            armBatchSearchReportWatchdog(15000,"The Batch Search command reached the extension page bridge, but the background service worker did not acknowledge it within 15 seconds. Reload Badoc Hub Extension v1.5.33 and refresh Badoc Hub.");
             setStatus(batchSearchReportButton,data.message||"Batch Search command forwarded. Waiting for the extension background worker…","info");
           }
           return;
@@ -189,6 +189,10 @@
               inputCount:Number(data.inputCount||0),
               chunkCount:Number(data.chunkCount||1),
               rowCount:Number(data.rowCount||rows.length),
+              matchedCount:Number(data.matchedCount||0),
+              notFoundCount:Number(data.notFoundCount||0),
+              failedCount:Number(data.failedCount||0),
+              failedBatchCount:Number(data.failedBatchCount||0),
               fileName:String(data.fileName||"batch_search_result.csv"),
               savedAt:Date.now()
             };
@@ -198,7 +202,9 @@
             if(button){
               button.disabled=false;
               button.textContent="⧉ Batch Search Result ("+rows.length.toLocaleString()+")";
-              setStatus(button,"Loaded "+rows.length.toLocaleString()+" Batch Search result row(s) from "+window.__badocBatchSearchResultMeta.inputCount.toLocaleString()+" SPX Tracking Number(s). Click again to copy.","success");
+              const meta=window.__badocBatchSearchResultMeta;
+              const summary="Completed "+meta.inputCount.toLocaleString()+" unique TN(s) · "+meta.matchedCount.toLocaleString()+" found · "+meta.notFoundCount.toLocaleString()+" not found"+(meta.failedCount?" · "+meta.failedCount.toLocaleString()+" failed":"")+". Click again to copy.";
+              setStatus(button,summary,meta.failedCount?"warn":"success");
             }
           }catch(error){finishBatchSearchReportError(error?.message||String(error));}
           return;
@@ -462,10 +468,10 @@
                 setStatus(button,"The Badoc Hub extension check is unavailable. Refresh Badoc Hub and retry.","error");
                 return;
               }
-              setStatus(button,"Checking Badoc Hub Extension v1.5.24 and preparing "+extracted.numbers.length.toLocaleString()+" SPX Tracking Number(s)…","info");
+              setStatus(button,"Checking Badoc Hub Extension v1.5.33 and preparing "+extracted.numbers.length.toLocaleString()+" SPX Tracking Number(s)…","info");
               const bridgeReady=await ensureBridge();
               if(!bridgeReady){
-                setStatus(button,"Badoc Hub Extension v1.5.24 or later is required. Install or reload the extension, then refresh Badoc Hub.","error");
+                setStatus(button,"Badoc Hub Extension v1.5.33 or later is required. Install or reload the extension, then refresh Badoc Hub.","error");
                 return;
               }
               batchSearchExportPending=true;
