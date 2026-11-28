@@ -1,6 +1,6 @@
 /*
  * BADOC Hub — Actual Scanned by Riders: persistent OnHold history overlay
- * Version: 1.2.1
+ * Version: 1.2.2
  * Load this AFTER actual-scanned.js.
  * This file does not replace the live/current OnHold classifier. It adds an
  * independent Ever OnHold history so a status transition does not erase the
@@ -160,6 +160,21 @@
       const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
       return new Set(Array.isArray(raw) ? raw.map(key).filter(Boolean) : []);
     } catch (_) { return new Set(); }
+  }
+  // Keep the old TN-only localStorage index in sync for backward compatibility.
+  // IndexedDB remains the primary history store; a quota/private-mode error here
+  // must never interrupt the IndexedDB write or the main dashboard renderer.
+  function saveLegacyKeys() {
+    try {
+      const legacyKeys = loadLegacyKeys();
+      historyByKey.forEach(record => {
+        const tnKey = key(record?.tn);
+        if (tnKey) legacyKeys.add(tnKey);
+      });
+      localStorage.setItem(HISTORY_KEY, JSON.stringify([...legacyKeys]));
+    } catch (error) {
+      console.warn("BADOC Actual Scanned legacy OnHold keys could not be saved:", error);
+    }
   }
   function dateKeyFromRaw(rawValue, fallback = "") {
     const raw = String(rawValue ?? "").trim();
