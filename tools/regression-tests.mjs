@@ -265,7 +265,7 @@ test('Actual Scanned OnHold script initializes rider alias arrays before extendi
   const end=onholdHistory.indexOf('const INVALID_DRIVER =',start);
   assert.notEqual(start,-1);assert.notEqual(end,-1);
   const declarations=onholdHistory.slice(start,end);
-  const aliases=vm.runInNewContext(declarations+'\\n({riderIds:RIDER_ID_ALIASES,riderNames:RIDER_NAME_ALIASES,taskRiderIds:TASK_RIDER_ID_ALIASES,taskRiderNames:TASK_RIDER_NAME_ALIASES})');
+  const aliases=vm.runInNewContext(declarations+'\n({riderIds:RIDER_ID_ALIASES,riderNames:RIDER_NAME_ALIASES,taskRiderIds:TASK_RIDER_ID_ALIASES,taskRiderNames:TASK_RIDER_NAME_ALIASES})');
   assert.ok(aliases.riderIds.includes('Driver ID'));
   assert.ok(aliases.riderNames.includes('Driver Name'));
   assert.ok(aliases.taskRiderIds.includes('Assigned Rider ID'));
