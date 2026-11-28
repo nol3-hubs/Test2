@@ -1,6 +1,6 @@
 /*
  * BADOC Hub — Actual Scanned by Riders: persistent OnHold history overlay
- * Version: 1.2.4
+ * Version: 1.2.5
  * Load this AFTER actual-scanned.js.
  * This file does not replace the live/current OnHold classifier. It adds an
  * independent Ever OnHold history so a status transition does not erase the
@@ -293,6 +293,36 @@
       vehicle: event?.vehicle || "", atNumber, source: "Unattributed OnHold"
     };
   }
+  // Only explicit per-parcel SPX/scanner evidence is considered verified.
+  // Planned town assignments are deliberately never passed into this decision.
+  function isVerifiedOnholdAttribution(result) {
+    const riderId = String(result?.riderId || "").trim();
+    const riderName = String(result?.riderName || "").trim();
+    const source = String(result?.source || "").trim();
+    if (!riderId && (!riderName || key(riderName) === key("Unattributed OnHold"))) return false;
+    return ["OnHold event", "Current scanner", "Automatic Assignment Task export", "Automatic AT Number match"].includes(source);
+  }
+  function currentOnholdVerificationSummary(dateKey = todayManilaKey()) {
+    if (!baseGetData) return { total: 0, verified: 0, unresolved: 0, sources: {} };
+    const data = applyHistory(baseGetData());
+    const records = (Array.isArray(data?.records) ? data.records : [])
+      .filter(record => record.currentOnhold && (!dateKey || dateKey === ALL_DATES_VALUE || record.date === dateKey));
+    const sources = {};
+    let verified = 0;
+    records.forEach(record => {
+      const event = findHistory(record.tn, record.row, record.date);
+      const resolved = resolveOnholdAttribution({
+        tn: record.tn, row: record.row, event, date: record.date,
+        actualId: record.actualId, actualName: record.actualName, hasScanner: record.hasScanner
+      });
+      if (isVerifiedOnholdAttribution(resolved)) {
+        verified++;
+        sources[resolved.source] = (sources[resolved.source] || 0) + 1;
+      }
+    });
+    return { total: records.length, verified, unresolved: records.length - verified, sources };
+  }
+
   function setAssignmentTaskStatus(message, isError = false) {
     const element = document.getElementById("actualScannedSourceStatus");
     if (!element) return;
@@ -338,35 +368,94 @@
   async function acceptAssignmentTaskExport() {
     const rows = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : [];
     const dateKey = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
-    if (!rows.length || dateKey !== todayManilaKey()) {
-      setAssignmentTaskStatus("Today's SPX Assignment Task data is not available yet.", true);
+    if (!rows.length || !/^\\d{4}-\\d{2}-\\d{2}$/.test(dateKey)) {
+      assignmentTaskRequestDate = "";
+      setAssignmentTaskStatus("SPX Assignment Task export returned no usable mapping rows.", true);
+      setActualOnholdSyncStatus("Assignment Task verification failed: no usable SPX mapping rows were returned.", true);
+      const verifyButton = document.getElementById("actualScannedOnholdVerifyBtn");
+      if (verifyButton) verifyButton.disabled = false;
       return 0;
     }
-    const count = await persistAssignmentTaskRows(rows, dateKey);
-    const taskMatches = assignmentTaskRowsForDate(dateKey).length;
-    setAssignmentTaskStatus("SPX Assignment Task synced automatically · " + taskMatches.toLocaleString() + " parcel mapping row(s)");
-    try { window.__badocRenderActualScannedByRiders?.(); } catch (_) {}
-    return count;
+    if (assignmentTaskRequestDate && assignmentTaskRequestDate !== dateKey) {
+      setAssignmentTaskStatus("Ignored an Assignment Task export for a different selected date.", true);
+      return 0;
+    }
+    try {
+      const count = await persistAssignmentTaskRows(rows, dateKey);
+      const taskMatches = assignmentTaskRowsForDate(dateKey).length;
+      assignmentTaskRequestDate = "";
+      window.__badocRenderActualScannedByRiders?.();
+      const summary = currentOnholdVerificationSummary(dateKey);
+      const sourceSummary = Object.entries(summary.sources).map(([name, value]) => name + ": " + value.toLocaleString()).join(" · ");
+      const message = summary.total
+        ? "SPX verification: " + summary.verified.toLocaleString() + "/" + summary.total.toLocaleString() +
+          " current OnHold parcels verified · " + summary.unresolved.toLocaleString() + " unresolved" +
+          (sourceSummary ? " · " + sourceSummary : "")
+        : "SPX Assignment Task loaded (" + taskMatches.toLocaleString() + " mapping rows); no current OnHold parcels matched the selected date.";
+      setAssignmentTaskStatus("SPX Assignment Task loaded · " + taskMatches.toLocaleString() + " parcel mapping row(s)");
+      setActualOnholdSyncStatus(message, summary.unresolved > 0);
+      return count;
+    } catch (error) {
+      assignmentTaskRequestDate = "";
+      setAssignmentTaskStatus(error?.message || String(error), true);
+      setActualOnholdSyncStatus("SPX Assignment Task could not be saved: " + (error?.message || String(error)), true);
+      return 0;
+    } finally {
+      const verifyButton = document.getElementById("actualScannedOnholdVerifyBtn");
+      if (verifyButton) verifyButton.disabled = false;
+    }
   }
-  function requestAssignmentTaskExport() {
-    const today = todayManilaKey();
-    const liveDate = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
-    const liveRows = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : [];
-    if ((liveRows.length && liveDate === today) || (assignmentTaskRows.length && assignmentTaskDate === today)) {
-      if (liveRows.length && liveDate === today) acceptAssignmentTaskExport().catch(error => setAssignmentTaskStatus(error?.message || String(error), true));
-      else setAssignmentTaskStatus("SPX Assignment Task data loaded · " + assignmentTaskRows.length.toLocaleString() + " rows");
-      return;
+
+  function requestAssignmentTaskExport(dateKey = todayManilaKey(), force = true) {
+    const requestedDate = String(dateKey || todayManilaKey()).trim();
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(requestedDate)) {
+      setActualOnholdSyncStatus("Choose a valid Activity Date before verifying riders.", true);
+      return false;
     }
-    if (assignmentTaskRequestDate === today) return;
-    assignmentTaskRequestDate = today;
-    setAssignmentTaskStatus("Requesting today's Assignment Task data from SPX automatically…");
-    if (typeof window.__badocRequestAssignmentTaskExport === "function") {
-      const result = window.__badocRequestAssignmentTaskExport({ date: today });
-      if (result?.ok === false) setAssignmentTaskStatus(result.message || "Automatic Assignment Task export could not start.", true);
-    } else {
-      setAssignmentTaskStatus("Automatic Assignment Task export bridge is not available in this app/extension build.", true);
+    if (assignmentTaskRequestDate) {
+      setActualOnholdSyncStatus("An SPX Assignment Task verification is already running for " + assignmentTaskRequestDate + ".");
+      return false;
     }
-  }  function makeHistoryRecord(row) {
+    const verifyButton = document.getElementById("actualScannedOnholdVerifyBtn");
+    if (verifyButton) verifyButton.disabled = true;
+    assignmentTaskRequestDate = requestedDate;
+    setActualOnholdSyncStatus("Requesting SPX Assignment Task export for " + requestedDate + " to verify rider identities…");
+    if (typeof window.__badocRequestAssignmentTaskExport !== "function") {
+      assignmentTaskRequestDate = "";
+      if (verifyButton) verifyButton.disabled = false;
+      setActualOnholdSyncStatus("Assignment Task bridge is unavailable. Refresh Test2 and check that SPX Bridge v1.6.9 is connected.", true);
+      return false;
+    }
+    try {
+      const result = window.__badocRequestAssignmentTaskExport({ date: requestedDate, force: !!force });
+      if (result?.ok === false) {
+        assignmentTaskRequestDate = "";
+        if (verifyButton) verifyButton.disabled = false;
+        setActualOnholdSyncStatus(result.message || "SPX Assignment Task export could not start.", true);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      assignmentTaskRequestDate = "";
+      if (verifyButton) verifyButton.disabled = false;
+      setActualOnholdSyncStatus(error?.message || String(error), true);
+      return false;
+    }
+  }
+
+  // Page-to-extension request bridge. Assignment Task CSV responses are handled
+  // below and converted into page data before they enter the matching pipeline.
+  window.__badocRequestAssignmentTaskExport = function ({ date = todayManilaKey() } = {}) {
+    const selectedDate = String(date || todayManilaKey()).trim();
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(selectedDate)) return { ok: false, message: "Invalid Assignment Task date." };
+    window.postMessage({
+      source: "BADOC_PAGE",
+      type: "BADOC_START_ASSIGNMENT_TASK_EXPORT",
+      selectedDate
+    }, "*");
+    return { ok: true };
+  };
+  function makeHistoryRecord(row) {
     const tn = trackingNumber(row);
     const tnKey = key(tn);
     if (!tnKey) return null;
@@ -783,12 +872,17 @@
       const taskCount = currentOnholdRows.filter(record => record.onholdAttribution === "Assignment Task export").length;
       const atCount = currentOnholdRows.filter(record => record.onholdAttribution === "AT Number map" || record.onholdAttribution === "Assignment Task AT match").length;
       const historyCount = historyRows.length;
+      const verifiedCurrentCount = currentOnholdRows.filter(record => isVerifiedOnholdAttribution(resolveOnholdAttribution({
+        tn: record.tn, row: record.row, event: findHistory(record.tn, record.row, record.date),
+        date: record.date, actualId: record.actualId, actualName: record.actualName, hasScanner: record.hasScanner
+      }))).length;
+      const unresolvedVerifiedCount = Math.max(0, currentCount - verifiedCurrentCount);
       note.textContent = currentRows.filter(record => record.hasScanner).length.toLocaleString() +
         ' current scanned parcel(s); ' + currentCount.toLocaleString() + ' current OnHold (' +
-        attributedCurrentCount.toLocaleString() + ' attributed, ' + taskCount.toLocaleString() +
-        ' via Assignment Task export, ' + atCount.toLocaleString() + ' via AT Number map, and ' +
-        unattributedCurrentCount.toLocaleString() + ' still unattributed). ' + historyCount.toLocaleString() +
-        ' OnHold history event(s) in the selected filters. Event scanner identity takes priority; AT matching is used only when event/scanner identity is missing. Town assignment is never used as proof of actual scanning.';
+        verifiedCurrentCount.toLocaleString() + ' verified, ' + unresolvedVerifiedCount.toLocaleString() + ' unverified; ' +
+        taskCount.toLocaleString() + ' via Assignment Task export, ' + atCount.toLocaleString() +
+        ' via AT Number map). ' + historyCount.toLocaleString() +
+        ' OnHold history event(s) in the selected filters. Verification requires a unique SPX/scanner rider match; town assignment is never accepted as proof.';
     }
 
     const selectedRider = filters.rider || window.__actualScannedSelectedRider || "";
@@ -834,6 +928,8 @@
         "OnHold Rider": record.currentOnhold ? (onholdRiderName || "Unattributed OnHold") : "",
         "OnHold Rider ID": onholdRiderId, "OnHold AT Number": resolved?.atNumber || "",
         "OnHold Attribution": onholdAttribution,
+        "OnHold Verification": record.currentOnhold ? (isVerifiedOnholdAttribution(resolved) ? "VERIFIED" : "UNVERIFIED") : (histories.length ? "HISTORICAL" : "N/A"),
+        "OnHold Verification Source": record.currentOnhold ? (resolved?.source || "Unattributed OnHold") : "",
         "Assigned Rider": record.assigned, "Assignment Result": record.comparison,
         "Ever OnHold": histories.length || record.currentOnhold ? "Yes" : "No",
         "Current OnHold": record.currentOnhold ? "Yes" : "No",
@@ -848,6 +944,8 @@
         "Actual Rider": record.riderName || "", "Actual Rider ID": record.riderId || "",
         "OnHold Rider": resolved.riderName || "Unattributed OnHold", "OnHold Rider ID": resolved.riderId || "",
         "OnHold AT Number": resolved.atNumber || record.atNumber || "", "OnHold Attribution": resolved.source,
+        "OnHold Verification": isVerifiedOnholdAttribution(resolved) ? "VERIFIED" : "UNVERIFIED",
+        "OnHold Verification Source": resolved.source,
         "Vehicle": normalizedVehicle(resolved.vehicle || record.vehicle), "Assigned Rider": "", "Assignment Result": "Historical event",
         "Ever OnHold": "Yes", "Current OnHold": "Unknown", "OnHold Dates": record.onholdDate || ""
       };
@@ -883,7 +981,7 @@
     if (message?.type !== "BADOC_ASSIGNED_ONHOLD_TODAY_COMPLETE") return;
     captureRows(Array.isArray(window.__badocOnholdExportRows) ? window.__badocOnholdExportRows : []);
     captureRows(Array.isArray(message.onholdRows) ? message.onholdRows : []);
-    requestAssignmentTaskExport();
+    requestAssignmentTaskExport(todayManilaKey(), true);
   }, true);
   window.addEventListener("badoc:parcel-data-updated", function () {
     captureCurrentState();
@@ -891,8 +989,57 @@
       window.__badocRenderActualScannedByRiders?.();
     }
   });
+  window.addEventListener("message", event => {
+    if (event.source !== window) return;
+    const message = event.data || {};
+    if (message.source !== "BADOC_SPX_BRIDGE") return;
+    if (message.type === "BADOC_SPX_ASSIGNMENT_TASK_PROGRESS") {
+      if (assignmentTaskRequestDate) {
+        setActualOnholdSyncStatus(message.message || "SPX is preparing the Assignment Task export for rider verification…");
+      }
+      return;
+    }
+    if (message.type === "BADOC_SPX_ASSIGNMENT_TASK_CSV") {
+      const dateKey = String(message.selectedDate || assignmentTaskRequestDate || "").trim();
+      try {
+        if (!message.csvText || typeof window.__badocParseCSV !== "function") {
+          throw new Error("Assignment Task CSV parser is unavailable or SPX returned an empty file.");
+        }
+        const rows = window.__badocParseCSV(String(message.csvText));
+        if (!Array.isArray(rows) || !rows.length) throw new Error("SPX Assignment Task export contained no data rows.");
+        window.__badocAssignmentTaskRows = rows;
+        window.__badocAssignmentTaskMeta = {
+          selectedDate: dateKey,
+          taskId: String(message.taskId || ""),
+          fileName: String(message.fileName || "assignment_task.csv"),
+          rowCount: Number(message.rowCount || rows.length),
+          receivedAt: Date.now()
+        };
+        window.dispatchEvent(new CustomEvent("badoc:assignment-task-updated"));
+      } catch (error) {
+        assignmentTaskRequestDate = "";
+        const verifyButton = document.getElementById("actualScannedOnholdVerifyBtn");
+        if (verifyButton) verifyButton.disabled = false;
+        setActualOnholdSyncStatus("Could not read SPX Assignment Task CSV: " + (error?.message || String(error)), true);
+        setAssignmentTaskStatus(error?.message || String(error), true);
+      }
+      return;
+    }
+    if (message.type === "BADOC_SPX_ASSIGNMENT_TASK_ERROR") {
+      assignmentTaskRequestDate = "";
+      const verifyButton = document.getElementById("actualScannedOnholdVerifyBtn");
+      if (verifyButton) verifyButton.disabled = false;
+      const error = String(message.message || "SPX Assignment Task export failed.");
+      setActualOnholdSyncStatus("SPX rider verification failed: " + error, true);
+      setAssignmentTaskStatus(error, true);
+    }
+  });
   window.addEventListener("badoc:assignment-task-updated", function () {
-    acceptAssignmentTaskExport().catch(error => setAssignmentTaskStatus(error?.message || String(error), true));
+    acceptAssignmentTaskExport().catch(error => {
+      assignmentTaskRequestDate = "";
+      setAssignmentTaskStatus(error?.message || String(error), true);
+      setActualOnholdSyncStatus(error?.message || String(error), true);
+    });
   });
   // Surface automatic Assignment Task bridge errors and allow a later retry.
   window.addEventListener("badoc:assignment-task-error", event => {
@@ -955,7 +1102,7 @@
           " · Status 5: " + statusSource
         );
         window.__badocRenderActualScannedByRiders?.();
-        requestAssignmentTaskExport();
+        requestAssignmentTaskExport(String(message.selectedDate || todayManilaKey()), true);
       } catch (error) {
         if (button) button.disabled = false;
         setActualOnholdSyncStatus(error?.message || String(error), true);
@@ -963,6 +1110,11 @@
     })();
   });
   document.getElementById("actualScannedOnholdSyncBtn")?.addEventListener("click", startActualOnholdSync);
+  document.getElementById("actualScannedOnholdVerifyBtn")?.addEventListener("click", () => {
+    const selected = String(document.getElementById("actualScanDate")?.value || "").trim();
+    const selectedDate = !selected || selected === ALL_DATES_VALUE ? todayManilaKey() : selected;
+    requestAssignmentTaskExport(selectedDate, true);
+  });
 
   baseRender = window.__badocRenderActualScannedByRiders || null;
   baseGetData = window.__badocGetActualScannedByRidersData || null;
