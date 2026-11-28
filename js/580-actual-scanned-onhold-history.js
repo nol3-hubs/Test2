@@ -1,6 +1,6 @@
 /*
  * BADOC Hub — Actual Scanned by Riders: persistent OnHold history overlay
- * Version: 1.2.5
+ * Version: 1.2.6
  * Load this AFTER actual-scanned.js.
  * This file does not replace the live/current OnHold classifier. It adds an
  * independent Ever OnHold history so a status transition does not erase the
@@ -368,7 +368,7 @@
   async function acceptAssignmentTaskExport() {
     const rows = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : [];
     const dateKey = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
-    if (!rows.length || !/^\\d{4}-\\d{2}-\\d{2}$/.test(dateKey)) {
+    if (!rows.length || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(dateKey)) {
       assignmentTaskRequestDate = "";
       setAssignmentTaskStatus("SPX Assignment Task export returned no usable mapping rows.", true);
       setActualOnholdSyncStatus("Assignment Task verification failed: no usable SPX mapping rows were returned.", true);
@@ -408,7 +408,7 @@
 
   function requestAssignmentTaskExport(dateKey = todayManilaKey(), force = true) {
     const requestedDate = String(dateKey || todayManilaKey()).trim();
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(requestedDate)) {
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(requestedDate)) {
       setActualOnholdSyncStatus("Choose a valid Activity Date before verifying riders.", true);
       return false;
     }
@@ -447,7 +447,7 @@
   // below and converted into page data before they enter the matching pipeline.
   window.__badocRequestAssignmentTaskExport = function ({ date = todayManilaKey() } = {}) {
     const selectedDate = String(date || todayManilaKey()).trim();
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(selectedDate)) return { ok: false, message: "Invalid Assignment Task date." };
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(selectedDate)) return { ok: false, message: "Invalid Assignment Task date." };
     window.postMessage({
       source: "BADOC_PAGE",
       type: "BADOC_START_ASSIGNMENT_TASK_EXPORT",
