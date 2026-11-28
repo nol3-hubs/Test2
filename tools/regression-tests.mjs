@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const core=readFileSync(resolve(root,'js/120-app-core.js'),'utf8');
+const bridgeBackground=readFileSync(resolve(root,'extension/background.js'),'utf8');
+const onholdHistory=readFileSync(resolve(root,'js/580-actual-scanned-onhold-history.js'),'utf8');
 function extract(startMarker,endMarker){
   const start=core.indexOf(startMarker);assert.notEqual(start,-1,`missing ${startMarker}`);
   const end=core.indexOf(endMarker,start);assert.notEqual(end,-1,`missing ${endMarker}`);
@@ -151,8 +153,8 @@ test('Volume Forecast maps parcel rows once per source dataset and reuses them f
 
 test('Volume Forecast town cards use a single town aggregation instead of filtering the full list per town',()=>{
   const forecast=readFileSync(resolve(root,'js/510-volume-forecast-board.js'),'utf8');
-  assert.match(forecast,/function buildTownStats\(rows\)/);
-  assert.match(forecast,/var townStats=buildTownStats\(shown\)/);
+  assert.match(forecast,/function buildTownStats\(rows,sets\)/);
+  assert.match(forecast,/var shown=selectedRows\(rows\),townStats=buildTownStats\(shown,sets\)/);
   const start=forecast.indexOf('function renderTownGroups(');
   const end=forecast.indexOf('function csvCell(',start);
   assert.notEqual(start,-1);assert.notEqual(end,-1);
@@ -218,4 +220,54 @@ test('Light mode recolors the entire sidebar footer and theme switch row',()=>{
   assert.match(css,/html\[data-theme="light"\] \.side > \.sidebar-footer\{[\s\S]*?background:#f4f7fb!important;/);
   assert.match(css,/html\[data-theme="light"\] \.side > \.sidebar-footer > \.theme-switch-row\{[\s\S]*?background:#edf4fa!important;/);
   assert.match(css,/html\[data-theme="light"\] \.side > \.sidebar-footer \.theme-switch-label,[\s\S]*?color:#40566b!important;/);
+});
+
+test('Actual Scanned OnHold snapshot filters status 5, Badoc Hub, Assigned Time and duplicate tracking numbers',()=>{
+  const start=bridgeBackground.indexOf('function filterActualScannedOnHoldExportRows(');
+  const end=bridgeBackground.indexOf('\nfunction actualScannedOnHoldDateRange(',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const helper=bridgeBackground.slice(start,end);
+  const sandbox={
+    findAssignedExportColumn(headers,aliases){
+      const wanted=new Set(aliases.map(value=>String(value).toLowerCase().replace(/[^a-z0-9]/g,'')));
+      return headers.findIndex(value=>wanted.has(String(value).toLowerCase().replace(/[^a-z0-9]/g,'')));
+    },
+    philippineDateKey(value){
+      const match=String(value??'').match(/^(\d{4}-\d{2}-\d{2})/);
+      return match?match[1]:'';
+    }
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(helper+'\nthis.filter=filterActualScannedOnHoldExportRows;',sandbox);
+  const headers=['SLS Tracking Number','Current Station','Status','Assigned Time','Driver Name','Town Name'];
+  const result=sandbox.filter({headers,rows:[
+    ['SPEPH0001','Badoc Hub','OnHold','2026-11-28 08:10:00','Rider A','TOWN A'],
+    ['SPEPH0001','Badoc Hub','OnHold','2026-11-28 08:10:00','Rider A','TOWN A'],
+    ['SPEPH0002','Badoc Hub','Delivered','2026-11-28 09:00:00','Rider B','TOWN B'],
+    ['SPEPH0003','Pinili Hub','OnHold','2026-11-28 09:00:00','Rider C','TOWN C'],
+    ['SPEPH0004','Badoc Hub','OnHold','2026-11-27 09:00:00','Rider D','TOWN D'],
+    ['','Badoc Hub','OnHold','2026-11-28 10:00:00','Rider E','TOWN E']
+  ]},'2026-11-28');
+  assert.equal(result.rows.length,1);
+  assert.equal(result.rows[0]['SLS Tracking Number'],'SPEPH0001');
+  assert.equal(result.rows[0]['Driver Name'],'Rider A');
+  assert.equal(result.rows[0]._badocOnholdSnapshotKind,'spx-assigned-onhold-today');
+  assert.equal(result.rows[0]._badocOnholdSnapshotDate,'2026-11-28');
+  assert.equal(result.duplicateCount,1);
+  assert.equal(result.excluded.otherStatus,1);
+  assert.equal(result.excluded.otherStation,1);
+  assert.equal(result.excluded.otherAssignedDate,1);
+  assert.equal(result.excluded.missingTrackingNumber,1);
+});
+
+test('Actual Scanned OnHold history uses Assigned Time for SPX status-5 snapshot dates',()=>{
+  assert.match(onholdHistory,/snapshotKind === "spx-assigned-onhold-today"[\s\S]*?dateKeyFromRaw\(assignedRaw, snapshotDate/);
+  assert.match(onholdHistory,/assignedAt: assignedRaw/);
+  assert.match(onholdHistory,/BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE/);
+});
+
+test('Modified Actual Scanned OnHold bridge and history scripts parse as JavaScript',()=>{
+  assert.doesNotThrow(()=>new vm.Script(bridgeBackground,{filename:'extension/background.js'}));
+  assert.doesNotThrow(()=>new vm.Script(readFileSync(resolve(root,'extension/content.js'),'utf8'),{filename:'extension/content.js'}));
+  assert.doesNotThrow(()=>new vm.Script(onholdHistory,{filename:'js/580-actual-scanned-onhold-history.js'}));
 });

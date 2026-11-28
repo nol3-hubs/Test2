@@ -1,6 +1,6 @@
 /*
  * BADOC Hub — Actual Scanned by Riders: persistent OnHold history overlay
- * Version: 1.1.0
+ * Version: 1.2.0
  * Load this AFTER actual-scanned.js.
  * This file does not replace the live/current OnHold classifier. It adds an
  * independent Ever OnHold history so a status transition does not erase the
@@ -28,6 +28,7 @@
   // so historical capture uses the same fixed 3:00 PM Manila classifier.
   const PICKUP_ALIASES = ["Pick Up Time", "Pickup Time", "First Pick Up Time", "First Pickup Time", "First Pickup DateTime", "At Pick Up Time", "Pickup Date Time", "Pickup Datetime", "Pickup Timestamp", "Scanned Time"];
   const ONHOLD_TIME_ALIASES = ["OnHold Time", "On Hold Time", "OnHold Date Time", "On Hold Date Time", "OnHold Timestamp"];
+  const ONHOLD_ASSIGNED_TIME_ALIASES = ["Assigned Time", "Assigned Date Time", "Assignment Time", "Assignment Date Time", "Assign Time", "Pick Up Time", "Pickup Time"];
   const RIDER_ID_ALIASES = ["Driver ID", "Rider ID", "Delivery Driver ID", "Delivery Rider ID", "Last Mile Driver ID", "LM Driver ID", "Scan Driver ID", "Actual Driver ID", "Courier ID"];
   const RIDER_NAME_ALIASES = ["Driver Name", "Rider Name", "Delivery Driver Name", "Delivery Rider Name", "Last Mile Driver Name", "LM Driver Name", "Scan Driver Name", "Actual Driver Name", "Courier Name", "Driver", "Rider"];
 
@@ -38,6 +39,7 @@
   let assignmentTaskDate = "";
   let assignmentTaskWriteChain = Promise.resolve();
   let assignmentTaskRequestDate = "";
+  let actualOnholdExportRequestId = "";
   let writeChain = Promise.resolve();
   let renderQueued = false;
   let lastRenderManilaDayKey = "";
@@ -342,9 +344,16 @@
     if (!tnKey) return null;
     const pickupRaw = field(row, PICKUP_ALIASES);
     const onholdRaw = field(row, ONHOLD_TIME_ALIASES);
-    const eventRaw = onholdRaw || pickupRaw;
+    const assignedRaw = field(row, ONHOLD_ASSIGNED_TIME_ALIASES);
+    const snapshotKind = String(row?._badocOnholdSnapshotKind || "");
+    const eventRaw = onholdRaw || pickupRaw || assignedRaw;
     const eventStamp = parseManilaStamp(eventRaw);
-    const onholdDate = eventStamp?.dateKey || todayManilaKey();
+    const snapshotDate = String(row?._badocOnholdSnapshotDate || "").trim();
+    // For the dedicated status-5 SPX snapshot, Assigned Time defines the
+    // selected operating day; retain OnHold Time separately as event detail.
+    const onholdDate = snapshotKind === "spx-assigned-onhold-today"
+      ? dateKeyFromRaw(assignedRaw, snapshotDate || todayManilaKey())
+      : (eventStamp?.dateKey || todayManilaKey());
     const historyKey = `${onholdDate}|${tnKey}`;
     const rawId = field(row, RIDER_ID_ALIASES);
     const rawName = field(row, RIDER_NAME_ALIASES);
@@ -355,6 +364,8 @@
       tn,
       onholdDate,
       onholdAt: eventRaw || new Date().toISOString(),
+      assignedAt: assignedRaw,
+      source: snapshotKind === "spx-assigned-onhold-today" ? "SPX OnHold status-5 snapshot" : "Parcel export/history",
       riderId,
       riderName,
       atNumber: field(row, AT_NUMBER_ALIASES),
@@ -370,10 +381,11 @@
     const records = [];
     rows.forEach(row => {
       if (!row || typeof row !== "object") return;
-      // Keep explicit OnHold history even after the live status changes to
-      // Delivered/Delivering. OnHold Time is the strongest event evidence;
-      // otherwise use the explicit status or the dashboard's fixed 3 PM rule.
-      if (!field(row, ONHOLD_TIME_ALIASES) && !explicitOnhold(row) && !onholdStatus(row)) return;
+      const isAssignedOnholdSnapshot = String(row._badocOnholdSnapshotKind || "") === "spx-assigned-onhold-today";
+      // The extension has already applied station, status-5 and assigned-date
+      // filters to this dedicated snapshot; other sources keep their old rules.
+      if (!isAssignedOnholdSnapshot &&
+          !field(row, ONHOLD_TIME_ALIASES) && !explicitOnhold(row) && !onholdStatus(row)) return;
       const record = makeHistoryRecord(row);
       if (record) records.push(record);
     });
@@ -396,7 +408,9 @@
           town: previous.town || record.town,
           vehicle: previous.vehicle || record.vehicle,
           area: previous.area || record.area,
-          orderId: previous.orderId || record.orderId
+          orderId: previous.orderId || record.orderId,
+          assignedAt: previous.assignedAt || record.assignedAt,
+          source: previous.source || record.source
         });
       }
     });
@@ -823,6 +837,70 @@
     assignmentTaskRequestDate = "";
     setAssignmentTaskStatus(event.detail?.message || "Automatic Assignment Task export failed.", true);
   });
+
+  function setActualOnholdSyncStatus(message, isError = false) {
+    const element = document.getElementById("actualScannedOnholdSyncStatus");
+    if (element) {
+      element.textContent = String(message || "");
+      element.classList.toggle("is-error", !!isError);
+      element.classList.toggle("is-success", !isError && !!message);
+    }
+  }
+  function startActualOnholdSync() {
+    if (actualOnholdExportRequestId) return;
+    const button = document.getElementById("actualScannedOnholdSyncBtn");
+    const selected = String(document.getElementById("actualScanDate")?.value || "").trim();
+    const selectedDate = !selected || selected === ALL_DATES_VALUE ? todayManilaKey() : selected;
+    const requestId = "actual-scanned-onhold-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+    actualOnholdExportRequestId = requestId;
+    if (button) button.disabled = true;
+    setActualOnholdSyncStatus("Requesting SPX OnHold status 5 · Assigned Time " + selectedDate + "…");
+    window.postMessage({
+      source: "BADOC_PAGE",
+      type: "BADOC_START_ACTUAL_SCANNED_ONHOLD_TODAY",
+      requestId,
+      selectedDate
+    }, "*");
+  }
+  window.addEventListener("message", event => {
+    const message = event?.data;
+    if (!message || !actualOnholdExportRequestId ||
+        String(message.requestId || "") !== actualOnholdExportRequestId) return;
+    const button = document.getElementById("actualScannedOnholdSyncBtn");
+    if (message.type === "BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_ACCEPTED") {
+      setActualOnholdSyncStatus(message.message || "SPX accepted the OnHold export…");
+      return;
+    }
+    if (message.type === "BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_ERROR") {
+      actualOnholdExportRequestId = "";
+      if (button) button.disabled = false;
+      setActualOnholdSyncStatus(message.message || "SPX OnHold sync failed.", true);
+      return;
+    }
+    if (message.type !== "BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE") return;
+    actualOnholdExportRequestId = "";
+    (async () => {
+      try {
+        const rows = Array.isArray(message.rows) ? message.rows : [];
+        await captureRows(rows);
+        await writeChain;
+        if (button) button.disabled = false;
+        const assignedSource = message.assignedTimeFilterSource || "SPX export request";
+        const statusSource = message.statusFilterSource || "SPX export request";
+        setActualOnholdSyncStatus(
+          rows.length.toLocaleString() + " unique OnHold parcel(s) saved locally for " +
+          String(message.selectedDate || "") + " · Assigned Time: " + assignedSource +
+          " · Status 5: " + statusSource
+        );
+        window.__badocRenderActualScannedByRiders?.();
+        requestAssignmentTaskExport();
+      } catch (error) {
+        if (button) button.disabled = false;
+        setActualOnholdSyncStatus(error?.message || String(error), true);
+      }
+    })();
+  });
+  document.getElementById("actualScannedOnholdSyncBtn")?.addEventListener("click", startActualOnholdSync);
 
   baseRender = window.__badocRenderActualScannedByRiders || null;
   baseGetData = window.__badocGetActualScannedByRidersData || null;
