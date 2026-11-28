@@ -286,6 +286,14 @@ test('Completed operation dialogs can always be dismissed without accepting conf
   assert.match(controller,/closeBtn\.addEventListener\("click",\(\)=>\{if\(confirmResolver\)\{resolveConfirm\(true\);return;\}close\(\);\}\)/);
 });
 
+test('Loading saved OnHold history also populates the tracking-number index',()=>{
+  const loadStart=onholdHistory.indexOf('async function loadHistory()');
+  const loadEnd=onholdHistory.indexOf('function historiesForTrackingNumber(',loadStart);
+  assert.notEqual(loadStart,-1);assert.notEqual(loadEnd,-1);
+  const loader=onholdHistory.slice(loadStart,loadEnd);
+  assert.match(loader,/historyByKey\.set\(record\.key, record\);\s*indexHistoryRecord\(record\);/);
+});
+
 test('Actual Scanned OnHold history uses a tracking-number index instead of scanning all events',()=>{
   const start=onholdHistory.indexOf('function indexHistoryRecord(record)');
   const end=onholdHistory.indexOf('function findHistoryFromMatches(',start);
