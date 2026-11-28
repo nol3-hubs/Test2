@@ -496,7 +496,10 @@
         request.onerror = () => reject(request.error || new Error("Could not read OnHold history"));
       });
       records.forEach(record => {
-        if (record?.key && record?.tn) historyByKey.set(record.key, record);
+        if (record?.key && record?.tn) {
+          historyByKey.set(record.key, record);
+          indexHistoryRecord(record);
+        }
       });
       await loadAssignmentTaskRows();
     } catch (error) {
