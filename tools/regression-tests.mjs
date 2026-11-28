@@ -274,7 +274,7 @@ test('Actual Scanned OnHold script initializes rider alias arrays before extendi
 
 test('Opening Actual Scanned history does not automatically request Assignment Task export',()=>{
   const startup=onholdHistory.slice(onholdHistory.lastIndexOf('// Load saved history and current local exports'));
-  assert.match(startup,/loadHistory\(\)\.then\(\(\)=>\{\s*captureCurrentState\(\);\s*\}\);/);
+  assert.match(startup,/loadHistory\(\)\.then\(\(\)\s*=>\s*\{\s*captureCurrentState\(\);\s*\}\);/);
   assert.doesNotMatch(startup,/requestAssignmentTaskExport\(\)/);
   // Keep the explicit sync follow-up available for rider attribution.
   assert.match(onholdHistory,/BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE[\s\S]*?requestAssignmentTaskExport\(\)/);
@@ -282,7 +282,7 @@ test('Opening Actual Scanned history does not automatically request Assignment T
 
 test('Completed operation dialogs can always be dismissed without accepting confirmations',()=>{
   const controller=readFileSync(resolve(root,'js/470-operation-modal-controller.js'),'utf8');
-  assert.match(controller,/function close\(\)\{\s*if\(confirmResolver\)\{resolveConfirm\(false\);return;\}\s*active=false;completed=true;setVisible\(false\);\s*\}/);
+  assert.match(controller,/function close\(\)\s*\{[\s\S]*?if\(confirmResolver\)\s*\{\s*resolveConfirm\(false\);\s*return;\s*\}[\s\S]*?active=false;completed=true;setVisible\(false\);[\s\S]*?\}/);
   assert.match(controller,/closeBtn\.addEventListener\("click",\(\)=>\{if\(confirmResolver\)\{resolveConfirm\(true\);return;\}close\(\);\}\)/);
 });
 
