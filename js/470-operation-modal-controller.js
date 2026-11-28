@@ -76,7 +76,11 @@
     closeBtn.textContent="Close";closeBtn.disabled=false;cancelBtn.hidden=true;
     addDetails(details);setVisible(true);
   };
-  function close(){if(!completed)return;setVisible(false);}
+  function close(){
+    if(confirmResolver){resolveConfirm(false);return;}
+    // A stale completion flag must not trap a finished operation dialog on screen.
+    active=false;completed=true;setVisible(false);
+  }
   closeBtn.addEventListener("click",()=>{if(confirmResolver){resolveConfirm(true);return;}close();});
   copyBtn?.addEventListener("click",async()=>{
     if(typeof copyAction!=="function")return;

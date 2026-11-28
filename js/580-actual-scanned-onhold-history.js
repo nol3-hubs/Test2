@@ -1,6 +1,6 @@
 /*
  * BADOC Hub — Actual Scanned by Riders: persistent OnHold history overlay
- * Version: 1.2.2
+ * Version: 1.2.3
  * Load this AFTER actual-scanned.js.
  * This file does not replace the live/current OnHold classifier. It adds an
  * independent Ever OnHold history so a status transition does not erase the
@@ -929,10 +929,11 @@
   }
   if (baseRender) window.__badocRenderActualScannedByRiders = patchedRender;
 
-  // Load history first, then capture the currently available uploads/exports.
+  // Load saved history and current local exports without starting a new SPX job.
+  // Assignment Task is an optional attribution source; opening the dashboard must
+  // never submit an export. It can still be requested after an explicit OnHold sync.
   loadHistory().then(() => {
     captureCurrentState();
-    requestAssignmentTaskExport();
   });
   Promise.resolve(window.__badocOnholdExportsReady).then(() => captureCurrentState()).catch(() => {});
 })();
