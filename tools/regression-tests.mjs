@@ -153,8 +153,8 @@ test('Volume Forecast maps parcel rows once per source dataset and reuses them f
 
 test('Volume Forecast town cards use a single town aggregation instead of filtering the full list per town',()=>{
   const forecast=readFileSync(resolve(root,'js/510-volume-forecast-board.js'),'utf8');
-  assert.match(forecast,/function buildTownStats\(rows\)/);
-  assert.match(forecast,/var townStats=buildTownStats\(shown\)/);
+  assert.match(forecast,/function buildTownStats\(rows,sets\)/);
+  assert.match(forecast,/var shown=selectedRows\(rows\),townStats=buildTownStats\(shown,sets\)/);
   const start=forecast.indexOf('function renderTownGroups(');
   const end=forecast.indexOf('function csvCell(',start);
   assert.notEqual(start,-1);assert.notEqual(end,-1);
@@ -264,4 +264,10 @@ test('Actual Scanned OnHold history uses Assigned Time for SPX status-5 snapshot
   assert.match(onholdHistory,/snapshotKind === "spx-assigned-onhold-today"[\s\S]*?dateKeyFromRaw\(assignedRaw, snapshotDate/);
   assert.match(onholdHistory,/assignedAt: assignedRaw/);
   assert.match(onholdHistory,/BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE/);
+});
+
+test('Modified Actual Scanned OnHold bridge and history scripts parse as JavaScript',()=>{
+  assert.doesNotThrow(()=>new vm.Script(bridgeBackground,{filename:'extension/background.js'}));
+  assert.doesNotThrow(()=>new vm.Script(readFileSync(resolve(root,'extension/content.js'),'utf8'),{filename:'extension/content.js'}));
+  assert.doesNotThrow(()=>new vm.Script(onholdHistory,{filename:'js/580-actual-scanned-onhold-history.js'}));
 });

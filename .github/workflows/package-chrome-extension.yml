@@ -6,6 +6,7 @@ on:
     paths:
       - "extension/**"
       - ".github/workflows/package-chrome-extension.yml"
+      - "tools/regression-tests.mjs"
       - "tools/sync_bridge.py"
       - "tools/stamp-assets.mjs"
 
