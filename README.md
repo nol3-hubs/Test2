@@ -86,7 +86,8 @@ This package includes an update to **Actual Scanned by Riders** and the Forward/
 - The export merge now uses the shared row-preservation helper, so a newer SPX status export with a blank `Pick Up Time` does not erase the original pickup timestamp used by the fixed **3:00 PM Manila** OnHold cutoff.
 - The rider table now displays **Ever OnHold / Current OnHold** separately. Current OnHold follows the latest parcel status; Ever OnHold retains a dated event and rider attribution after a later status change.
 - Historical OnHold events are included in rider/town breakdowns, the selected rider detail panel, and the filtered CSV export.
-- The history store is browser-local IndexedDB (`BadocHubActualScannedHistoryV1`). It is **not synchronized across devices or browsers** in this package.
+- Actual Scanned by Riders now has a manual **Sync OnHold from SPX** action. It requests Forward Order status `5` for the selected Activity Date, filters Current Station to Badoc Hub and Assigned Time to that date, then stores unique tracking-number events with exported rider and town fields.
+- The history store is browser-local IndexedDB (`BadocHubActualScannedHistoryV1`). The new SPX snapshot is saved there and is **not synchronized across devices or browsers** in this package.
 
 **Historical-data limitation:** the app can preserve OnHold events it sees after this update is deployed, and it can capture older events when the source still contains an explicit OnHold timestamp/status. It cannot reliably recreate an OnHold transition that has already been overwritten in every available export and local history.
 

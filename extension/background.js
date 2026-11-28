@@ -636,6 +636,161 @@ function filterAssignedTodayExportRows(extracted, todayDate, label, rangeCreated
     assignedTimeFilterSource, createdDateFilterSource
   };
 }
+function filterActualScannedOnHoldExportRows(extracted, selectedDate) {
+  const headers = Array.isArray(extracted?.headers) ? extracted.headers : [];
+  const sourceRows = Array.isArray(extracted?.rows) ? extracted.rows : [];
+  const stationIndex = findAssignedExportColumn(headers, [
+    "current station", "current station name", "current hub", "current hub name"
+  ]);
+  const assignedTimeIndex = findAssignedExportColumn(headers, [
+    "assigned time", "assigned datetime", "assign time", "assignment time",
+    "assigned at", "assignment date", "assignment datetime",
+    "pick up time", "pickup time", "pick up datetime", "pickup datetime"
+  ]);
+  const statusIndex = findAssignedExportColumn(headers, [
+    "status", "parcel status", "parcel status to", "status to",
+    "current status", "delivery status", "tracking status", "shipment status"
+  ]);
+  const trackingIndex = findAssignedExportColumn(headers, [
+    "sls tracking number", "spx tn", "spx tracking number",
+    "tracking number", "spx tracking no", "waybill number", "awb"
+  ]);
+  const missing = [];
+  if (stationIndex < 0) missing.push("Current Station");
+  if (trackingIndex < 0) missing.push("SPX Tracking Number");
+  if (missing.length) throw new Error("SPX OnHold CSV is missing required column(s): " + missing.join(", ") + ".");
+  const kept = new Map();
+  const excluded = { otherStation: 0, otherStatus: 0, otherAssignedDate: 0, missingTrackingNumber: 0 };
+  let duplicateCount = 0;
+  for (const row of sourceRows) {
+    const station = String(row[stationIndex] ?? "").trim().toLowerCase().replace(/[\s_-]+/g, " ");
+    if (!station.includes("badoc hub")) { excluded.otherStation++; continue; }
+    if (statusIndex >= 0) {
+      const status = String(row[statusIndex] ?? "").trim().toLowerCase().replace(/[^a-z]/g, "");
+      if (!status.includes("onhold")) { excluded.otherStatus++; continue; }
+    }
+    if (assignedTimeIndex >= 0 && philippineDateKey(row[assignedTimeIndex]) !== selectedDate) {
+      excluded.otherAssignedDate++; continue;
+    }
+    const tn = String(row[trackingIndex] ?? "").trim().replace(/[\s]+/g, "").toUpperCase();
+    const tnKey = tn.replace(/[^A-Z0-9]/g, "");
+    if (!tnKey) { excluded.missingTrackingNumber++; continue; }
+    const record = Object.fromEntries(headers.map((header, index) => [String(header ?? "").trim(), row[index] ?? ""]));
+    record._badocOnholdSnapshotKind = "spx-assigned-onhold-today";
+    record._badocOnholdSnapshotDate = selectedDate;
+    record._badocOnholdAssignedTimeFilterSource = assignedTimeIndex >= 0 ? "CSV column" : "SPX export request";
+    record._badocOnholdStatusFilterSource = statusIndex >= 0 ? "CSV column" : "SPX export request";
+    record._onholdExportSource = "Forward Order";
+    if (kept.has(tnKey)) duplicateCount++;
+    kept.set(tnKey, record);
+  }
+  return {
+    rows: [...kept.values()],
+    rowCount: kept.size,
+    rawRowCount: sourceRows.length,
+    duplicateCount,
+    excluded,
+    assignedTimeFilterSource: assignedTimeIndex >= 0 ? "CSV column" : "SPX export request",
+    statusFilterSource: statusIndex >= 0 ? "CSV column" : "SPX export request"
+  };
+}
+
+function actualScannedOnHoldDateRange(selectedDate = "") {
+  const fallbackDate = parcelDeliveryDateRange().todayDate;
+  const date = String(selectedDate || fallbackDate).trim();
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) throw new Error("Select a valid Philippine calendar date for the OnHold snapshot.");
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const target = new Date(Date.UTC(year, month - 1, day));
+  const fmt = value => value.getUTCFullYear() + "-" +
+    String(value.getUTCMonth() + 1).padStart(2, "0") + "-" +
+    String(value.getUTCDate()).padStart(2, "0");
+  if (fmt(target) !== date) throw new Error("Select a valid Philippine calendar date for the OnHold snapshot.");
+  const previousMonthLastDay = new Date(Date.UTC(year, month - 1, 0)).getUTCDate();
+  const createdStart = new Date(Date.UTC(year, month - 2, Math.min(day, previousMonthLastDay)));
+  const assignedStartMs = Date.UTC(year, month - 1, day) - 8 * 60 * 60 * 1000;
+  const assignedEndMs = assignedStartMs + 24 * 60 * 60 * 1000 - 1;
+  const createdStartMs = Date.UTC(
+    createdStart.getUTCFullYear(), createdStart.getUTCMonth(), createdStart.getUTCDate()
+  ) - 8 * 60 * 60 * 1000;
+  return {
+    selectedDate: date,
+    createdStartDate: fmt(createdStart),
+    assignedStartSec: Math.floor(assignedStartMs / 1000),
+    assignedEndSec: Math.floor(assignedEndMs / 1000),
+    createdStartSec: Math.floor(createdStartMs / 1000),
+    createdEndSec: Math.floor(assignedEndMs / 1000)
+  };
+}
+
+async function exportActualScannedOnHoldTodayFromSpx(job, selectedDate) {
+  const range = actualScannedOnHoldDateRange(selectedDate);
+  job.trackingStatus = "5";
+  job.hubName = "Badoc Hub";
+  const body = {
+    tracking_status: "5",
+    current_station_ids: [PARCEL_STATION_ID],
+    bulky_type: "1,0,2",
+    ctime: range.createdStartSec + "," + range.createdEndSec,
+    pick_up_time: range.assignedStartSec + "," + range.assignedEndSec,
+    format_condition:
+      "Status Log= OnHold; " +
+      "Current Station= Badoc Hub; " +
+      "Bulky Type= Bulky,N/A,Non-Bulky; " +
+      "Created Date= " + range.createdStartDate + " 00:00:00," + range.selectedDate + " 23:59:59; " +
+      "Assigned Time= " + range.selectedDate + " 00:00:00," + range.selectedDate + " 23:59:59; " +
+      "Driver= All"
+  };
+  progress("Submitting SPX OnHold-only export for Actual Scanned by Riders (" + range.selectedDate + ")…", {
+    phase: "actual-scanned-onhold-export",
+    kind: job.kind,
+    selectedDate: range.selectedDate,
+    currentStation: "Badoc Hub",
+    trackingStatus: "5"
+  });
+  const response = await extensionFetchText(SPX_ORIGIN + PARCEL_FORWARD_EXPORT_PATH, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json, text/plain, */*" },
+    body: JSON.stringify(body)
+  });
+  const json = parseJsonResponse("SPX Actual Scanned OnHold export", response);
+  if (!response.ok || Number(json?.retcode) !== 0) {
+    throw new Error(json?.message || "SPX OnHold export failed (HTTP " + response.status + ").");
+  }
+  const taskId = Number(json?.data?.task_id || json?.task_id || 0);
+  if (!taskId) throw new Error("SPX accepted the OnHold export request but returned no task ID.");
+  progress("SPX OnHold task " + taskId + " created. Waiting for the OnHold-only export…", {
+    phase: "actual-scanned-onhold-task",
+    kind: job.kind,
+    taskId,
+    selectedDate: range.selectedDate
+  });
+  const waitStartSec = Math.max(0, Math.floor((job.startedAt - 10 * 60 * 1000) / 1000));
+  const completedInfo = await waitForAssignedTodayExportTask(taskId, waitStartSec, job, "Actual Scanned OnHold");
+  if (!isParcelDeliveryTask(completedInfo.task, job)) {
+    throw new Error("The completed SPX task does not match the requested OnHold-only Forward Order export.");
+  }
+  if (job.cancelled) throw new Error("Actual Scanned OnHold sync was stopped.");
+  const signedUrl = await getSignedDownloadUrl(taskId, completedInfo.source);
+  const csv = await downloadCsv(signedUrl);
+  const extracted = extractAssignedParcelOids(csv.text);
+  const filtered = filterActualScannedOnHoldExportRows(extracted, range.selectedDate);
+  return {
+    ok: true,
+    selectedDate: range.selectedDate,
+    taskId,
+    source: "SPX Forward Order · tracking status 5",
+    rowCount: filtered.rowCount,
+    rawRowCount: filtered.rawRowCount,
+    duplicateCount: filtered.duplicateCount,
+    excluded: filtered.excluded,
+    assignedTimeFilterSource: filtered.assignedTimeFilterSource,
+    statusFilterSource: filtered.statusFilterSource,
+    rows: filtered.rows,
+    fileName: csv.fileName
+  };
+}
+
 function extractAssignedParcelOids(csvText) {
   const rows = parseAssignedExportCsvRows(csvText);
   if (!rows.length) throw new Error("SPX returned an empty parcel export.");
@@ -4506,6 +4661,52 @@ chrome.runtime.onConnect.addListener(port => {
       });
       if (!job) { failBusy("parcel-inbound"); return; }
       void runParcelInboundJob(job);
+      return;
+    }
+
+    if (type === "BADOC_START_ACTUAL_SCANNED_ONHOLD_TODAY") {
+      const requestId = String(message?.requestId || "");
+      const selectedDate = String(message?.selectedDate || "").trim();
+      const job = reserveActiveJob("actual-scanned-onhold-today", port, {
+        requestId, selectedDate, trackingStatus: "5", hubName: "Badoc Hub", startedAt: Date.now()
+      });
+      if (!job) {
+        sendToPort(port, "BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_ERROR", {
+          requestId, selectedDate,
+          message: "Another SPX export is running. Wait for it to finish, then retry OnHold sync."
+        });
+        return;
+      }
+      sendToPort(port, "BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_ACCEPTED", {
+        requestId, selectedDate,
+        message: "SPX accepted the OnHold-only export request. Preparing the Badoc Hub snapshot…"
+      });
+      void (async () => {
+        try {
+          const result = await exportActualScannedOnHoldTodayFromSpx(job, selectedDate);
+          if (job.cancelled) throw new Error("Actual Scanned OnHold sync was stopped.");
+          sendToPort(port, "BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE", {
+            requestId,
+            selectedDate: result.selectedDate,
+            taskId: result.taskId,
+            source: result.source,
+            rowCount: result.rowCount,
+            rawRowCount: result.rawRowCount,
+            duplicateCount: result.duplicateCount,
+            excluded: result.excluded,
+            assignedTimeFilterSource: result.assignedTimeFilterSource,
+            statusFilterSource: result.statusFilterSource,
+            fileName: result.fileName,
+            rows: result.rows
+          });
+        } catch (error) {
+          sendToPort(port, "BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_ERROR", {
+            requestId, selectedDate, message: error?.message || String(error)
+          });
+        } finally {
+          releaseActiveJob(job);
+        }
+      })();
       return;
     }
 

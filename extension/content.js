@@ -158,6 +158,7 @@
       "BADOC_START_RIDER_SYNC",
       "BADOC_START_PARCEL_INBOUND_SYNC",
       "BADOC_START_ASSIGNED_ONHOLD_TODAY",
+      "BADOC_START_ACTUAL_SCANNED_ONHOLD_TODAY",
       "BADOC_START_POD_CHECKER_ASSIGNED_TODAY",
       "BADOC_START_POD_CHECKER_ONHOLD",
       "BADOC_START_RECEIVED_CHECKING_INBOUND_SYNC",
@@ -170,6 +171,14 @@
       "BADOC_ABORT_SYNC",    ]);
     if (!supported.has(data.type)) return;
     if (!port) {
+      if (data.type === "BADOC_START_ACTUAL_SCANNED_ONHOLD_TODAY") {
+        emit("BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_ERROR", {
+          requestId: String(data.requestId || ""),
+          selectedDate: String(data.selectedDate || ""),
+          message: "Badoc Hub Extension background connection is unavailable. Reload the extension and refresh BADOC HUB."
+        });
+        return;
+      }
       if (data.type === "BADOC_START_POD_CHECKER_ASSIGNED_TODAY" || data.type === "BADOC_START_POD_CHECKER_ONHOLD") {
         const isOnHold = data.type === "BADOC_START_POD_CHECKER_ONHOLD";
         emit(isOnHold ? "BADOC_POD_CHECKER_ONHOLD_ERROR" : "BADOC_POD_CHECKER_ASSIGNED_ERROR", {
@@ -203,6 +212,10 @@
       const payload = { type: data.type };
       if (data.type === "BADOC_LOOKUP_PICKUP_INFO") { payload.reqId=String(data.reqId||""); payload.orderId=String(data.orderId||"").trim(); }
       if (data.type === "BADOC_START_POD_CHECKER_ASSIGNED_TODAY" || data.type === "BADOC_START_POD_CHECKER_ONHOLD") payload.requestId=String(data.requestId||"");
+      if (data.type === "BADOC_START_ACTUAL_SCANNED_ONHOLD_TODAY") {
+        payload.requestId = String(data.requestId || "");
+        payload.selectedDate = String(data.selectedDate || "");
+      }
       if (data.type === "BADOC_START_FIRST_MILE_ORDERS_SYNC" || data.type === "BADOC_START_FIRST_MILE_TASKS_SYNC") {
         if (data.selectedDate !== undefined) payload.selectedDate = String(data.selectedDate || "");
       }
@@ -225,6 +238,14 @@
         }
       }
       port.postMessage(payload);
+      if (data.type === "BADOC_START_ACTUAL_SCANNED_ONHOLD_TODAY") {
+        emit("BADOC_SPX_COMMAND_FORWARDED", {
+          kind: "actual-scanned-onhold-today",
+          requestId: String(data.requestId || ""),
+          selectedDate: String(data.selectedDate || ""),
+          message: "Actual Scanned OnHold sync request forwarded to the extension background."
+        });
+      }
       if (data.type === "BADOC_START_ASSIGNED_ONHOLD_TODAY") {
         emit("BADOC_SPX_COMMAND_FORWARDED", {
           kind: "assigned-onhold-today",
@@ -253,7 +274,13 @@
         });
       }
     } catch (error) {
-      if (data.type === "BADOC_START_ASSIGNMENT_TASK_EXPORT") {
+      if (data.type === "BADOC_START_ACTUAL_SCANNED_ONHOLD_TODAY") {
+        emit("BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_ERROR", {
+          requestId: String(data.requestId || ""),
+          selectedDate: String(data.selectedDate || ""),
+          message: error?.message || String(error)
+        });
+      } else if (data.type === "BADOC_START_ASSIGNMENT_TASK_EXPORT") {
         emit("BADOC_SPX_ASSIGNMENT_TASK_ERROR", { kind: "assignment-task", message: error?.message || String(error) });
       } else if (data.type === "BADOC_START_BATCH_SEARCH_EXPORT") {
         emit("BADOC_SPX_BATCH_SEARCH_ERROR", { kind: "batch-search-result", message: error?.message || String(error) });

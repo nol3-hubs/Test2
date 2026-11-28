@@ -435,7 +435,14 @@
 
 <section id="actualScannedByRiders" class="page" aria-label="Actual Scanned by Riders">
   <div class="section">
-    <div class="area-head"><h2>Actual Scanned by Riders</h2><span class="hint" id="actualScannedSourceStatus">Waiting for Parcel Count data</span></div>
+    <div class="area-head">
+      <h2>Actual Scanned by Riders</h2>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <span class="hint" id="actualScannedSourceStatus">Waiting for Parcel Count data</span>
+        <button class="btn secondary" type="button" id="actualScannedOnholdSyncBtn">↻ Sync OnHold from SPX</button>
+        <span class="hint" id="actualScannedOnholdSyncStatus" aria-live="polite">OnHold snapshot not synced yet</span>
+      </div>
+    </div>
     <div class="actual-scan-kpis">
       <div class="kpi"><div class="num" id="actualScannedParcels">0</div><div class="lab">TOTAL PARCELS SCANNED</div></div>
       <div class="kpi"><div class="num" id="actualScannedRiders">0</div><div class="lab">ACTUAL RIDERS</div></div>
