@@ -4,7 +4,7 @@ Independent test repository merged from the newer `nol3-hubs/test` project while
 
 ## Current Chrome extension package
 
-- Chrome extension: **v1.5.34**, bundled in the dashboard's built-in Bridge Installer.
+- Chrome extension: **v1.6.8**, bundled in the dashboard's built-in Bridge Installer.
 - Open Badoc Hub's Bridge Installer and choose **Download ZIP File** to generate the current package from the synchronized `extension/` sources.
 
 To install the package, extract the ZIP, open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the extracted extension folder.
@@ -30,8 +30,8 @@ To add a script, create `js/NNN-name.js` and add a `<script src>` tag in `index.
 Run `node tools/regression-tests.mjs` from the repository root before publishing. The checks cover CSV parsing, parcel identity reconciliation, preservation of parcel metadata, CFR1 upload-time provenance, Daily History read-back verification, storage recovery controls, cloud writer locking, and Chrome/Firefox package structure.
 
 ## Included
-- BADOC Hub dashboard v162
-- Chrome extension v1.5.34, including direct Assignment Task export and Batch Search Result automation with robust modal Submit detection
+- BADOC Hub dashboard v165
+- Chrome extension v1.6.8, including direct Assignment Task export and Batch Search Result automation with robust modal Submit detection
 - Firefox extension v69.5.17
 - First Mile XLSX-to-CSV support
 - On-demand Pickup Info lookup from the signed-in SPX tab, including pickup attempts, geofence, remarks, photos, and seller signature
