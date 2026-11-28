@@ -176,7 +176,7 @@
   function assignmentTaskIndexForDate(dateKey) {
     const live = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : null;
     const liveDate = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
-    const source = liveDate === dateKey ? live : (assignmentTaskDate === dateKey ? assignmentTaskRows : EMPTY_TASK_ROWS);
+    const source = live && liveDate === dateKey ? live : (assignmentTaskDate === dateKey ? assignmentTaskRows : EMPTY_TASK_ROWS);
     if (assignmentTaskIndexCache && assignmentTaskIndexCache.dateKey === dateKey &&
         assignmentTaskIndexCache.source === source) return assignmentTaskIndexCache;
     const rows = [];
@@ -656,7 +656,7 @@
     const resolveHistory = record => {
       const cacheKey = record.key || key(record.tn) + "|" + String(record.onholdDate || "");
       if (!historyAttributionCache.has(cacheKey)) {
-        historyAttributionCache.set(cacheKey, resolveHistory(record));
+        historyAttributionCache.set(cacheKey, resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate }));
       }
       return historyAttributionCache.get(cacheKey);
     };
