@@ -277,7 +277,7 @@ test('Opening Actual Scanned history does not automatically request Assignment T
   assert.match(startup,/loadHistory\(\)\.then\(\(\)\s*=>\s*\{\s*captureCurrentState\(\);\s*\}\);/);
   assert.doesNotMatch(startup,/requestAssignmentTaskExport\(\)/);
   // Keep the explicit sync follow-up available for rider attribution.
-  assert.match(onholdHistory,/BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE[\s\S]*?requestAssignmentTaskExport\(\)/);
+  assert.match(onholdHistory,/BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE[\s\S]*?requestAssignmentTaskExport\(String\(message\.selectedDate \|\| todayManilaKey\(\)\), true\)/);
 });
 
 test('Completed operation dialogs can always be dismissed without accepting confirmations',()=>{
