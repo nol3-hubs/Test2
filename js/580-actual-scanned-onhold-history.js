@@ -30,7 +30,7 @@
   const STATUS_ALIASES = ["Parcel Status To", "Status To", "TO Status", "To Status", "Status To (Current)", "Status", "Parcel Status", "Delivery Status", "Current Status"];
   // Keep these pickup aliases aligned with badocOnholdPickupBeforeCutoff()
   // so historical capture uses the same fixed 3:00 PM Manila classifier.
-  const PICKUP_ALIASES = ["Pick Up Time", "Pickup Time", "First Pick Up Time", "First Pickup DateTime", "At Pick Up Time", "Pickup Date Time", "Pickup Datetime", "Pickup Timestamp", "Scanned Time"];
+  const PICKUP_ALIASES = ["Pick Up Time", "Pickup Time", "First Pick Up Time", "First Pickup Time", "First Pickup DateTime", "At Pick Up Time", "Pickup Date Time", "Pickup Datetime", "Pickup Timestamp", "Scanned Time"];
   const ONHOLD_TIME_ALIASES = ["OnHold Time", "On Hold Time", "OnHold Date Time", "On Hold Date Time", "OnHold Timestamp"];
   const ONHOLD_ASSIGNED_TIME_ALIASES = ["Assigned Time", "Assigned Date Time", "Assignment Time", "Assignment Date Time", "Assign Time", "Pick Up Time", "Pickup Time"];
 
