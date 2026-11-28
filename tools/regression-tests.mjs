@@ -260,6 +260,18 @@ test('Actual Scanned OnHold snapshot filters status 5, Badoc Hub, Assigned Time 
   assert.equal(result.excluded.missingTrackingNumber,1);
 });
 
+test('Actual Scanned OnHold script initializes rider alias arrays before extending them',()=>{
+  const start=onholdHistory.indexOf('const AT_NUMBER_ALIASES =');
+  const end=onholdHistory.indexOf('const INVALID_DRIVER =',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const declarations=onholdHistory.slice(start,end);
+  const aliases=vm.runInNewContext(declarations+'\\n({riderIds:RIDER_ID_ALIASES,riderNames:RIDER_NAME_ALIASES,taskRiderIds:TASK_RIDER_ID_ALIASES,taskRiderNames:TASK_RIDER_NAME_ALIASES})');
+  assert.ok(aliases.riderIds.includes('Driver ID'));
+  assert.ok(aliases.riderNames.includes('Driver Name'));
+  assert.ok(aliases.taskRiderIds.includes('Assigned Rider ID'));
+  assert.ok(aliases.taskRiderNames.includes('Assigned Driver Name'));
+});
+
 test('Actual Scanned OnHold history uses Assigned Time for SPX status-5 snapshot dates',()=>{
   assert.match(onholdHistory,/snapshotKind === "spx-assigned-onhold-today"[\s\S]*?dateKeyFromRaw\(assignedRaw, snapshotDate/);
   assert.match(onholdHistory,/assignedAt: assignedRaw/);
