@@ -294,6 +294,26 @@ test('Loading saved OnHold history also populates the tracking-number index',()=
   assert.match(loader,/historyByKey\.set\(record\.key, record\);\s*indexHistoryRecord\(record\);/);
 });
 
+test('Activity Date 2026-11-28 is accepted by every SPX rider verification date validator',()=>{
+  const blocks=[
+    onholdHistory.slice(onholdHistory.indexOf('async function acceptAssignmentTaskExport()'),onholdHistory.indexOf('function requestAssignmentTaskExport(')),
+    onholdHistory.slice(onholdHistory.indexOf('function requestAssignmentTaskExport('),onholdHistory.indexOf('window.__badocRequestAssignmentTaskExport = function')),
+    onholdHistory.slice(onholdHistory.indexOf('window.__badocRequestAssignmentTaskExport = function'),onholdHistory.indexOf('function makeHistoryRecord('))
+  ];
+  const patterns=blocks.map(block=>{
+    const match=block.match(/!\/(\^\[0-9\].*?\$)\//);
+    assert.ok(match,'date validator exists');
+    return new RegExp(match[1]);
+  });
+  assert.equal(patterns.length,3);
+  for(const pattern of patterns){
+    assert.equal(pattern.test('2026-11-28'),true);
+    assert.equal(pattern.test('2026/11/28'),false);
+  }
+  assert.equal((onholdHistory.match(/!\/\^\[0-9\]\{4\}-\[0-9\]\{2\}-\[0-9\]\{2\}\$\//g)||[]).length,3);
+  assert.doesNotMatch(onholdHistory,/\\\\d\{4\}-\\\\d\{2\}/);
+});
+
 test('Actual Scanned OnHold verification starts an Assignment Task export and imports its CSV',()=>{
   assert.match(onholdHistory,/window\.__badocRequestAssignmentTaskExport = function/);
   assert.match(onholdHistory,/type: "BADOC_START_ASSIGNMENT_TASK_EXPORT"/);
