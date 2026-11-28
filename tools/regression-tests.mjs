@@ -272,6 +272,32 @@ test('Actual Scanned OnHold script initializes rider alias arrays before extendi
   assert.ok(aliases.taskRiderNames.includes('Assigned Driver Name'));
 });
 
+test('Actual Scanned OnHold legacy key save is defined and cannot block primary persistence',()=>{
+  const start=onholdHistory.indexOf('function loadLegacyKeys()');
+  const end=onholdHistory.indexOf('function dateKeyFromRaw(',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const helpers=onholdHistory.slice(start,end);
+  assert.match(helpers,/function saveLegacyKeys\(\)/);
+  const values=new Map([['badoc_hold_history_v2',JSON.stringify(['OLDTN'])]]);
+  const sandbox={
+    HISTORY_KEY:'badoc_hold_history_v2',
+    historyByKey:new Map([['2026-11-28|CURRENTTN',{tn:'SPE-PH-Current-TN'}]]),
+    key:value=>String(value??'').toUpperCase().replace(/[^A-Z0-9]/g,''),
+    localStorage:{
+      getItem:key=>values.get(key)||null,
+      setItem:(key,value)=>values.set(key,value)
+    },
+    console:{warn(){}}
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(helpers,sandbox);
+  vm.runInContext('saveLegacyKeys()',sandbox);
+  const saved=JSON.parse(values.get('badoc_hold_history_v2'));
+  assert.deepEqual(Array.from(saved).sort(),['OLDTN','SPEPHCURRENTTN'].sort());
+  sandbox.localStorage.setItem=()=>{throw new Error('storage quota exceeded')};
+  assert.doesNotThrow(()=>vm.runInContext('saveLegacyKeys()',sandbox));
+});
+
 test('Actual Scanned OnHold history uses Assigned Time for SPX status-5 snapshot dates',()=>{
   assert.match(onholdHistory,/snapshotKind === "spx-assigned-onhold-today"[\s\S]*?dateKeyFromRaw\(assignedRaw, snapshotDate/);
   assert.match(onholdHistory,/assignedAt: assignedRaw/);
