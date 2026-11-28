@@ -359,6 +359,17 @@ test('Actual Scanned OnHold history uses a tracking-number index instead of scan
   assert.doesNotMatch(helpers,/\[\.\.\.historyByKey\.values\(\)\]/);
 });
 
+test('Assignment Task rows keep their selected export date and are not dropped by generic CSV Date columns',()=>{
+  const start=onholdHistory.indexOf('function assignmentTaskIndexForDate(dateKey)');
+  const end=onholdHistory.indexOf('const EMPTY_TASK_ROWS',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const block=onholdHistory.slice(start,end);
+  assert.match(block,/dateKey,\s*trackingNumber: field\(row, TASK_TN_ALIASES\)/);
+  assert.doesNotMatch(block,/rowActivityDate\(row/);
+  assert.match(onholdHistory,/Assignment Task request is already restricted by Created Date/);
+  assert.match(onholdHistory,/exact current-OnHold TN matches/);
+});
+
 test('Assignment Task rider lookups reuse date indexes instead of rebuilding/filtering rows per parcel',()=>{
   assert.match(onholdHistory,/function assignmentTaskIndexForDate\(dateKey\)/);
   assert.match(onholdHistory,/byTrackingNumber\.get\(tnKey\) \|\| \[\]/);
