@@ -277,7 +277,7 @@ test('Opening Actual Scanned history does not automatically request Assignment T
   assert.match(startup,/loadHistory\(\)\.then\(\(\)\s*=>\s*\{\s*captureCurrentState\(\);\s*\}\);/);
   assert.doesNotMatch(startup,/requestAssignmentTaskExport\(\)/);
   // Keep the explicit sync follow-up available for rider attribution.
-  assert.match(onholdHistory,/BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE[\s\S]*?requestAssignmentTaskExport\(\)/);
+  assert.match(onholdHistory,/BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE[\s\S]*?requestAssignmentTaskExport\(String\(message\.selectedDate \|\| todayManilaKey\(\)\), true\)/);
 });
 
 test('Completed operation dialogs can always be dismissed without accepting confirmations',()=>{
@@ -292,6 +292,31 @@ test('Loading saved OnHold history also populates the tracking-number index',()=
   assert.notEqual(loadStart,-1);assert.notEqual(loadEnd,-1);
   const loader=onholdHistory.slice(loadStart,loadEnd);
   assert.match(loader,/historyByKey\.set\(record\.key, record\);\s*indexHistoryRecord\(record\);/);
+});
+
+test('Actual Scanned OnHold verification starts an Assignment Task export and imports its CSV',()=>{
+  assert.match(onholdHistory,/window\.__badocRequestAssignmentTaskExport = function/);
+  assert.match(onholdHistory,/type: "BADOC_START_ASSIGNMENT_TASK_EXPORT"/);
+  assert.match(onholdHistory,/message\.type === "BADOC_SPX_ASSIGNMENT_TASK_CSV"/);
+  assert.match(onholdHistory,/window\.__badocParseCSV\(String\(message\.csvText\)\)/);
+  assert.match(onholdHistory,/window\.__badocAssignmentTaskRows = rows/);
+  assert.match(onholdHistory,/badoc:assignment-task-updated/);
+  assert.match(readFileSync(resolve(root,'index.html'),'utf8'),/id="actualScannedOnholdVerifyBtn"/);
+});
+
+test('Only a unique scanner, OnHold event, Assignment Task or AT match is a verified rider',()=>{
+  const start=onholdHistory.indexOf('function isVerifiedOnholdAttribution(result)');
+  const end=onholdHistory.indexOf('function currentOnholdVerificationSummary(',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const helper=onholdHistory.slice(start,end);
+  const sandbox={key:value=>String(value??'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'')};
+  vm.createContext(sandbox);vm.runInContext(helper+';this.verify=isVerifiedOnholdAttribution;',sandbox);
+  for(const source of ['OnHold event','Current scanner','Automatic Assignment Task export','Automatic AT Number match']) {
+    assert.equal(sandbox.verify({riderId:'12345',riderName:'Rider A',source}),true,source);
+  }
+  assert.equal(sandbox.verify({riderName:'Unattributed OnHold',source:'Unattributed OnHold'}),false);
+  assert.equal(sandbox.verify({riderName:'Rider A',source:'Planned town assignment'}),false);
+  assert.match(onholdHistory,/"OnHold Verification": record\.currentOnhold \? \(isVerifiedOnholdAttribution\(resolved\) \? "VERIFIED" : "UNVERIFIED"\)/);
 });
 
 test('Actual Scanned OnHold history uses a tracking-number index instead of scanning all events',()=>{
