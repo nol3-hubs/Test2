@@ -1,6 +1,6 @@
 /*
  * BADOC Hub — Actual Scanned by Riders: persistent OnHold history overlay
- * Version: 1.2.6
+ * Version: 1.2.7
  * Load this AFTER actual-scanned.js.
  * This file does not replace the live/current OnHold classifier. It adds an
  * independent Ever OnHold history so a status transition does not erase the
@@ -21,8 +21,8 @@
   // Keeping these declarations first prevents a temporal-dead-zone error during page startup.
   const RIDER_ID_ALIASES = ["Driver ID", "Rider ID", "Delivery Driver ID", "Delivery Rider ID", "Last Mile Driver ID", "LM Driver ID", "Scan Driver ID", "Actual Driver ID", "Courier ID"];
   const RIDER_NAME_ALIASES = ["Driver Name", "Rider Name", "Delivery Driver Name", "Delivery Rider Name", "Last Mile Driver Name", "LM Driver Name", "Scan Driver Name", "Actual Driver Name", "Courier Name", "Driver", "Rider"];
-  const TASK_RIDER_ID_ALIASES = [...RIDER_ID_ALIASES, "Assigned Rider ID", "Assigned Driver ID", "Task Rider ID"];
-  const TASK_RIDER_NAME_ALIASES = [...RIDER_NAME_ALIASES, "Assigned Rider", "Assigned Driver Name", "Assigned Driver", "Task Rider Name"];
+  const TASK_RIDER_ID_ALIASES = [...RIDER_ID_ALIASES, "Assigned Rider ID", "Assigned Driver ID", "Task Rider ID", "Driver Code", "Courier ID"];
+  const TASK_RIDER_NAME_ALIASES = [...RIDER_NAME_ALIASES, "Assigned Rider", "Assigned Rider Name", "Assigned Driver Name", "Assigned Driver", "Task Rider Name", "Driver Full Name", "Rider Full Name", "Delivery Staff Name", "Assigned To"];
   const INVALID_DRIVER = /^(?:0+|N\/?A|NONE|NULL|UNKNOWN|UNASSIGNED|-)$/i;
   const ALL_DATES_VALUE = "__ALL_DATES__";
   const UNATTRIBUTED_RIDER_KEY = "UNATTRIBUTED_ONHOLD";
@@ -183,14 +183,18 @@
     const byTrackingNumber = new Map();
     const byAtNumber = new Map();
     source.forEach(row => {
+      // The SPX Assignment Task request is already restricted by Created Date
+      // for this selected date. Do not re-filter each CSV row using generic Date
+      // or Activity Date columns: those can describe a different event date and
+      // silently discard valid task-to-parcel mappings.
       const mapped = {
-        dateKey: rowActivityDate(row, liveDate || assignmentTaskDate || dateKey),
+        dateKey,
         trackingNumber: field(row, TASK_TN_ALIASES),
         atNumber: field(row, AT_NUMBER_ALIASES),
         riderId: field(row, TASK_RIDER_ID_ALIASES),
         riderName: field(row, TASK_RIDER_NAME_ALIASES)
       };
-      if (!mapped.trackingNumber || mapped.dateKey !== dateKey) return;
+      if (!mapped.trackingNumber) return;
       rows.push(mapped);
       const tnKey = key(mapped.trackingNumber);
       if (tnKey) {
@@ -303,13 +307,21 @@
     return ["OnHold event", "Current scanner", "Automatic Assignment Task export", "Automatic AT Number match"].includes(source);
   }
   function currentOnholdVerificationSummary(dateKey = todayManilaKey()) {
-    if (!baseGetData) return { total: 0, verified: 0, unresolved: 0, sources: {} };
+    if (!baseGetData) return { total: 0, verified: 0, unresolved: 0, sources: {}, taskRows: 0, taskTrackingNumbers: 0, taskTnMatches: 0, taskMatchesWithRider: 0, taskRowsWithRider: 0 };
+    const taskIndex = assignmentTaskIndexForDate(dateKey);
     const data = applyHistory(baseGetData());
     const records = (Array.isArray(data?.records) ? data.records : [])
       .filter(record => record.currentOnhold && (!dateKey || dateKey === ALL_DATES_VALUE || record.date === dateKey));
     const sources = {};
     let verified = 0;
+    let taskTnMatches = 0;
+    let taskMatchesWithRider = 0;
     records.forEach(record => {
+      const taskRowsForParcel = taskIndex.byTrackingNumber.get(key(record.tn)) || [];
+      if (taskRowsForParcel.length) {
+        taskTnMatches++;
+        if (uniqueIdentity(taskRowsForParcel)) taskMatchesWithRider++;
+      }
       const event = findHistory(record.tn, record.row, record.date);
       const resolved = resolveOnholdAttribution({
         tn: record.tn, row: record.row, event, date: record.date,
@@ -320,7 +332,7 @@
         sources[resolved.source] = (sources[resolved.source] || 0) + 1;
       }
     });
-    return { total: records.length, verified, unresolved: records.length - verified, sources };
+    return { total: records.length, verified, unresolved: records.length - verified, sources, taskRows: taskIndex.rows.length, taskTrackingNumbers: taskIndex.byTrackingNumber.size, taskTnMatches, taskMatchesWithRider, taskRowsWithRider: taskIndex.rows.filter(row => row.riderId || row.riderName).length };
   }
 
   function setAssignmentTaskStatus(message, isError = false) {
@@ -387,11 +399,15 @@
       window.__badocRenderActualScannedByRiders?.();
       const summary = currentOnholdVerificationSummary(dateKey);
       const sourceSummary = Object.entries(summary.sources).map(([name, value]) => name + ": " + value.toLocaleString()).join(" · ");
+      const exportDiagnostics = "Assignment Task export: " + summary.taskRows.toLocaleString() +
+        " row(s), " + summary.taskTrackingNumbers.toLocaleString() + " tracking number(s), " +
+        summary.taskRowsWithRider.toLocaleString() + " row(s) with rider ID/name; exact current-OnHold TN matches: " +
+        summary.taskTnMatches.toLocaleString() + ", with a unique rider: " + summary.taskMatchesWithRider.toLocaleString() + ".";
       const message = summary.total
         ? "SPX verification: " + summary.verified.toLocaleString() + "/" + summary.total.toLocaleString() +
-          " current OnHold parcels verified · " + summary.unresolved.toLocaleString() + " unresolved" +
-          (sourceSummary ? " · " + sourceSummary : "")
-        : "SPX Assignment Task loaded (" + taskMatches.toLocaleString() + " mapping rows); no current OnHold parcels matched the selected date.";
+          " current OnHold parcels verified · " + summary.unresolved.toLocaleString() + " unresolved. " +
+          exportDiagnostics + (sourceSummary ? " · " + sourceSummary : "")
+        : "SPX Assignment Task loaded (" + taskMatches.toLocaleString() + " mapping rows); no current OnHold parcels matched the selected date. " + exportDiagnostics;
       setAssignmentTaskStatus("SPX Assignment Task loaded · " + taskMatches.toLocaleString() + " parcel mapping row(s)");
       setActualOnholdSyncStatus(message, summary.unresolved > 0);
       return count;
@@ -877,11 +893,14 @@
         date: record.date, actualId: record.actualId, actualName: record.actualName, hasScanner: record.hasScanner
       }))).length;
       const unresolvedVerifiedCount = Math.max(0, currentCount - verifiedCurrentCount);
+      const taskIndex = assignmentTaskIndexForDate(selectedFilters().date === ALL_DATES_VALUE ? todayManilaKey() : (selectedFilters().date || todayManilaKey()));
       note.textContent = currentRows.filter(record => record.hasScanner).length.toLocaleString() +
         ' current scanned parcel(s); ' + currentCount.toLocaleString() + ' current OnHold (' +
         verifiedCurrentCount.toLocaleString() + ' verified, ' + unresolvedVerifiedCount.toLocaleString() + ' unverified; ' +
         taskCount.toLocaleString() + ' via Assignment Task export, ' + atCount.toLocaleString() +
-        ' via AT Number map). ' + historyCount.toLocaleString() +
+        ' via AT Number map). Assignment Task lookup: ' + taskIndex.rows.length.toLocaleString() +
+        ' export rows / ' + taskIndex.byTrackingNumber.size.toLocaleString() + ' tracking numbers. ' +
+        historyCount.toLocaleString() +
         ' OnHold history event(s) in the selected filters. Verification requires a unique SPX/scanner rider match; town assignment is never accepted as proof.';
     }
 
