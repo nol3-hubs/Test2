@@ -1,6 +1,6 @@
 /*
  * BADOC Hub — Actual Scanned by Riders: persistent OnHold history overlay
- * Version: 1.2.3
+ * Version: 1.2.4
  * Load this AFTER actual-scanned.js.
  * This file does not replace the live/current OnHold classifier. It adds an
  * independent Ever OnHold history so a status transition does not erase the
@@ -13,7 +13,6 @@
   const STORE_NAME = "onhold";
   const TASK_STORE_NAME = "assignmentTasks";
   const TASK_STORE_VERSION = 2;
-  const HISTORY_KEY = "badoc_hold_history_v2"; // existing legacy TN-only history
   const AT_MAP_STORAGE_KEY = "badoc_actual_scanned_at_rider_map_v1";
   const TASK_MAP_STORAGE_KEY = "badoc_actual_scanned_assignment_tasks_v1";
   const AT_NUMBER_ALIASES = ["AT Number", "AT No", "Assignment Task Number", "Assignment Task No", "Assignment Task ID", "assignment_task_number", "assignment_task_id", "Task Number", "Task No"];
@@ -37,6 +36,9 @@
   let dbPromise = null;
   let historyReady = false;
   let historyByKey = new Map();
+  // Indexed lookups avoid scanning the full history and Assignment Task source for each parcel.
+  let historyByTrackingNumber = new Map();
+  let assignmentTaskIndexCache = null;
   let assignmentTaskRows = [];
   let assignmentTaskDate = "";
   let assignmentTaskWriteChain = Promise.resolve();
@@ -155,27 +157,6 @@
     });
     return dbPromise;
   }
-  function loadLegacyKeys() {
-    try {
-      const raw = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-      return new Set(Array.isArray(raw) ? raw.map(key).filter(Boolean) : []);
-    } catch (_) { return new Set(); }
-  }
-  // Keep the old TN-only localStorage index in sync for backward compatibility.
-  // IndexedDB remains the primary history store; a quota/private-mode error here
-  // must never interrupt the IndexedDB write or the main dashboard renderer.
-  function saveLegacyKeys() {
-    try {
-      const legacyKeys = loadLegacyKeys();
-      historyByKey.forEach(record => {
-        const tnKey = key(record?.tn);
-        if (tnKey) legacyKeys.add(tnKey);
-      });
-      localStorage.setItem(HISTORY_KEY, JSON.stringify([...legacyKeys]));
-    } catch (error) {
-      console.warn("BADOC Actual Scanned legacy OnHold keys could not be saved:", error);
-    }
-  }
   function dateKeyFromRaw(rawValue, fallback = "") {
     const raw = String(rawValue ?? "").trim();
     if (!raw) return fallback;
@@ -192,17 +173,42 @@
   function rowActivityDate(row, fallback) {
     return dateKeyFromRaw(field(row, ["Assigned Time", "Assignment Time", "AT Date", "Task Date", "Assignment Date", "Date", "Activity Date", "DATE"]), fallback);
   }
-  function assignmentTaskRowsForDate(dateKey) {
-    const live = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : [];
+  function assignmentTaskIndexForDate(dateKey) {
+    const live = Array.isArray(window.__badocAssignmentTaskRows) ? window.__badocAssignmentTaskRows : null;
     const liveDate = String(window.__badocAssignmentTaskMeta?.selectedDate || "").trim();
-    const source = liveDate === dateKey ? live : (assignmentTaskDate === dateKey ? assignmentTaskRows : []);
-    return source.map(row => ({
-      dateKey: rowActivityDate(row, liveDate || assignmentTaskDate || dateKey),
-      trackingNumber: field(row, TASK_TN_ALIASES),
-      atNumber: field(row, AT_NUMBER_ALIASES),
-      riderId: field(row, TASK_RIDER_ID_ALIASES),
-      riderName: field(row, TASK_RIDER_NAME_ALIASES)
-    })).filter(row => row.trackingNumber && row.dateKey === dateKey);
+    const source = live && liveDate === dateKey ? live : (assignmentTaskDate === dateKey ? assignmentTaskRows : EMPTY_TASK_ROWS);
+    if (assignmentTaskIndexCache && assignmentTaskIndexCache.dateKey === dateKey &&
+        assignmentTaskIndexCache.source === source) return assignmentTaskIndexCache;
+    const rows = [];
+    const byTrackingNumber = new Map();
+    const byAtNumber = new Map();
+    source.forEach(row => {
+      const mapped = {
+        dateKey: rowActivityDate(row, liveDate || assignmentTaskDate || dateKey),
+        trackingNumber: field(row, TASK_TN_ALIASES),
+        atNumber: field(row, AT_NUMBER_ALIASES),
+        riderId: field(row, TASK_RIDER_ID_ALIASES),
+        riderName: field(row, TASK_RIDER_NAME_ALIASES)
+      };
+      if (!mapped.trackingNumber || mapped.dateKey !== dateKey) return;
+      rows.push(mapped);
+      const tnKey = key(mapped.trackingNumber);
+      if (tnKey) {
+        if (!byTrackingNumber.has(tnKey)) byTrackingNumber.set(tnKey, []);
+        byTrackingNumber.get(tnKey).push(mapped);
+      }
+      const atKey = key(mapped.atNumber);
+      if (atKey) {
+        if (!byAtNumber.has(atKey)) byAtNumber.set(atKey, []);
+        byAtNumber.get(atKey).push(mapped);
+      }
+    });
+    assignmentTaskIndexCache = { dateKey, source, rows, byTrackingNumber, byAtNumber };
+    return assignmentTaskIndexCache;
+  }
+  const EMPTY_TASK_ROWS = [];
+  function assignmentTaskRowsForDate(dateKey) {
+    return assignmentTaskIndexForDate(dateKey).rows;
   }
   function uniqueIdentity(rows) {
     const identities = new Map();
@@ -217,12 +223,14 @@
   function findAtMapRider(atNumber, dateKey) {
     const atKey = key(atNumber);
     if (!atKey || !dateKey) return null;
-    return uniqueIdentity(assignmentTaskRowsForDate(dateKey).filter(row => key(row.atNumber) === atKey));
+    const index = assignmentTaskIndexForDate(dateKey);
+    return uniqueIdentity(index.byAtNumber.get(atKey) || []);
   }
   function findTaskMatch(tn, dateKey) {
     const tnKey = key(tn);
     if (!tnKey || !dateKey) return null;
-    const rows = assignmentTaskRowsForDate(dateKey).filter(row => key(row.trackingNumber) === tnKey);
+    const index = assignmentTaskIndexForDate(dateKey);
+    const rows = index.byTrackingNumber.get(tnKey) || [];
     if (!rows.length) return null;
     const direct = uniqueIdentity(rows);
     const atNumbers = [...new Set(rows.map(row => key(row.atNumber)).filter(Boolean))];
@@ -305,6 +313,7 @@
     });
     assignmentTaskRows = rows;
     assignmentTaskDate = dateKey;
+    assignmentTaskIndexCache = null;
     return rows.length;
   }
   async function loadAssignmentTaskRows() {
@@ -318,10 +327,12 @@
     if (record && Array.isArray(record.rows)) {
       assignmentTaskRows = record.rows;
       assignmentTaskDate = dateKey;
+      assignmentTaskIndexCache = null;
       return record.rows.length;
     }
     assignmentTaskRows = [];
     assignmentTaskDate = "";
+    assignmentTaskIndexCache = null;
     return 0;
   }
   async function acceptAssignmentTaskExport() {
@@ -408,16 +419,25 @@
     });
     return records;
   }
+  function indexHistoryRecord(record) {
+    const tnKey = key(record?.tn);
+    if (!tnKey || !record?.key) return;
+    let indexed = historyByTrackingNumber.get(tnKey);
+    if (!indexed) {
+      indexed = new Map();
+      historyByTrackingNumber.set(tnKey, indexed);
+    }
+    indexed.set(record.key, record);
+  }
   function persistRecords(records) {
     if (!records.length) return Promise.resolve();
+    const changedRecords = [];
     records.forEach(record => {
       const previous = historyByKey.get(record.key);
-      if (!previous) {
-        historyByKey.set(record.key, record);
-      } else {
-        // A first snapshot may have no rider fields. Fill missing attribution
-        // from a later export without replacing the first OnHold date.
-        historyByKey.set(record.key, {
+      let next = record;
+      if (previous) {
+        // Fill missing attribution without replacing the first OnHold event.
+        next = {
           ...previous,
           riderId: previous.riderId || record.riderId,
           riderName: previous.riderName || record.riderName,
@@ -428,15 +448,23 @@
           orderId: previous.orderId || record.orderId,
           assignedAt: previous.assignedAt || record.assignedAt,
           source: previous.source || record.source
-        });
+        };
+        const changed = ["riderId", "riderName", "atNumber", "town", "vehicle", "area", "orderId", "assignedAt", "source"]
+          .some(name => next[name] !== previous[name]);
+        if (!changed) return;
       }
+      historyByKey.set(record.key, next);
+      indexHistoryRecord(next);
+      changedRecords.push(next);
     });
-    saveLegacyKeys();
+    // Filter changes and page re-renders often recapture the same parcel set.
+    // Avoid rewriting unchanged IndexedDB rows.
+    if (!changedRecords.length) return writeChain;
     writeChain = writeChain.then(async () => {
       const db = await openDb();
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
-      records.forEach(record => store.put(historyByKey.get(record.key) || record));
+      changedRecords.forEach(record => store.put(record));
       await new Promise((resolve, reject) => {
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error || new Error("OnHold history write failed"));
@@ -468,7 +496,10 @@
         request.onerror = () => reject(request.error || new Error("Could not read OnHold history"));
       });
       records.forEach(record => {
-        if (record?.key && record?.tn) historyByKey.set(record.key, record);
+        if (record?.key && record?.tn) {
+          historyByKey.set(record.key, record);
+          indexHistoryRecord(record);
+        }
       });
       await loadAssignmentTaskRows();
     } catch (error) {
@@ -483,18 +514,21 @@
   function historiesForTrackingNumber(tn) {
     const tnKey = key(tn);
     if (!tnKey) return [];
-    return [...historyByKey.values()]
-      .filter(record => key(record.tn) === tnKey)
+    const indexed = historyByTrackingNumber.get(tnKey);
+    if (!indexed) return [];
+    return [...indexed.values()]
       .sort((a, b) => String(b.onholdDate || "").localeCompare(String(a.onholdDate || "")) || Number(b.recordedAt || 0) - Number(a.recordedAt || 0));
   }
-  function findHistory(tn, row, preferredDate = "") {
-    const matching = historiesForTrackingNumber(tn);
+  function findHistoryFromMatches(matching, row, preferredDate = "") {
     if (!matching.length) return null;
     const eventRaw = field(row, ONHOLD_TIME_ALIASES) || field(row, PICKUP_ALIASES);
     const parsed = parseManilaStamp(eventRaw);
     const targetDate = parsed?.dateKey || String(preferredDate || "").trim();
     if (targetDate) return matching.find(record => record.onholdDate === targetDate) || null;
     return matching[0];
+  }
+  function findHistory(tn, row, preferredDate = "") {
+    return findHistoryFromMatches(historiesForTrackingNumber(tn), row, preferredDate);
   }
   function historyRiderKey(record) {
     if (record?.riderId) return "ID:" + key(record.riderId);
@@ -505,7 +539,7 @@
     if (!data || !Array.isArray(data.records)) return data;
     data.records.forEach(record => {
       const matching = historiesForTrackingNumber(record.tn);
-      const historical = findHistory(record.tn, record.row, record.onhold ? record.date : "");
+      const historical = findHistoryFromMatches(matching, record.row, record.onhold ? record.date : "");
       record.currentOnhold = record.onhold === true;
       record.everOnhold = matching.length > 0 || record.currentOnhold;
       record.onholdHistory = matching;
@@ -566,8 +600,8 @@
     if (filters.search && ![record.actualName, record.actualId, record.tn, record.orderId, record.town, record.assigned, record.status].some(value => norm(value).includes(filters.search))) return false;
     return true;
   }
-  function historyRowMatches(record, filters) {
-    const resolved = resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate });
+  function historyRowMatches(record, filters, resolveHistory) {
+    const resolved = resolveHistory(record);
     const riderKey = resolved.riderKey || UNATTRIBUTED_RIDER_KEY;
     if (filters.date && filters.date !== ALL_DATES_VALUE && record.onholdDate !== filters.date) return false;
     if (filters.vehicle && normalizedVehicle(record.vehicle) !== filters.vehicle) return false;
@@ -578,7 +612,7 @@
     if (filters.search && ![record.riderName, record.riderId, record.tn, record.orderId, record.town, "Historical OnHold"].some(value => norm(value).includes(filters.search))) return false;
     return true;
   }
-  function rebuildFilterOptions(data, savedFilters) {
+  function rebuildFilterOptions(data, savedFilters, resolveHistory) {
     const filters = savedFilters || selectedFilters();
     const history = [...historyByKey.values()];
     const current = Array.isArray(data?.records) ? data.records : [];
@@ -593,7 +627,7 @@
     const riderValues = new Map();
     current.filter(record => record.hasScanner).forEach(record => riderValues.set(record.riderKey, record.actualName));
     history.forEach(record => {
-      const resolved = resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate });
+      const resolved = resolveHistory(record);
       const riderKey = resolved.riderKey || UNATTRIBUTED_RIDER_KEY;
       const name = resolved.riderName || "Unattributed OnHold";
       if (name && !riderValues.has(riderKey)) riderValues.set(riderKey, name);
@@ -621,9 +655,17 @@
     const root = document.getElementById("actualScannedByRiders");
     if (!root) return;
     const filters = savedFilters || selectedFilters();
-    rebuildFilterOptions(data, filters);
+    const historyAttributionCache = new Map();
+    const resolveHistory = record => {
+      const cacheKey = record.key || key(record.tn) + "|" + String(record.onholdDate || "");
+      if (!historyAttributionCache.has(cacheKey)) {
+        historyAttributionCache.set(cacheKey, resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate }));
+      }
+      return historyAttributionCache.get(cacheKey);
+    };
+    rebuildFilterOptions(data, filters, resolveHistory);
     const currentRows = (Array.isArray(data.records) ? data.records : []).filter(record => !record.historicalOnly && currentRowMatches(record, filters));
-    const historyRows = [...historyByKey.values()].filter(record => historyRowMatches(record, filters));
+    const historyRows = [...historyByKey.values()].filter(record => historyRowMatches(record, filters, resolveHistory));
     const riderStats = new Map();
     const ensureRider = (riderKey, id, name, vehicle) => {
       if (!riderKey) return null;
@@ -754,7 +796,7 @@
     const detailBody = document.getElementById("actualScannedDetailBody");
     if (detailBody) detailBody.querySelectorAll("tr[data-history-event-row]").forEach(row => row.remove());
     const selectedHistory = historyRows.filter(record =>
-      (resolveOnholdAttribution({ tn: record.tn, event: record, date: record.onholdDate }).riderKey || UNATTRIBUTED_RIDER_KEY) === selectedRider
+      (resolveHistory(record).riderKey || UNATTRIBUTED_RIDER_KEY) === selectedRider
     );
     if (detail && detailBody && selectedRider && selectedHistory.length) {
       detail.hidden = false;
@@ -823,8 +865,6 @@
     // Capture filter selections before the base renderer rebuilds its dropdowns;
     // the history module then restores values that exist only in OnHold history.
     const savedFilters = selectedFilters();
-    // Save the old snapshot before the main message handler can replace it.
-    captureCurrentState();
     if (baseRender) baseRender();
     if (!baseGetData || !historyReady) return;
     try {
@@ -845,7 +885,12 @@
     captureRows(Array.isArray(message.onholdRows) ? message.onholdRows : []);
     requestAssignmentTaskExport();
   }, true);
-  window.addEventListener("badoc:parcel-data-updated", captureCurrentState);
+  window.addEventListener("badoc:parcel-data-updated", function () {
+    captureCurrentState();
+    if (document.getElementById("actualScannedByRiders")?.classList.contains("active")) {
+      window.__badocRenderActualScannedByRiders?.();
+    }
+  });
   window.addEventListener("badoc:assignment-task-updated", function () {
     acceptAssignmentTaskExport().catch(error => setAssignmentTaskStatus(error?.message || String(error), true));
   });

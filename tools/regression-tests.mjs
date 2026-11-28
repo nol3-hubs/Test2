@@ -286,31 +286,52 @@ test('Completed operation dialogs can always be dismissed without accepting conf
   assert.match(controller,/closeBtn\.addEventListener\("click",\(\)=>\{if\(confirmResolver\)\{resolveConfirm\(true\);return;\}close\(\);\}\)/);
 });
 
-test('Actual Scanned OnHold legacy key save is defined and cannot block primary persistence',()=>{
-  const start=onholdHistory.indexOf('function loadLegacyKeys()');
-  const end=onholdHistory.indexOf('function dateKeyFromRaw(',start);
+test('Loading saved OnHold history also populates the tracking-number index',()=>{
+  const loadStart=onholdHistory.indexOf('async function loadHistory()');
+  const loadEnd=onholdHistory.indexOf('function historiesForTrackingNumber(',loadStart);
+  assert.notEqual(loadStart,-1);assert.notEqual(loadEnd,-1);
+  const loader=onholdHistory.slice(loadStart,loadEnd);
+  assert.match(loader,/historyByKey\.set\(record\.key, record\);\s*indexHistoryRecord\(record\);/);
+});
+
+test('Actual Scanned OnHold history uses a tracking-number index instead of scanning all events',()=>{
+  const start=onholdHistory.indexOf('function indexHistoryRecord(record)');
+  const end=onholdHistory.indexOf('function findHistoryFromMatches(',start);
   assert.notEqual(start,-1);assert.notEqual(end,-1);
   const helpers=onholdHistory.slice(start,end);
-  assert.match(helpers,/function saveLegacyKeys\(\)/);
-  const values=new Map([['badoc_hold_history_v2',JSON.stringify(['OLDTN'])]]);
   const sandbox={
-    HISTORY_KEY:'badoc_hold_history_v2',
-    historyByKey:new Map([['2026-11-28|CURRENTTN',{tn:'SPE-PH-Current-TN'}]]),
-    key:value=>String(value??'').toUpperCase().replace(/[^A-Z0-9]/g,''),
-    localStorage:{
-      getItem:key=>values.get(key)||null,
-      setItem:(key,value)=>values.set(key,value)
-    },
-    console:{warn(){}}
+    historyByTrackingNumber:new Map(),
+    key:value=>String(value??'').toUpperCase().replace(/[^A-Z0-9]/g,'')
   };
   vm.createContext(sandbox);
   vm.runInContext(helpers,sandbox);
-  vm.runInContext('saveLegacyKeys()',sandbox);
-  const saved=JSON.parse(values.get('badoc_hold_history_v2'));
-  assert.deepEqual(Array.from(saved).sort(),['OLDTN','SPEPHCURRENTTN'].sort());
-  sandbox.localStorage.setItem=()=>{throw new Error('storage quota exceeded')};
-  assert.doesNotThrow(()=>vm.runInContext('saveLegacyKeys()',sandbox));
+  vm.runInContext('indexHistoryRecord({key:"2026-11-28|TN1",tn:"TN-1",onholdDate:"2026-11-28",recordedAt:1}); indexHistoryRecord({key:"2026-11-28|TN2",tn:"TN-2",onholdDate:"2026-11-28",recordedAt:2}); indexHistoryRecord({key:"2026-11-27|TN1",tn:"TN-1",onholdDate:"2026-11-27",recordedAt:3});',sandbox);
+  const rows=vm.runInContext('historiesForTrackingNumber("TN 1")',sandbox);
+  assert.equal(rows.length,2);
+  assert.equal(rows[0].key,"2026-11-28|TN1");
+  assert.equal(rows[1].key,"2026-11-27|TN1");
+  assert.match(helpers,/historyByTrackingNumber\.get\(tnKey\)/);
+  assert.doesNotMatch(helpers,/\[\.\.\.historyByKey\.values\(\)\]/);
 });
+
+test('Assignment Task rider lookups reuse date indexes instead of rebuilding/filtering rows per parcel',()=>{
+  assert.match(onholdHistory,/function assignmentTaskIndexForDate\(dateKey\)/);
+  assert.match(onholdHistory,/byTrackingNumber\.get\(tnKey\) \|\| \[\]/);
+  assert.match(onholdHistory,/byAtNumber\.get\(atKey\) \|\| \[\]/);
+  assert.match(onholdHistory,/assignmentTaskIndexCache\.source === source/);
+  assert.doesNotMatch(onholdHistory,/assignmentTaskRowsForDate\(dateKey\)\.filter/);
+});
+
+test('OnHold history persistence skips unchanged snapshots and avoids full localStorage rewrites',()=>{
+  const start=onholdHistory.indexOf('function persistRecords(records)');
+  const end=onholdHistory.indexOf('function captureRows(rows)',start);
+  assert.notEqual(start,-1);assert.notEqual(end,-1);
+  const block=onholdHistory.slice(start,end);
+  assert.match(block,/if \(!changedRecords\.length\) return writeChain/);
+  assert.match(block,/changedRecords\.forEach\(record => store\.put\(record\)\)/);
+  assert.doesNotMatch(block,/localStorage|saveLegacyKeys/);
+});
+
 
 test('Actual Scanned OnHold history uses Assigned Time for SPX status-5 snapshot dates',()=>{
   assert.match(onholdHistory,/snapshotKind === "spx-assigned-onhold-today"[\s\S]*?dateKeyFromRaw\(assignedRaw, snapshotDate/);
