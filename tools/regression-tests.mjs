@@ -272,6 +272,20 @@ test('Actual Scanned OnHold script initializes rider alias arrays before extendi
   assert.ok(aliases.taskRiderNames.includes('Assigned Driver Name'));
 });
 
+test('Opening Actual Scanned history does not automatically request Assignment Task export',()=>{
+  const startup=onholdHistory.slice(onholdHistory.lastIndexOf('// Load saved history and current local exports'));
+  assert.match(startup,/loadHistory\(\)\.then\(\(\)=>\{\s*captureCurrentState\(\);\s*\}\);/);
+  assert.doesNotMatch(startup,/requestAssignmentTaskExport\(\)/);
+  // Keep the explicit sync follow-up available for rider attribution.
+  assert.match(onholdHistory,/BADOC_ACTUAL_SCANNED_ONHOLD_TODAY_COMPLETE[\s\S]*?requestAssignmentTaskExport\(\)/);
+});
+
+test('Completed operation dialogs can always be dismissed without accepting confirmations',()=>{
+  const controller=readFileSync(resolve(root,'js/470-operation-modal-controller.js'),'utf8');
+  assert.match(controller,/function close\(\)\{\s*if\(confirmResolver\)\{resolveConfirm\(false\);return;\}\s*active=false;completed=true;setVisible\(false\);\s*\}/);
+  assert.match(controller,/closeBtn\.addEventListener\("click",\(\)=>\{if\(confirmResolver\)\{resolveConfirm\(true\);return;\}close\(\);\}\)/);
+});
+
 test('Actual Scanned OnHold legacy key save is defined and cannot block primary persistence',()=>{
   const start=onholdHistory.indexOf('function loadLegacyKeys()');
   const end=onholdHistory.indexOf('function dateKeyFromRaw(',start);
